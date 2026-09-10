@@ -36,7 +36,7 @@ zar --version
 ### From Source
 
 ```bash
-git clone https://github.com/purelogiccode/CSharp_ZARSharp.git
+git clone https://github.com/purelogiccode/ZARSharp.git
 cd CSharp_ZARSharp
 dotnet build -c Release
 ```

@@ -1,6 +1,6 @@
 # ZARSharp
 
-[![CI](https://github.com/purelogiccode/CSharp_ZARSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/purelogiccode/CSharp_ZARSharp/actions/workflows/ci.yml)
+[![CI](https://github.com/purelogiccode/ZARSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/purelogiccode/ZARSharp/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/ZARSharp.svg)](https://www.nuget.org/packages/ZARSharp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -128,4 +128,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions are welcome! Please see the [issue tracker](https://github.com/purelogiccode/CSharp_ZARSharp/issues) for known issues and feature requests.
+Contributions are welcome! Please see the [issue tracker](https://github.com/purelogiccode/ZARSharp/issues) for known issues and feature requests.
