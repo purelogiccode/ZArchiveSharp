@@ -1,0 +1,178 @@
+# Zstd Compression
+
+ZARSharp includes a complete, dependency-free implementation of the [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) zstd format — both encoder and decoder. It is a faithful port of libzstd 1.5.7 and produces **byte-identical frames** to `ZSTD_compress(src, level)` for single-shot compression at every level 1–22.
+
+## Compression Levels
+
+ZARSharp supports the full zstd level range, 1–22. Parameters per level come from an exact port of libzstd's `clevels.h` table — no values are invented.
+
+| Level | Strategy | Typical Use |
+|-------|----------|-------------|
+| 1 | `Fast` | Maximum speed (~1.3 GB/s) |
+| 2–3 | `DoubleFast` | Fast with better ratio |
+| 4–5 | `Greedy` | Balanced |
+| 6–7 | `Lazy` | Default (level 6), good balance |
+| 8–9 | `Lazy2` | Better ratio, still fast |
+| 10–12 | `BtLazy2` | Ratio-focused |
+| 13–15 | `BtOpt` | High compression |
+| 16–18 | `BtUltra` | Very high compression |
+| 19–22 | `BtUltra2` | Maximum compression (slow) |
+
+### Level Selection Guidelines
+
+- **Level 6 (default)** — Matches `zarchive.exe` behavior; good balance of speed and ratio
+- **Levels 1–3** — Real-time or throughput-critical workloads
+- **Levels 9–12** — Distribution archives where size matters but time budget exists
+- **Levels 19–22** — Archival storage; expect ~38 MB/s at level 19
+
+## Basic Usage
+
+### Single-Shot Compression
+
+```csharp
+using ZARSharp.Zstd;
+
+var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
+
+// Array-based
+byte[] frame = compressor.CompressBlock(data);
+
+// Span-based (zero-alloc on the output side)
+Span<byte> dest = stackalloc byte[ZstdCompressor.GetCompressBound(source.Length)];
+int written = compressor.Compress(source, dest);
+if (written == -1)
+{
+    // Frame would not fit in dest, or is not smaller than the input.
+    // Store the input raw — the same rule libzstd's StoreBlock uses.
+}
+```
+
+### Decompression
+
+```csharp
+using ZARSharp.Zstd;
+
+// Array-based with a size cap (required — protects against zip bombs)
+byte[] data = ZstdCompressor.DecompressFrame(frame, maxSize: expectedSize);
+
+// Decoder options (defaults: 512 MiB window, 512 MiB frame content)
+var options = new ZstdDecoderOptions
+{
+    MaxWindowSize = 512 * 1024 * 1024,
+    MaxFrameContentSize = 512 * 1024 * 1024,
+};
+```
+
+The decoder handles:
+- Standard frames (magic `0xFD2FB528`)
+- Skippable frames (magic `0x184D2A5E`) — content ignored
+- Multi-frame concatenated input
+- XXH64 content checksums (verified when present)
+- RLE and raw block types
+
+## Compression Strategies
+
+The nine strategies map directly to libzstd's match finders:
+
+| Strategy | Port Source | Notes |
+|----------|-------------|-------|
+| `Fast` | `zstd_fast.c` | Single hash table |
+| `DoubleFast` | `zstd_double_fast.c` | Two hash tables (long + short matches) |
+| `Greedy` | `zstd_lazy.c` (depth 0) | No lazy match extension |
+| `Lazy` | `zstd_lazy.c` (depth 1) | Checks one position ahead |
+| `Lazy2` | `zstd_lazy.c` (depth 2) | Checks two positions ahead |
+| `BtLazy2` | `zstd_opt.c` (binary tree) | Binary-tree search + optimal parse |
+| `BtOpt` | `zstd_opt.c` | Optimal parse |
+| `BtUltra` | `zstd_opt.c` | Deeper search |
+| `BtUltra2` | `zstd_opt.c` | Two-pass seeding |
+
+Strategy is selected automatically by level — you cannot set it independently (matching libzstd behavior, where strategies come from the level table).
+
+## Size Tiers
+
+libzstd selects compression parameters not just by level but by **input size**. ZARSharp ports this exactly (`ZstdCompressionParameters.ForSizeAndLevel`):
+
+| Tier | Input Size |
+|------|-----------|
+| `Le16K` | ≤ 16 KiB |
+| `Le128K` | ≤ 128 KiB (ZAR 64 KiB blocks land here) |
+| `Le256K` | ≤ 256 KiB |
+| `Default` | > 256 KiB |
+
+For multi-block frames, the parameter row is derived **once** from the total input size and shared by every block — exactly like `ZSTD_getCParams` on the pledged size.
+
+## Frame Structure
+
+Frames ZARSharp writes follow RFC 8878 §3:
+
+```
++-------------+--------+--------+--------+--------+
+| Magic       | Header | Block  | Block  | ...    |  (+ optional checksum)
+| 4 bytes     | 3-13 B | Header | Data   |        |
+| FD2FB528    |        |        |        |        |
++-------------+--------+--------+--------+--------+
+```
+
+- **Magic**: `0xFD2FB528` (little-endian)
+- **Frame header**: explicit window descriptor, size-dependent frame content size
+- **Blocks**: up to 128 KiB each (`ZSTD_BLOCKSIZE_MAX`), compressed / raw / RLE types
+- **Checksum**: 4-byte XXH64 when `ChecksumFlag` is set (default off)
+
+### Key Invariants
+
+- Blocks below 7 bytes go raw without attempting compression (libzstd's `MIN_CBLOCK_SIZE` rule)
+- Raw fallback never advances the repeat-offset history (RFC 8878 §4.1.1 frame-scoped repcodes)
+- Blocks that compress to ≥ input size are stored raw
+- Repeat-offset history is frame-scoped and restored correctly across raw blocks
+
+## Block Splitting (High Levels)
+
+At levels with `windowLog ≥ 17` using optimal parsers (btopt and above), libzstd may split 128 KiB blocks into sub-blocks using an entropy-estimation search to squeeze extra ratio. ZARSharp ports this:
+
+- `ZstdBlockSplitter` — recursive entropy-estimation search (`ZSTD_deriveBlockSplits`)
+- Per-partition offset-code resolution with dual repcode histories
+- Post-parse splitting by estimated entropy cost
+- Pre-splitting of heterogeneous 128 KiB inputs via raw-byte fingerprint (`ZSTD_optimalBlockSize` / `ZSTD_splitBlock`)
+
+This is why byte parity holds across the full multi-block matrix (636 vectors, levels 1–22).
+
+## Interop
+
+### With Standard zstd Tools
+
+Frames ZARSharp produces decode with:
+- The official `zstd` CLI
+- Any RFC 8878-conformant decoder
+
+And ZARSharp decodes anything standard tools produce (levels 1–22, no dictionaries, no legacy frames).
+
+### Verification
+
+The test suite proves byte-identity:
+- **`ParityVsNativeLevelsTests`** — levels 1–22 vs `zstd` CLI
+- **`ParityVsNativeMultiblockTests`** — 636-vector multi-block matrix
+- **`ZstdGoldenTests`** — 12 committed libzstd 1.5.7 one-shots (no toolchain needed in CI)
+- **`ZstdInteropVectorsTests`** — decode vectors produced by libzstd
+
+## Known Boundaries
+
+1. **zarchive.exe bundles libzstd 1.5.2** — its level 6 differs from 1.5.7 on some multi-transition heterogeneous 64 KiB blocks. ZARSharp follows the frozen 1.5.7 reference. Homogeneous blocks and single-transition blocks are identical; extract interops both ways regardless.
+
+2. **No dictionaries** — zstd dictionary training/usage is out of scope.
+
+3. **No multi-threaded compression** (`zstdmt`) inside one frame — use the pipeline's batch parallelism instead (archives/frames compress independently).
+
+4. **No streaming encode API** — compression is single-shot per frame/block. The seekable writer builds on this with independent frames.
+
+## Performance Notes
+
+Current baseline (net10.0, Release — see [Benchmarks](benchmarks.md)):
+
+| Operation | Throughput |
+|-----------|-----------|
+| Level 1 compress | ~1.3 GB/s |
+| Level 6 compress | ~450–470 MB/s |
+| Level 19 compress | ~38 MB/s |
+| Decode | ~860 MB/s |
+
+Pure C# is slower than native libzstd (~0.28× at L6). The port prioritizes byte-exact parity and safe (no `unsafe`) code; performance work is opt-in follow-up.
