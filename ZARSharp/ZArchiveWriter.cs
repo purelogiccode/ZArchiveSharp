@@ -85,22 +85,38 @@ public sealed class ZArchiveWriter : IDisposable
     public ZArchiveWriter(
         Action<int> newOutputFile,
         Action<byte[], int, int> writeOutputData,
-        IZarBlockCompressor? compressor = null)
+        IZarBlockCompressor? compressor = null,
+        IEnumerable<string>? nameOrder = null)
     {
         _newOutputFile = newOutputFile ?? throw new ArgumentNullException(nameof(newOutputFile));
         _writeOutputData = writeOutputData ?? throw new ArgumentNullException(nameof(writeOutputData));
         _compressor = compressor ?? new ZstdCompressor();
         _compressionBuffer = new byte[ZstdCompressor.GetCompressBound(ZArchiveCommon.CompressedBlockSize)];
         _sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        if (nameOrder != null)
+        {
+            foreach (var name in nameOrder)
+            {
+                CreateNameEntry(name);
+            }
+        }
+
         _newOutputFile(-1);
     }
 
-    /// <summary>Creates a writer that appends to <paramref name="output"/>.</summary>
-    public ZArchiveWriter(Stream output, IZarBlockCompressor? compressor = null)
+    /// <summary>
+    /// Creates a writer that appends to <paramref name="output"/>.
+    /// <paramref name="nameOrder"/> pre-seeds the deduplicated name list so the
+    /// name table follows that order instead of pack order (see
+    /// <see cref="ZARSharp.Pipeline.ZarPipelineOptions.NameOrder"/>).
+    /// </summary>
+    public ZArchiveWriter(Stream output, IZarBlockCompressor? compressor = null,
+        IEnumerable<string>? nameOrder = null)
         : this(
             _ => { },
             (buf, off, count) => output.Write(buf, off, count),
-            compressor)
+            compressor,
+            nameOrder)
     {
     }
 

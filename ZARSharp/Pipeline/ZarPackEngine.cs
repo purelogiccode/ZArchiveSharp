@@ -101,7 +101,7 @@ public static class ZarPackEngine
         try
         {
             using var output = new FileStream(zarPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536);
-            using var writer = new ZArchiveWriter(output, options.ResolveCompressor());
+            using var writer = new ZArchiveWriter(output, options.ResolveCompressor(), options.NameOrder);
             var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
 
             Report(string.Empty);

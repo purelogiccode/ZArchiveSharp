@@ -46,6 +46,16 @@ public sealed class ZarPipelineOptions
     /// <summary>Pause gate checked alongside the cancellation token.</summary>
     public PauseToken Pause { get; set; }
 
+    /// <summary>
+    /// Preferred name-table order, or null for pack order (default). When set,
+    /// the writer pre-seeds its deduplicated name list with these names so the
+    /// on-disk name table follows this order instead of first appearance in
+    /// pack order. Used for byte-parity with packers that write names in
+    /// source-walk (discovery) order — e.g. the XISO <c>--zar</c> bridge mirrors
+    /// XboxKit, which walks the XDVDFS btree in-order.
+    /// </summary>
+    public IReadOnlyList<string>? NameOrder { get; set; }
+
     internal IZarBlockCompressor ResolveCompressor() =>
         Compressor ?? new ZstdCompressor(new ZstdCompressionOptions { Level = Level, ChecksumFlag = Checksum });
 
