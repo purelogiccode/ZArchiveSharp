@@ -56,6 +56,7 @@ ZarPipeline.PackSource(mySource, @"C:\out.zar", options);
 | `MaxDegreeOfParallelism` | `int` | 4 | Batch workers (clamped ≥ 1; effective = `min(workers, items)`) |
 | `DeleteSourceOnSuccess` | `bool` | `false` | Delete pack source after success (off by default — a library must not destroy inputs unless asked) |
 | `Pause` | `PauseToken` | default | Pause gate checked alongside the cancellation token |
+| `NameOrder` | `IReadOnlyList<string>?` | `null` | Pre-seeded name-table order; `null` = pack order. Pass a source-walk (discovery) order for byte-parity with packers that write names in discovery order |
 
 ```csharp
 var options = new ZarPipelineOptions

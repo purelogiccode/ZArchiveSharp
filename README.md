@@ -15,6 +15,7 @@
 - **At native speed on the hot path** — L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× (measured; see [Benchmarks](docs/benchmarks.md))
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
 - **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies
+- **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
 - **Zero runtime dependencies** — BCL only, no `unsafe` code in the zstd path

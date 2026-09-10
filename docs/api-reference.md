@@ -296,6 +296,7 @@ CLI flags `--level`, `--check`, `--dict`).
 | `CollisionPolicy` | `ZarCollisionPolicy` | `Fail` | What to do when the output path already exists |
 | `MaxDegreeOfParallelism` | `int` | `4` | Batch parallelism |
 | `DeterministicOrder` | `bool` | `true` | Sort entries ordinally before packing |
+| `NameOrder` | `IReadOnlyList<string>?` | `null` | Pre-seeded name-table order; `null` = pack order (first appearance). Set to a source-walk (discovery) order for byte-parity with packers that write names in discovery order |
 
 ---
 

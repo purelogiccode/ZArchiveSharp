@@ -83,6 +83,8 @@ Names longer than `0x7FFF` characters are truncated on **characters** before enc
 
 Windows-1252 decoding maps `0x80–0x9F` through the CP1252 high table (undefined slots map to C1 controls); characters with no representation encode to `?` (`0x3F`).
 
+Name order is pack order (first appearance) by default; `ZArchiveWriter` accepts a pre-seeded order (`ZarPipelineOptions.NameOrder`) so callers that walk a source tree in discovery order can emit the table in that order instead.
+
 ## File Tree
 
 A flat array of 16-byte entries, serialized in preorder:
