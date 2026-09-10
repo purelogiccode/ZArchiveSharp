@@ -5,8 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/purelogiccode/XISOSharp</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/purelogiccode/XISOSharp.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/purelogiccode/ZARSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/purelogiccode/ZARSharp.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
   </PropertyGroup>
