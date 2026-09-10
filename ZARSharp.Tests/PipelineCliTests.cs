@@ -249,6 +249,50 @@ public sealed class PipelineCliTests : IDisposable
     }
 
     [Fact]
+    public void Cli_Pack_HonorsLevelOption()
+    {
+        // P0-2 lock-in: ZarPipelineOptions.Level must reach the blocks on the
+        // plain ZarchiveCli pack path (it once built its own options).
+        var root = NewTempDir("cli_level");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        var text = new char[200_000];
+        const string alphabet = "the quick brown fox jumps over the lazy dog 0123456789\n";
+        for (int i = 0; i < text.Length; i++)
+        {
+            text[i] = alphabet[(i * 31 + i / 7) % alphabet.Length];
+        }
+
+        File.WriteAllText(Path.Combine(src, "big.txt"), new string(text));
+
+        var sink = new LogSink();
+        var zarL1 = Path.Combine(root, "l1.zar");
+        var zarL19 = Path.Combine(root, "l19.zar");
+        Assert.Equal(ZarchiveCli.Ok, ZarchiveCli.Run([src, zarL1],
+            new ZarPipelineOptions { Level = 1 }, log: sink.Log));
+        Assert.Equal(ZarchiveCli.Ok, ZarchiveCli.Run([src, zarL19],
+            new ZarPipelineOptions { Level = 19 }, log: sink.Log));
+
+        var bytesL1 = File.ReadAllBytes(zarL1);
+        var bytesL19 = File.ReadAllBytes(zarL19);
+        Assert.NotEqual(bytesL1, bytesL19);
+
+        // Same level through the engine directly must be byte-identical to
+        // the CLI path (same call sequence, same options plumbing).
+        var zarDirect = Path.Combine(root, "direct.zar");
+        ZarPipeline.Pack(src, zarDirect, new ZarPipelineOptions { Level = 1 });
+        Assert.Equal(bytesL1, File.ReadAllBytes(zarDirect));
+
+        // Both levels must still round-trip cleanly (different, not corrupt).
+        var outL1 = Path.Combine(root, "out_l1");
+        var outL19 = Path.Combine(root, "out_l19");
+        Assert.Equal(ZarchiveCli.Ok, ZarchiveCli.Run([zarL1, outL1], log: sink.Log));
+        Assert.Equal(ZarchiveCli.Ok, ZarchiveCli.Run([zarL19, outL19], log: sink.Log));
+        Assert.Equal(
+            File.ReadAllText(Path.Combine(outL1, "big.txt")),
+            File.ReadAllText(Path.Combine(outL19, "big.txt")));
+    }
+
+    [Fact]
     public void Engine_PackDuplicateEntries_ThrowsEntryCreateFault()
     {
         var root = NewTempDir("cli_dupe");

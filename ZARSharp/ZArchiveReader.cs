@@ -69,6 +69,17 @@ public sealed class ZArchiveReader : IDisposable
     private readonly byte[] _blockDecompressionBuffer = new byte[ZArchiveCommon.CompressedBlockSize];
     private bool _disposed;
 
+    /// <summary>
+    /// Dictionary for decoding dictionary-compressed blocks (default null =
+    /// plain archives, current behavior). Set before reading when the archive
+    /// was packed with <c>ZarPipelineOptions.Dictionary</c>; like
+    /// <c>zstd -D</c>, the dictionary lives outside the archive. A supplied
+    /// dictionary is inert for plain (non-dictionary) blocks. Dictionary
+    /// blocks read without a dictionary fail the read (the block decode
+    /// returns false), they never return wrong bytes.
+    /// </summary>
+    public ZstdDictionary? Dictionary { get; set; }
+
     private ZArchiveReader(
         Stream stream, bool leaveOpen,
         CompressionOffsetRecord[] offsetRecords, byte[] nameTable, FileDirectoryEntry[] fileTree,
@@ -681,7 +692,7 @@ public sealed class ZArchiveReader : IDisposable
         {
             var src = new byte[compressedSize];
             Array.Copy(_blockDecompressionBuffer, src, (int)compressedSize);
-            ZstdDecompressor.DecompressExact(src, 0, (int)compressedSize, block.Data, 0, block.Data.Length);
+            ZstdDecompressor.DecompressExact(src, 0, (int)compressedSize, block.Data, 0, block.Data.Length, Dictionary);
             return true;
         }
         catch (ZstdException)

@@ -13,11 +13,56 @@
         <PackageTags>zarchive;zar;zstd;compression;archive;cli</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <IsPackable>true</IsPackable>
+        <!-- Version is derived from git tags via MinVer (same as ZARSharp library). -->
+        <MinClientVersion>5.0</MinClientVersion>
+
+        <!-- XML documentation -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+        <!-- Trimming and AOT compatibility -->
+        <IsTrimmable>true</IsTrimmable>
+        <IsAotCompatible>true</IsAotCompatible>
+
+        <!-- Source Link + reproducible builds -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <DebugType>portable</DebugType>
+        <Deterministic>true</Deterministic>
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+        <!-- API compatibility validation across target frameworks -->
+        <EnablePackageValidation>true</EnablePackageValidation>
+        <EnableStrictModeForPackageValidation>true</EnableStrictModeForPackageValidation>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\ZARSharp\ZARSharp.csproj" />
-        <ProjectReference Include="..\..\CSharp_XISOSharp\XISOSharp\XISOSharp.csproj" />
+        <!-- Cross-repo source dependency (see MissingFeatures HIGH #2: replace
+             with a NuGet reference once XISOSharp publishes). Two guards:
+             MinVerSkip=true: MinVer 8 caches one version per MSBuild session
+             keyed by options only (no repo path), so letting the sibling
+             repo's MinVer run in our session nondeterministically stamps
+             ZARSharp.Cli.dll and the tool package with XISOSharp's version
+             (observed: 1.0.1-alpha.0.99 instead of ours) and vice versa.
+             Skipping it keeps our session's version hermetic; XISOSharp's own
+             repo builds are unaffected. Mirror fix wanted on XISOSharp's
+             reference back to ZARSharp for the same reason.
+             Known residual wart (pre-existing, dies with HIGH #2): under
+             SOLUTION builds, out-of-solution references fall back to the
+             default (Debug) configuration, so a solution-built Release tool
+             links a Debug-built XISOSharp.dll (verified via
+             DebuggableAttribute flags). Project builds and plain dotnet pack
+             build it Release. Neither SetConfiguration metadata nor a
+             Configuration pin in AdditionalProperties overrides the solution
+             fallback (both verified ineffective); only replacing the source
+             reference with a NuGet dependency fixes it. CI only packs the
+             ZARSharp library today, so no shipped artifact is affected.
+             Pack-shape rule: pack the CLI WITH its build (plain dotnet pack
+             on the csproj); packing with the no-build flag after a solution
+             build fails (MSB3030) because the Publish step resolves the
+             Release-path dependency the solution build never produced. -->
+        <ProjectReference Include="..\..\CSharp_XISOSharp\XISOSharp\XISOSharp.csproj" AdditionalProperties="MinVerSkip=true" />
     </ItemGroup>
 
     <ItemGroup>
@@ -28,6 +73,10 @@
     <ItemGroup>
         <PackageReference Include="Meziantou.Analyzer" Version="3.0.234">
             <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" Version="10.0.401" />
+        <PackageReference Include="MinVer" PrivateAssets="all" Version="8.0.0">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Roslynator.Analyzers" Version="5.0.0">

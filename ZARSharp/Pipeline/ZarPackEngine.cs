@@ -246,6 +246,13 @@ public static class ZarPackEngine
         options ??= new ZarPipelineOptions();
         cancellationToken.ThrowIfCancellationRequested();
         var pause = options.Pause;
+        if (options.Dictionary is not null)
+        {
+            // Archives packed with ZarPipelineOptions.Dictionary store
+            // dictionary frames; the same dictionary must decode them (like
+            // zstd -D). Inert for plain archives.
+            reader.Dictionary = options.Dictionary;
+        }
 
         var plan = new List<ExtractPlanEntry>();
         CollectEntries(reader, string.Empty, string.Empty, plan, cancellationToken);

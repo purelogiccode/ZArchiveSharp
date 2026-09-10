@@ -8,17 +8,20 @@ namespace ZARSharp.Zstd;
 /// Pure-C# zstd block/frame decompressor (RFC 8878, "Zstandard Compression").
 /// Supports standard frames (raw, RLE and compressed blocks; Huffman and FSE
 /// entropy coding; predefined/RLE/FSE/repeat sequence tables; content
-/// checksums; multi-frame concatenation) and skippable frames. Dictionaries
-/// are not supported. Decoder limits default to 512 MiB windows and 512 MiB
+/// checksums; multi-frame concatenation) and skippable frames. Dictionary
+/// frames decode with a supplied <see cref="ZstdDictionary"/> (history plus
+/// formatted-dictionary tables). Decoder limits default to 512 MiB windows and 512 MiB
 /// frames (see <see cref="ZstdDecoderOptions"/>); ZArchive needs only 64 KiB.
 /// </summary>
 public static class ZstdDecompressor
 {
-    private const uint ZstdMagic = 0xFD2FB528;
-    private const uint SkippableMask = 0xFFFFFFF0;
-    private const uint SkippableBase = 0x184D2A50;
-    private const int BlockHeaderSize = 3;
-    private const int MaxBlockSizeLimit = 128 * 1024;
+    // Framing constants shared with ZstdDecompressionStream (same assembly;
+    // public behavior unchanged).
+    internal const uint ZstdMagic = 0xFD2FB528;
+    internal const uint SkippableMask = 0xFFFFFFF0;
+    internal const uint SkippableBase = 0x184D2A50;
+    internal const int BlockHeaderSize = 3;
+    internal const int MaxBlockSizeLimit = 128 * 1024;
 
     // Default decoder limits (documented; ZArchive needs only 64 KiB).
     // The window cap is a validity bound only: history is retained in full,
@@ -28,9 +31,10 @@ public static class ZstdDecompressor
     // Sequence code tables (verified against the reference implementation)
     // ------------------------------------------------------------------
 
-    private const int MaxLl = 35;
-    private const int MaxMl = 52;
-    private const int MaxOff = 31;
+    // Shared with ZstdDictionary (dict entropy-table construction).
+    internal const int MaxLl = 35;
+    internal const int MaxMl = 52;
+    internal const int MaxOff = 31;
 
     private static readonly byte[] LlBits =
     [
@@ -46,7 +50,8 @@ public static class ZstdDecompressor
         8192, 16384, 32768, 65536,
     ];
 
-    private static readonly byte[] MlBits =
+    // Shared with ZstdDictionary (dict entropy-table construction).
+    internal static readonly byte[] MlBits =
     [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -54,7 +59,8 @@ public static class ZstdDecompressor
         12, 13, 14, 15, 16,
     ];
 
-    private static readonly uint[] MlBase =
+    // Shared with ZstdDictionary (dict entropy-table construction).
+    internal static readonly uint[] MlBase =
     [
         3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
         19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
@@ -93,8 +99,8 @@ public static class ZstdDecompressor
         1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1,
     ];
 
-    /// <summary>FSE decoding table for one sequence alphabet (literals, offsets, or matches).</summary>
-    private sealed class SeqTable
+    /// <summary>FSE decoding table for one sequence alphabet (shared with ZstdDecompressionStream via FrameContext).</summary>
+    internal sealed class SeqTable
     {
         /// <summary>Accuracy log (table size is 1 &lt;&lt; TableLog).</summary>
         public int TableLog;
@@ -116,7 +122,8 @@ public static class ZstdDecompressor
     private static readonly SeqTable MlDefaultTable = BuildSeqTable(MlDefaultNorm, 52, 6, MlBase, MlBits);
     private static readonly SeqTable OfDefaultTable = BuildOfTable(OfDefaultNorm, 28, 5);
 
-    private static SeqTable BuildSeqTable(
+    // Shared with ZstdDictionary (dict entropy-table construction).
+    internal static SeqTable BuildSeqTable(
         short[] norms, int maxSymbol, int log, uint[] bases, byte[] extras)
     {
         var generic = ZstdFse.BuildTable(norms, maxSymbol, log);
@@ -141,7 +148,8 @@ public static class ZstdDecompressor
         return table;
     }
 
-    private static SeqTable BuildOfTable(short[] norms, int maxSymbol, int log)
+    // Shared with ZstdDictionary (dict entropy-table construction).
+    internal static SeqTable BuildOfTable(short[] norms, int maxSymbol, int log)
     {
         var generic = ZstdFse.BuildTable(norms, maxSymbol, log);
         var size = 1 << log;
@@ -163,6 +171,17 @@ public static class ZstdDecompressor
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// Builds a dictionary ML/LL table from parsed normalized counts
+    /// (shared with <see cref="ZstdDictionary"/>).
+    /// </summary>
+    internal static SeqTable BuildSeqTable(short[] norms, int maxSymbol, int log, bool isMatchLength)
+    {
+        return isMatchLength
+            ? BuildSeqTable(norms, maxSymbol, log, MlBase, MlBits)
+            : BuildSeqTable(norms, maxSymbol, log, LlBase, LlBits);
     }
 
     private static SeqTable BuildRleSeqTable(uint baseline, byte extraBits)
@@ -197,11 +216,46 @@ public static class ZstdDecompressor
     /// <exception cref="ZstdException">On corrupt input or unsupported features.</exception>
     public static byte[] Decompress(byte[] src, int offset, int length, ZstdDecoderOptions options)
     {
+        return Decompress(src, offset, length, null, options);
+    }
+
+    /// <summary>
+    /// Decompresses concatenated zstd frames with <paramref name="dict"/>,
+    /// returning the output. A supplied dictionary is always active (history
+    /// plus, for formatted dictionaries, initial tables); frames carrying a
+    /// dictionary ID require it to match <c>dict.DictId</c>.
+    /// </summary>
+    /// <exception cref="ZstdException">On corrupt input, dictionary mismatch, or unsupported features.</exception>
+    public static byte[] Decompress(byte[] src, ZstdDictionary? dict)
+    {
+        ArgumentNullException.ThrowIfNull(src);
+        return Decompress(src, 0, src.Length, dict, ZstdDecoderOptions.Default);
+    }
+
+    /// <summary>
+    /// Decompresses concatenated zstd frames with <paramref name="dict"/>,
+    /// returning the output.
+    /// </summary>
+    /// <exception cref="ZstdException">On corrupt input, dictionary mismatch, or unsupported features.</exception>
+    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict)
+    {
+        return Decompress(src, offset, length, dict, ZstdDecoderOptions.Default);
+    }
+
+    /// <summary>
+    /// Decompresses concatenated zstd frames with <paramref name="dict"/>,
+    /// returning the output, enforcing the limits in
+    /// <paramref name="options"/> (dictionary content counts toward
+    /// <c>MaxWindowSize</c>).
+    /// </summary>
+    /// <exception cref="ZstdException">On corrupt input, dictionary mismatch, or unsupported features.</exception>
+    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict, ZstdDecoderOptions options)
+    {
         ArgumentNullException.ThrowIfNull(src);
         ArgumentNullException.ThrowIfNull(options);
 
         var output = new List<byte>();
-        var pos = DecompressFrames(src, offset, length, output, null, options);
+        var pos = DecompressFrames(src, offset, length, output, null, options, dict);
         if (pos != offset + length)
         {
             throw new ZstdException("Trailing data after zstd frame.");
@@ -247,9 +301,37 @@ public static class ZstdDecompressor
         byte[] src, int srcOffset, int srcLength,
         byte[] dst, int dstOffset, int dstLength, ZstdDecoderOptions options)
     {
+        DecompressExact(src, srcOffset, srcLength, dst, dstOffset, dstLength, null, options);
+    }
+
+    /// <summary>
+    /// Decompresses exactly one frame region into <paramref name="dst"/>
+    /// with <paramref name="dict"/> active (history plus, for formatted
+    /// dictionaries, initial tables); frames carrying a dictionary ID require
+    /// it to match <c>dict.DictId</c>. A supplied dictionary is inert for
+    /// plain frames. The input must be exactly one frame and
+    /// <paramref name="dst"/> must fill exactly.
+    /// </summary>
+    public static void DecompressExact(
+        byte[] src, int srcOffset, int srcLength,
+        byte[] dst, int dstOffset, int dstLength, ZstdDictionary? dict)
+    {
+        DecompressExact(src, srcOffset, srcLength, dst, dstOffset, dstLength, dict, ZstdDecoderOptions.Default);
+    }
+
+    /// <summary>
+    /// Decompresses exactly one frame region into <paramref name="dst"/>
+    /// with <paramref name="dict"/> active, enforcing the limits in
+    /// <paramref name="options"/>. See the <c>dict</c>-only overload for
+    /// dictionary semantics.
+    /// </summary>
+    public static void DecompressExact(
+        byte[] src, int srcOffset, int srcLength,
+        byte[] dst, int dstOffset, int dstLength, ZstdDictionary? dict, ZstdDecoderOptions options)
+    {
         ArgumentNullException.ThrowIfNull(options);
         var output = new List<byte>(dstLength);
-        var pos = DecompressFrame(src, srcOffset, srcLength, output, (ulong)dstLength, options);
+        var pos = DecompressFrame(src, srcOffset, srcLength, output, (ulong)dstLength, options, dict);
         if (pos != srcOffset + srcLength)
         {
             throw new ZstdException("Trailing data after zstd frame.");
@@ -268,8 +350,8 @@ public static class ZstdDecompressor
     // Frames
     // ------------------------------------------------------------------
 
-    /// <summary>Per-frame decoder state carried across blocks in a frame.</summary>
-    private sealed class FrameContext
+    /// <summary>Per-frame decoder state carried across blocks in a frame (shared with ZstdDecompressionStream).</summary>
+    internal sealed class FrameContext
     {
         /// <summary>Window size for match-offset validation.</summary>
         public ulong WindowSize;
@@ -292,7 +374,7 @@ public static class ZstdDecompressor
 
     private static int DecompressFrames(
         byte[] src, int offset, int length, List<byte> output, ulong? exactSize,
-        ZstdDecoderOptions options)
+        ZstdDecoderOptions options, ZstdDictionary? dict = null)
     {
         var end = offset + length;
         var pos = offset;
@@ -327,7 +409,7 @@ public static class ZstdDecompressor
                 throw new ZstdException($"Bad zstd magic 0x{magic:X8}.");
             }
 
-            pos = DecompressFrame(src, pos, end - pos, output, exactSize, options);
+            pos = DecompressFrame(src, pos, end - pos, output, exactSize, options, dict);
             anyFrame = true;
             if (exactSize.HasValue)
             {
@@ -345,7 +427,7 @@ public static class ZstdDecompressor
 
     private static int DecompressFrame(
         byte[] src, int offset, int length, List<byte> output, ulong? exactSize,
-        ZstdDecoderOptions options)
+        ZstdDecoderOptions options, ZstdDictionary? dict = null)
     {
         var end = offset + length;
         var pos = offset + 4; // magic already validated by caller... (validated below for exact path)
@@ -390,9 +472,32 @@ public static class ZstdDecompressor
             ctx.WindowSize = windowBase + windowAdd;
         }
 
+        // Dictionary ID field follows the window descriptor (stock
+        // ZSTD_writeFrameHeader order). A frame carrying an ID requires the
+        // same ID on the supplied dictionary (stock dictionary_wrong);
+        // frames without an ID decode with any supplied dictionary active.
+        uint frameDictId = 0;
         if (dictFlag != 0)
         {
-            throw new ZstdException("zstd dictionaries are not supported.");
+            var idSize = dictFlag == 1 ? 1 : dictFlag == 2 ? 2 : 4;
+            if (pos + idSize > end)
+            {
+                throw new ZstdException("Truncated zstd frame header.");
+            }
+
+            frameDictId = (uint)ReadUIntLe(src, pos, idSize);
+            pos += idSize;
+            if (dict is null)
+            {
+                throw new ZstdException(
+                    $"{ZstdErrorMessages.DictionaryRequired} (dictID 0x{frameDictId:X8}).");
+            }
+
+            if (unchecked((uint)dict.DictId) != frameDictId)
+            {
+                throw new ZstdException(
+                    $"{ZstdErrorMessages.DictionaryMismatch}: frame needs 0x{frameDictId:X8}, dictionary has 0x{dict.DictId:X8}.");
+            }
         }
 
         var fcsSize = fcsFlag switch
@@ -456,6 +561,35 @@ public static class ZstdDecompressor
             maxBlock = MaxBlockSizeLimit;
         }
 
+        // Dictionary history seeds the frame output before frameStart, so
+        // caps, checksums, and FCS accounting (all frameStart-relative)
+        // cover content only, while match offsets resolve into the combined
+        // [dictionary | content] history like stock (prefixStart model).
+        // Seeded bytes are removed again before returning.
+        var historyStart = output.Count;
+        ulong dictSize = 0;
+        var dictContentSize = 0;
+        if (dict is not null)
+        {
+            if ((ulong)dict.ContentSize > options.MaxWindowSize)
+            {
+                throw new ZstdException(
+                    $"{ZstdErrorMessages.DictionaryTooLarge}: {dict.ContentSize} content bytes with limit {options.MaxWindowSize}.");
+            }
+
+            dictContentSize = dict.ContentSize;
+            dictSize = (ulong)dictContentSize;
+            output.AddRange(dict.Content);
+            ctx.LlTable = dict.LlTable;
+            ctx.OfTable = dict.OfTable;
+            ctx.MlTable = dict.MlTable;
+            ctx.HuffmanTable = dict.HuffmanTable;
+            for (var i = 0; i < ZstdSeq.RepNum; i++)
+            {
+                ctx.RepeatOffsets[i] = dict.RepeatOffsets[i];
+            }
+        }
+
         var frameStart = output.Count;
         var frameCap = fcsKnown ? fcs : options.MaxFrameContentSize;
         var lastBlock = false;
@@ -512,7 +646,7 @@ public static class ZstdDecompressor
                         throw new ZstdException("Truncated compressed block.");
                     }
 
-                    DecompressBlock(src, pos, blockSize, output, frameStart, ctx, maxBlock);
+                    DecompressBlock(src, pos, blockSize, output, frameStart, historyStart, dictSize, ctx, maxBlock);
                     pos += blockSize;
                     break;
 
@@ -550,6 +684,11 @@ public static class ZstdDecompressor
             throw new ZstdException("zstd frame content size mismatch.");
         }
 
+        if (dictSize > 0)
+        {
+            output.RemoveRange(historyStart, dictContentSize);
+        }
+
         return pos;
     }
 
@@ -557,9 +696,15 @@ public static class ZstdDecompressor
     // Compressed blocks
     // ------------------------------------------------------------------
 
-    private static void DecompressBlock(
+    // Shared with ZstdDecompressionStream: decodes one compressed block into
+    // the frame's output list. historyStart is the output index where this
+    // frame's history begins (frameStart without a dictionary, the seeded
+    // dictionary insert position with one); match offsets may reach back to
+    // historyStart. The stream passes 0 for its per-frame list.
+    internal static void DecompressBlock(
         byte[] src, int offset, int length,
-        List<byte> output, int frameStart, FrameContext ctx, ulong maxBlock)
+        List<byte> output, int frameStart, int historyStart, ulong dictSize,
+        FrameContext ctx, ulong maxBlock)
     {
         var end = offset + length;
         var pos = offset;
@@ -811,7 +956,7 @@ public static class ZstdDecompressor
             pos = BuildSeqTableForMode(src, pos, end, mlMode, MaxMl, 9, MlBase, MlBits, MlDefaultTable,
                 ref ctx.MlTable);
 
-            DecodeSequences(src, pos, end, numSeq, literals, output, maxOut, frameStart, ctx);
+            DecodeSequences(src, pos, end, numSeq, literals, output, maxOut, frameStart, historyStart, dictSize, ctx);
         }
 
         // Trailing literals (or all of them when numSeq == 0).
@@ -931,7 +1076,8 @@ public static class ZstdDecompressor
 
     private static void DecodeSequences(
         byte[] src, int offset, int end, int numSeq,
-        byte[] literals, List<byte> output, int maxOut, int frameStart, FrameContext ctx)
+        byte[] literals, List<byte> output, int maxOut, int frameStart, int historyStart,
+        ulong dictSize, FrameContext ctx)
     {
         var bitD = BackwardBitReader.ForSequenceStream(src, offset, end - offset);
 
@@ -1009,7 +1155,7 @@ public static class ZstdDecompressor
                 ofState = of.NextState + (int)bitD.ReadBits(of.NumBits);
             }
 
-            ExecuteSequence(literals, ref litPos, output, maxOut, frameStart, ctx.WindowSize, litLen, matchLen, dist);
+            ExecuteSequence(literals, ref litPos, output, maxOut, frameStart, historyStart, dictSize, ctx.WindowSize, litLen, matchLen, dist);
         }
 
         if (!bitD.IsAtEnd)
@@ -1074,7 +1220,7 @@ public static class ZstdDecompressor
     private static void ExecuteSequence(
         // ReSharper disable once ParameterOnlyUsedForPreconditionCheck.Local
         byte[] literals, ref int litPos, List<byte> output, int maxOut, int frameStart,
-        ulong windowSize, uint litLen, uint matchLen, ulong dist)
+        int historyStart, ulong dictSize, ulong windowSize, uint litLen, uint matchLen, ulong dist)
     {
         if (litPos + (long)litLen > literals.Length)
         {
@@ -1094,7 +1240,22 @@ public static class ZstdDecompressor
         litPos += (int)litLen;
 
         var frameOut = (long)output.Count - frameStart;
-        if (dist == 0 || dist > (ulong)frameOut || dist > windowSize)
+        var histAvail = (long)output.Count - historyStart;
+        if (dist == 0 || dist > (ulong)histAvail)
+        {
+            throw new ZstdException("Invalid match offset.");
+        }
+
+        // Dictionary matches may reach past the window while the dictionary
+        // overlaps it (stock: the entire dictionary is valid while one byte
+        // of it is within the window); otherwise the window bound applies.
+        var limit = windowSize;
+        if (dictSize > 0 && (ulong)frameOut < windowSize)
+        {
+            limit = windowSize + dictSize;
+        }
+
+        if (dist > limit)
         {
             throw new ZstdException("Invalid match offset.");
         }
@@ -1110,7 +1271,8 @@ public static class ZstdDecompressor
     // Little-endian helpers
     // ------------------------------------------------------------------
 
-    private static uint ReadU32Le(byte[] buf, int offset)
+    // Shared with ZstdDecompressionStream (same assembly).
+    internal static uint ReadU32Le(byte[] buf, int offset)
     {
         return (uint)(buf[offset] | (buf[offset + 1] << 8) | (buf[offset + 2] << 16) | (buf[offset + 3] << 24));
     }
@@ -1120,7 +1282,8 @@ public static class ZstdDecompressor
         return buf[offset] | (buf[offset + 1] << 8);
     }
 
-    private static ulong ReadUIntLe(byte[] buf, int offset, int size)
+    // Shared with ZstdDecompressionStream (same assembly).
+    internal static ulong ReadUIntLe(byte[] buf, int offset, int size)
     {
         ulong value = 0;
         for (var i = 0; i < size; i++)

@@ -3,7 +3,9 @@ namespace ZARSharp.Zstd;
 /// <summary>
 /// Per-frame matchfinder state for multi-block frames: the full input plus
 /// the match tables that persist across the frame's 128 KiB blocks, exactly
-/// like <c>ZSTD_MatchState_t</c> (no dictionaries, single-shot, contiguous).
+/// like <c>ZSTD_MatchState_t</c> (single-shot, contiguous; with a dictionary
+/// the frame copy is [dictionary | content] and blocks start at the content
+/// offset, like a loaded prefix).
 /// Positions are absolute frame offsets; each block parses
 /// <c>[blockStart, blockEnd)</c> with its anchor reset to
 /// <c>blockStart</c> while matches may reference any earlier frame data

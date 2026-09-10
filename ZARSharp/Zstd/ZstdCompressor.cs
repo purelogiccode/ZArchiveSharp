@@ -53,6 +53,14 @@ public sealed class ZstdCompressionOptions
     /// <summary>Write a 4-byte XXH64 content checksum (default false, matching upstream).</summary>
     public bool ChecksumFlag { get; init; }
 
+    /// <summary>
+    /// Dictionary for dictionary-use compression (default null = plain
+    /// frames). When set, frames carry the dictionary's ID (unless it is 0)
+    /// and use its content as match history; the window is sized to cover
+    /// dictionary + content so every emitted match stays decodable.
+    /// </summary>
+    public ZstdDictionary? Dictionary { get; init; }
+
     /// <summary>Creates options for <paramref name="level"/> (1..22).</summary>
     public static ZstdCompressionOptions FromLevel(int level)
     {
@@ -113,7 +121,9 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     /// </summary>
     public int Compress(ReadOnlySpan<byte> source, Span<byte> destination)
     {
-        var frame = EncodeFrame(source, Options.Level, Options.ChecksumFlag);
+        var frame = Options.Dictionary is null
+            ? EncodeFrame(source, Options.Level, Options.ChecksumFlag)
+            : EncodeDictFrame(source, Options.Level, Options.ChecksumFlag, Options.Dictionary);
         if (frame.Length >= source.Length || frame.Length > destination.Length)
         {
             return -1;
@@ -152,7 +162,25 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     /// </summary>
     public byte[] CompressBlock(ReadOnlySpan<byte> source)
     {
-        return EncodeFrame(source, Options.Level, Options.ChecksumFlag);
+        return Options.Dictionary is null
+            ? EncodeFrame(source, Options.Level, Options.ChecksumFlag)
+            : EncodeDictFrame(source, Options.Level, Options.ChecksumFlag, Options.Dictionary);
+    }
+
+    /// <summary>
+    /// Compresses <paramref name="source"/> into a single self-contained zstd
+    /// frame using <paramref name="dict"/> (explicit dictionary wins over
+    /// <c>Options.Dictionary</c>; null falls back to it). Decodable by
+    /// <see cref="ZstdDecompressor"/> with the same dictionary and by stock
+    /// <c>zstd -D</c>; byte-identity with stock dict frames is a goal, not a
+    /// guarantee.
+    /// </summary>
+    public byte[] CompressBlock(ReadOnlySpan<byte> source, ZstdDictionary? dict)
+    {
+        var effective = dict ?? Options.Dictionary;
+        return effective is null
+            ? EncodeFrame(source, Options.Level, Options.ChecksumFlag)
+            : EncodeDictFrame(source, Options.Level, Options.ChecksumFlag, effective);
     }
 
     /// <summary>Thin wrapper over the existing decoder ( Phase-0 harness convenience).</summary>
@@ -188,7 +216,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
 
         var dst = new byte[GetCompressBound(src.Length)];
         var pos = WriteFrameHeader(dst, 0, src.Length, checksum, level);
-        return EncodeFrameCore(src, level, prm, blockMax, dst, pos, checksum);
+        return EncodeFrameCore(src, null, level, prm, blockMax, dst, pos, checksum);
     }
 
     /// <summary>
@@ -214,7 +242,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         var blockMax = (int)Math.Min(MaxBlockSize, 1L << prm.WindowLog);
         var dst = new byte[GetCompressBound(chunk.Length)];
         var pos = WriteStreamingFrameHeader(prm.WindowLog, dst, 0, checksum);
-        return EncodeFrameCore(chunk, level, prm, blockMax, dst, pos, checksum, streaming: true);
+        return EncodeFrameCore(chunk, null, level, prm, blockMax, dst, pos, checksum, streaming: true);
     }
 
     /// <summary>
@@ -233,21 +261,214 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         return 6;
     }
 
+    // Shared parameter row for dictionary frames: stock ZSTD_getCParams
+    // tiers on srcSize + dictSize (ZSTD_getCParamRowSize) and
+    // ZSTD_adjustCParams_internal downsizes from their sum, so the header
+    // window always covers dictionary + content and every emitted match
+    // stays inside the decoder's dictionary-active history.
+    private static (ZstdCompressionParameters Prm, int BlockMax) DictFrameParams(long total, int level)
+    {
+        var prm = ZstdCompressionParameters.ForSizeAndLevel(total, level).AdjustForSize(total);
+        var windowSize = Math.Max(1L, Math.Min(1L << prm.WindowLog, total));
+        return (prm, (int)Math.Min(MaxBlockSize, windowSize));
+    }
+
+    /// <summary>
+    /// Encodes <paramref name="src"/> as one dictionary frame: single-shot
+    /// header shape (content size, window descriptor, dictionary ID) with the
+    /// dictionary's content as match history. Single-segment is never used:
+    /// the window always covers dictionary + content (see
+    /// <see cref="DictFrameParams"/>), keeping the dictionary active for the
+    /// whole frame on decode.
+    /// </summary>
+    internal static byte[] EncodeDictFrame(ReadOnlySpan<byte> src, int level, bool checksum, ZstdDictionary dict)
+    {
+        ArgumentNullException.ThrowIfNull(dict);
+        var total = (long)dict.ContentSize + src.Length;
+        if (total > int.MaxValue)
+        {
+            throw new ZstdException("Dictionary and input are too large.");
+        }
+
+        var (prm, blockMax) = DictFrameParams(total, level);
+        var dst = new byte[GetCompressBound((int)total)];
+        var pos = WriteDictFrameHeader(prm.WindowLog, dst, 0, src.Length, checksum, unchecked((uint)dict.DictId));
+        return EncodeFrameCore(
+            src, dict.Content, level, prm, blockMax, dst, pos, checksum,
+            repSeed: (uint[])dict.RepeatOffsets.Clone());
+    }
+
+    /// <summary>
+    /// Dictionary-frame variant of <see cref="EncodeStreamingFrame"/>: the
+    /// unknown-size (no FCS) header plus dictionary ID. Empty input takes
+    /// the <see cref="EncodeDictFrame"/> path.
+    /// </summary>
+    internal static byte[] EncodeDictStreamingFrame(ReadOnlySpan<byte> chunk, int level, bool checksum, ZstdDictionary dict)
+    {
+        ArgumentNullException.ThrowIfNull(dict);
+        if (chunk.Length == 0)
+        {
+            return EncodeDictFrame(chunk, level, checksum, dict);
+        }
+
+        var total = (long)dict.ContentSize + chunk.Length;
+        if (total > int.MaxValue)
+        {
+            throw new ZstdException("Dictionary and input are too large.");
+        }
+
+        var (prm, blockMax) = DictFrameParams(total, level);
+        var dst = new byte[GetCompressBound((int)total)];
+        var pos = WriteDictStreamingFrameHeader(prm.WindowLog, dst, 0, checksum, unchecked((uint)dict.DictId));
+        return EncodeFrameCore(
+            chunk, dict.Content, level, prm, blockMax, dst, pos, checksum,
+            streaming: true, repSeed: (uint[])dict.RepeatOffsets.Clone());
+    }
+
+    /// <summary>
+    /// <c>ZSTD_writeFrameHeader</c> for dictionary frames: descriptor with
+    /// the dictionary-ID width of <paramref name="dictId"/>, checksum flag,
+    /// single-segment forced off, and the content-size width for
+    /// <paramref name="contentSize"/>; then the window byte, the ID field,
+    /// and the FCS field. Returns the header length.
+    /// </summary>
+    internal static int WriteDictFrameHeader(
+        int windowLog, byte[] dst, int offset, int contentSize, bool checksum, uint dictId)
+    {
+        var dictFlag = dictId == 0 ? 0 : dictId < 256 ? 1 : dictId < 65536 ? 2 : 3;
+        var content = (long)contentSize;
+        var fcsCode = (content >= 256 ? 1 : 0) + (content >= 65792 ? 1 : 0) + (content >= 0xFFFFFFFFL ? 1 : 0);
+        dst[offset] = (byte)(FrameMagic & 0xFF);
+        dst[offset + 1] = (byte)((FrameMagic >> 8) & 0xFF);
+        dst[offset + 2] = (byte)((FrameMagic >> 16) & 0xFF);
+        dst[offset + 3] = (byte)((FrameMagic >> 24) & 0xFF);
+        dst[offset + 4] = (byte)(dictFlag | (checksum ? 0x04 : 0) | (fcsCode << 6));
+        var pos = offset + 5;
+        dst[pos++] = (byte)((windowLog - 10) << 3);
+        switch (dictFlag)
+        {
+            case 1:
+                dst[pos++] = (byte)dictId;
+                break;
+            case 2:
+                dst[pos++] = (byte)dictId;
+                dst[pos++] = (byte)(dictId >> 8);
+                break;
+            case 3:
+                dst[pos++] = (byte)dictId;
+                dst[pos++] = (byte)(dictId >> 8);
+                dst[pos++] = (byte)(dictId >> 16);
+                dst[pos++] = (byte)(dictId >> 24);
+                break;
+            default:
+                break;
+        }
+
+        switch (fcsCode)
+        {
+            case 0:
+                break; // singleSegment is forced off, so no 1-byte FCS.
+            case 1:
+                var biased = content - 256;
+                dst[pos++] = (byte)biased;
+                dst[pos++] = (byte)(biased >> 8);
+                break;
+            case 2:
+                dst[pos++] = (byte)content;
+                dst[pos++] = (byte)(content >> 8);
+                dst[pos++] = (byte)(content >> 16);
+                dst[pos++] = (byte)(content >> 24);
+                break;
+            default:
+                dst[pos++] = (byte)content;
+                dst[pos++] = (byte)(content >> 8);
+                dst[pos++] = (byte)(content >> 16);
+                dst[pos++] = (byte)(content >> 24);
+                dst[pos++] = (byte)(content >> 32);
+                dst[pos++] = (byte)(content >> 40);
+                dst[pos++] = (byte)(content >> 48);
+                dst[pos++] = (byte)(content >> 56);
+                break;
+        }
+
+        return pos - offset;
+    }
+
+    /// <summary>
+    /// Unknown-size (no FCS) dictionary-frame header: descriptor, window
+    /// byte, dictionary-ID field. Returns the header length (6/7/8/10).
+    /// </summary>
+    internal static int WriteDictStreamingFrameHeader(
+        int windowLog, byte[] dst, int offset, bool checksum, uint dictId)
+    {
+        var dictFlag = dictId == 0 ? 0 : dictId < 256 ? 1 : dictId < 65536 ? 2 : 3;
+        dst[offset] = (byte)(FrameMagic & 0xFF);
+        dst[offset + 1] = (byte)((FrameMagic >> 8) & 0xFF);
+        dst[offset + 2] = (byte)((FrameMagic >> 16) & 0xFF);
+        dst[offset + 3] = (byte)((FrameMagic >> 24) & 0xFF);
+        dst[offset + 4] = (byte)(dictFlag | (checksum ? 0x04 : 0));
+        dst[offset + 5] = (byte)((windowLog - 10) << 3);
+        var pos = offset + 6;
+        switch (dictFlag)
+        {
+            case 1:
+                dst[pos++] = (byte)dictId;
+                break;
+            case 2:
+                dst[pos++] = (byte)dictId;
+                dst[pos++] = (byte)(dictId >> 8);
+                break;
+            case 3:
+                dst[pos++] = (byte)dictId;
+                dst[pos++] = (byte)(dictId >> 8);
+                dst[pos++] = (byte)(dictId >> 16);
+                dst[pos++] = (byte)(dictId >> 24);
+                break;
+            default:
+                break;
+        }
+
+        return pos - offset;
+    }
+
     private static byte[] EncodeFrameCore(
-        ReadOnlySpan<byte> src, int level, ZstdCompressionParameters prm, int blockMax,
-        byte[] dst, int pos, bool checksum, bool streaming = false)
+        ReadOnlySpan<byte> content, byte[]? prefix, int level, ZstdCompressionParameters prm, int blockMax,
+        byte[] dst, int pos, bool checksum, bool streaming = false, uint[]? repSeed = null)
     {
 
         // Persistent match state (M2) for every strategy: the state holds the
         // frame copy the engines index absolutely (copied only when
         // stateful). Single-shot inputs below two blocks never touch it
-        // beyond the first block, so behavior there is unchanged.
+        // beyond the first block, so behavior there is unchanged. With a
+        // dictionary prefix, the frame copy is [dictionary | content] and
+        // blocks start at the content offset; engines with a NextToUpdate
+        // cursor (lazy, optimal, BT) insert the prefix range on their own,
+        // while fast/double-fast (inline inserts from the block start) are
+        // seeded explicitly below.
         var stateful = prm.Strategy
             is ZstdStrategy.Fast or ZstdStrategy.DoubleFast
             or ZstdStrategy.Greedy or ZstdStrategy.Lazy or ZstdStrategy.Lazy2 or ZstdStrategy.BtLazy2
             or ZstdStrategy.BtOpt or ZstdStrategy.BtUltra or ZstdStrategy.BtUltra2;
-        var frame = stateful ? src.ToArray() : [];
+        var contentOffset = prefix?.Length ?? 0;
+        var frame = stateful ? new byte[contentOffset + content.Length] : [];
+        if (stateful)
+        {
+            prefix?.CopyTo(frame, 0);
+            content.CopyTo(frame.AsSpan(contentOffset));
+        }
+
         ZstdFrameState? state = stateful ? new ZstdFrameState(frame, level, prm) : null;
+        if (state is not null && contentOffset > 0)
+        {
+            if (prm.Strategy == ZstdStrategy.Fast)
+            {
+                ZstdFast.SeedDictionary(state, contentOffset);
+            }
+            else if (prm.Strategy == ZstdStrategy.DoubleFast)
+            {
+                ZstdDoubleFast.SeedDictionary(state, contentOffset);
+            }
+        }
 
         // Post-block splitter for optimal-parser strategies with a big
         // window (M4: ZSTD_resolveBlockSplitterMode).
@@ -259,10 +480,12 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         // only for emitted compressed blocks (upstream runs
         // ZSTD_blockState_confirmRepcodesAndEntropyTables only for those).
         // Empty input still emits one empty last block — a frame with zero
-        // blocks would not decode.
-        var rep = ZstdSeq.FreshRepeatOffsets();
-        var remaining = src.Length;
-        var inPos = 0;
+        // blocks would not decode. Dictionary frames start from the
+        // dictionary's repeat offsets (stock ZSTD_loadCEntropy behavior), so
+        // encoder and decoder resolve repcodes identically.
+        var rep = repSeed ?? ZstdSeq.FreshRepeatOffsets();
+        var remaining = content.Length;
+        var inPos = contentOffset;
         var isFirstBlock = true;
         var trailingEmptyBlock = false;
         // Running consumed-minus-produced balance: splitting past the first
@@ -270,13 +493,13 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         long savings = 0;
         var frameSpan = state is not null
             ? new ReadOnlySpan<byte>(frame)
-            : src;
+            : content;
         do
         {
             var chunk = ZstdBlockSplitter.OptimalBlockSize(
                 frameSpan, inPos, remaining, blockMax, prm.Strategy, ref savings);
             var last = chunk == remaining;
-            if (streaming && last && src.Length > 0 && src.Length % MaxBlockSize == 0)
+            if (streaming && last && content.Length > 0 && content.Length % MaxBlockSize == 0)
             {
                 // Streaming end-of-frame rule (zstd_compress.c:6208): full
                 // 128 KiB inBuff units are always emitted non-last during
@@ -291,7 +514,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             }
             var chunkBytes = state is not null
                 ? new ReadOnlySpan<byte>(frame, inPos, chunk)
-                : src.Slice(inPos, chunk);
+                : content.Slice(inPos - contentOffset, chunk);
             int written;
             if (splitBlocks)
             {
@@ -322,7 +545,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
 
         if (checksum)
         {
-            var csum = (uint)ZstdXxh64.Hash64(src.ToArray(), 0, src.Length);
+            var csum = (uint)ZstdXxh64.Hash64(content.ToArray(), 0, content.Length);
             if (pos + 4 > dst.Length)
             {
                 throw new ZstdException("Frame destination too small.");

@@ -48,4 +48,16 @@ internal static class BenchmarkCorpus
         CycleTextAt(8192, 17).CopyTo(buf, 24576);
         return buf;
     }
+
+    /// <summary>2 KiB of phrase-cycle text (dict-benchmark small-file corpus).</summary>
+    public static byte[] SmallText2k()
+    {
+        return CycleText(2048);
+    }
+
+    /// <summary>8 KiB of phrase-cycle text (dict-benchmark small-file corpus).</summary>
+    public static byte[] SmallText8k()
+    {
+        return CycleText(8192);
+    }
 }

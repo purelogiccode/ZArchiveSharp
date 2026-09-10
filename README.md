@@ -10,6 +10,9 @@
 
 - **Byte-identical output** to the original C++ `zarchive.exe` and libzstd 1.5.7
 - **Full RFC 8878 zstd encoder & decoder** (levels 1–22, all 9 strategies) — no native dependencies
+- **Streaming API** — `ZstdCompressionStream` / `ZstdDecompressionStream` (chunk-size free, 10 MiB round-trips tested)
+- **Dictionary use** — compress/decompress with supplied dicts (formatted + raw prefix); `ZstdDictionary`, per-file 4× smaller small entries (training out of scope)
+- **At native speed on the hot path** — L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× (measured; see [Benchmarks](docs/benchmarks.md))
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
 - **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior
@@ -66,6 +69,24 @@ byte[] frame = compressor.CompressBlock(data); // single-shot, any size
 byte[] back = ZstdCompressor.DecompressFrame(frame, maxSize: data.Length);
 ```
 
+### Streams & Dictionaries
+
+```csharp
+using ZARSharp.Zstd;
+
+// Stream a file through zstd (any chunk size; flushed, never closed)
+using var input = File.OpenRead("big.bin");
+using var output = File.Create("big.zst");
+using var enc = new ZstdCompressionStream(output, level: 6);
+input.CopyTo(enc);
+
+// Compress small entries with a dictionary (4× smaller here)
+var dict = ZstdDictionary.FromRawPrefix(prefixBytes);
+var opts = new ZstdCompressionOptions { Level = 6, Dictionary = dict };
+byte[] small = new ZstdCompressor(opts).CompressBlock(entry);
+byte[] orig = ZstdDecompressor.Decompress(small, dict);
+```
+
 ### CLI Tool
 
 ```bash
@@ -80,6 +101,14 @@ zar <archive.zar> [output_dir]
 
 # Convert XISO to .zar
 zar --iso <game.iso> [output.zar]
+
+# Raw zstd files (stdin/stdout by default, pipes compose)
+zar zstd --compress big.bin big.zst
+zar zstd --decompress big.zst big.bin
+zar zstd -c big.bin | zar zstd -d > big.bin
+
+# Archives with dictionaries + checksums
+zar --dict words.dict --check <directory> [output.zar]
 ```
 
 ## Projects
@@ -89,7 +118,7 @@ zar --iso <game.iso> [output.zar]
 | **ZARSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZARSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZARSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZARSharp.Tests** | Comprehensive test suite (3800+ tests, parity validation) |
+| **ZARSharp.Tests** | Comprehensive test suite (4023 tests, parity validation) |
 
 ## Documentation
 
@@ -113,7 +142,7 @@ Two known boundaries:
 
 ## Limits
 
-- No zstd dictionaries, legacy frames, or multithreading inside one frame
+- No dictionary *training* (use only), no legacy frames, no multithreading inside one frame
 - Decoder caps (configurable): 512 MiB window, 512 MiB frame content
 - Corrupt archives throw documented exceptions; truncations always fail the open
 

@@ -12,9 +12,43 @@ dotnet tool install -g ZARSharp.Cli
 
 ```
 zar [options] [input] [output]
+zar zstd -c|-d [options] [input] [output]
 ```
 
 ## Commands
+
+### Compress/Decompress Single zstd Streams
+
+```bash
+zar zstd -c [input] [output]
+zar zstd -d [input] [output]
+```
+
+Compresses or decompresses a single zstd stream (not a `.zar` archive).
+Omitted input reads stdin, omitted output writes stdout, so pipes work:
+
+```bash
+zar zstd -c big.bin | zar zstd -d > big.back
+zar zstd -c big.bin compressed.zst
+zar zstd -d compressed.zst restored.bin
+```
+
+With `--dict`, both sides use the dictionary (zstd `-D` semantics — the
+dictionary file is never stored, keep it alongside):
+
+```bash
+zar zstd -c --dict words.dict small.txt small.zst
+zar zstd -d --dict words.dict small.zst restored.txt
+```
+
+Subcommand options: `-c/--compress`, `-d/--decompress` (exactly one is
+required), `-l/--level <N>` (compress only), `--dict <file>`,
+`--check/--no-check` (compress only, last wins), `--stdout` (explicit
+stdout; an error together with an output path), `-q/--quiet`, `-h/--help`.
+Inside `zar zstd`, `-c` means `--compress` (not `--stdout`).
+
+Note: a pack/extract path literally named `zstd` must be spelled `./zstd`
+so it is not taken for the subcommand.
 
 ### Pack a Directory
 
@@ -22,7 +56,7 @@ zar [options] [input] [output]
 zar <directory> [output.zar]
 ```
 
-Packs the specified directory into a `.zar` archive. If no output path is specified, creates `<directory_name>.zar` in the same location.
+Packs the specified directory into a `.zar` archive. If no output path is specified, creates `<directory_name>.zar` in the same location. `--dict` packs with dictionary frames (extract needs the same `--dict`); `--no-compress` stores raw and ignores `--dict`.
 
 **Examples:**
 
@@ -100,7 +134,15 @@ zar -b -j 8 C:\games C:\archives
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--level <N>` | `-l` | Compression level (1–22) | 6 |
-| `--no-compress` | | Store blocks without compression | false |
+| `--dict <file>` | | Dictionary file (pack/`zstd`; never stored, keep alongside) | none |
+| `--check` / `--no-check` | | Write / omit content checksums (pack/`zstd` compress; last wins) | off |
+| `--no-compress` | | Store blocks without compression (ignores `--dict`) | false |
+
+### Input / Output
+
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--stdout` | `-c` | Stream to stdout — only with `zar zstd` (its default output); inside `zar zstd`, `-c` means `--compress` | off |
 
 ### Output
 
@@ -142,6 +184,16 @@ The CLI returns the same exit codes as `zarchive.exe` for compatibility:
 | `-14` | `ArchiveEntryFailed` | Pack failed to create an archive entry (duplicate or bad path) |
 | `-15` | `InputNotReadable` | Pack failed to open an input file |
 | `-16` | `PackOutputFailed` | Pack failed on output I/O |
+| `130` | — | Interrupted by Ctrl+C (shell SIGINT convention, not a pack/extract code) |
+
+`zar zstd` reuses this table with no new codes: compress failures report
+pack codes (`-13` failure, `-15` unreadable input, `-16` uncreatable
+output), decompress failures report extract codes (`-12` failure, `-10`
+missing input). Refusing to overwrite an existing output is `-11` on both
+sides; a missing/unreadable `--dict` is `-1`. Errors go to stderr; the
+input → output line goes to stdout, except to stderr when stdout carries
+binary data. A file output created by `zar zstd` is deleted when the run
+fails, like incomplete pack outputs.
 
 ---
 

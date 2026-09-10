@@ -124,6 +124,7 @@ Opens an archive. Returns `null` on invalid archives (never throws).
 | Property | Type | Description |
 |----------|------|-------------|
 | `InvalidNode` | `uint` | Constant `0xFFFFFFFF` for path-not-found |
+| `Dictionary` | `ZstdDictionary?` | Dictionary for dictionary-packed archives (null = plain; inert for plain blocks; dictionary blocks read without it fail, never mis-decode) |
 
 ### Methods
 
@@ -282,6 +283,22 @@ Extracts an archive to a directory.
 
 ---
 
+## ZarPipelineOptions (ZARSharp.Pipeline)
+
+Options for `ZarPipeline` pack/extract work (also honored by the `zar`
+CLI flags `--level`, `--check`, `--dict`).
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `Level` | `int` | `6` | zstd level 1–22 for packing |
+| `Checksum` | `bool` | `false` | Write per-block content checksums |
+| `Dictionary` | `ZstdDictionary?` | `null` | Pack dictionary frames / extract them (never stored in the archive; inert for plain frames; ignored when `Compressor` is set) |
+| `CollisionPolicy` | `ZarCollisionPolicy` | `Fail` | What to do when the output path already exists |
+| `MaxDegreeOfParallelism` | `int` | `4` | Batch parallelism |
+| `DeterministicOrder` | `bool` | `true` | Sort entries ordinally before packing |
+
+---
+
 ## IZarBlockCompressor
 
 Interface for custom block compressors.
@@ -315,6 +332,7 @@ Options for the zstd compressor.
 |----------|------|---------|-------------|
 | `Level` | `int` | `6` | Compression level (1–22) |
 | `ChecksumFlag` | `bool` | `false` | Write 4-byte XXH64 content checksum |
+| `Dictionary` | `ZstdDictionary?` | `null` | Dictionary history (`null` = plain frames) |
 
 ### Static Methods
 
@@ -381,6 +399,134 @@ Decompresses a zstd frame.
 - `maxSize` — Maximum allowed decompressed size
 
 **Returns:** Decompressed data
+
+---
+
+## ZstdCompressionStream (ZARSharp.Zstd)
+
+Write-only zstd compression stream. Buffers everything written and emits one
+logical frame with an unknown-size header on `Dispose()` — byte-identical to
+encoding the concatenated input in one shot. `Flush()` emits the 6-byte frame
+header once payload exists. Not seekable; async is thin-over-sync.
+
+```csharp
+public ZstdCompressionStream(Stream destination, int level = 6, bool checksum = false, bool leaveOpen = false)
+public ZstdCompressionStream(Stream destination, ZstdCompressionOptions options, bool leaveOpen = false)
+```
+
+**Exceptions:**
+- `ArgumentNullException` — Destination or options is null
+- `ArgumentOutOfRangeException` — Level outside 1–22
+- `ObjectDisposedException` — Write after dispose
+- `NotSupportedException` — Read/Seek/SetLength/Length/Position
+
+### Example
+
+```csharp
+using var dest = File.Create("data.zst");
+using (var enc = new ZstdCompressionStream(dest, level: 6, checksum: true))
+{
+    await source.CopyToAsync(enc);
+} // frame finalized here
+
+---
+
+## ZstdDecompressionStream (ZARSharp.Zstd)
+
+Read-only zstd decompression stream over concatenated frames (skippable frames
+skipped). Decodes incrementally through the shared block path with
+`ZstdDecoderOptions` caps enforced per frame. Not seekable; async is
+thin-over-sync.
+
+```csharp
+public ZstdDecompressionStream(Stream compressed, bool leaveOpen = false)
+public ZstdDecompressionStream(Stream compressed, ZstdDecoderOptions options, bool leaveOpen = false)
+```
+
+**Exceptions:**
+- `ArgumentNullException` — Source or options is null
+- `ZstdException` — Corrupt/truncated input, cap exceeded, checksum mismatch
+- `NotSupportedException` — Write/Seek/SetLength/Length/Position
+
+### Example
+
+```csharp
+using var src = File.OpenRead("data.zst");
+using var dec = new ZstdDecompressionStream(src);
+using var outMs = new MemoryStream();
+await dec.CopyToAsync(outMs);
+```
+
+---
+
+## ZstdDictionary (ZARSharp.Zstd)
+
+Immutable, thread-safe reusable zstd dictionary (use only; training is out
+of scope). A supplied dictionary is always active per frame — history plus,
+for formatted dictionaries, initial tables; frames carrying a dictionary ID
+require it to match `DictId`.
+
+```csharp
+public static ZstdDictionary FromBytes(byte[] dict) // auto-detect formatted vs raw
+public static ZstdDictionary FromRawPrefix(ReadOnlySpan<byte> prefix, uint dictId = 0)
+```
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `DictId` | `int` | Dictionary ID (0 = no ID field; compared as a 32-bit pattern) |
+| `IsFormatted` | `bool` | True when loaded from magic-headed bytes |
+| `ContentSize` | `int` | History content size in bytes |
+
+Dictionary-aware entry points (all additive; `null` = today's behavior):
+
+```csharp
+// ZstdCompressionOptions
+public ZstdDictionary? Dictionary { get; init; }
+
+// ZstdCompressor
+public byte[] CompressBlock(ReadOnlySpan<byte> source, ZstdDictionary? dict);
+
+// ZstdDecompressor
+public static byte[] Decompress(byte[] src, ZstdDictionary? dict);
+public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict);
+public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict, ZstdDecoderOptions options);
+
+// ZstdCompressionStream: options may carry Dictionary (header deferred to Dispose)
+// ZstdDecompressionStream
+public ZstdDecompressionStream(Stream compressed, ZstdDecoderOptions options, ZstdDictionary? dict, bool leaveOpen = false);
+```
+
+### Example
+
+```csharp
+var dict = ZstdDictionary.FromBytes(File.ReadAllBytes("words.dict"));
+var options = new ZstdCompressionOptions { Level = 6, Dictionary = dict };
+byte[] frame = new ZstdCompressor(options).CompressBlock(data);
+byte[] back = ZstdDecompressor.Decompress(frame, dict);
+```
+
+---
+
+## ZstdCli (ZARSharp.Pipeline)
+
+Callable form of the `zar zstd` contract (single zstd streams, not
+archives). Failures map onto the `ZarchiveCli` exit-code table (no new
+codes); cancellation propagates `OperationCanceledException`.
+
+```csharp
+public static bool TryParse(string[] args, out ZstdJob? job, out string? error,
+    int defaultLevel = 6, string? defaultDictPath = null,
+    bool defaultChecksum = false, bool defaultQuiet = false, bool defaultStdout = false);
+public static Task<int> RunAsync(ZstdJob job, Stream stdin, Stream stdout,
+    Action<string>? log, Action<string> error, CancellationToken ct = default);
+```
+
+`TryParse` takes the tokens after `zstd` (`-c/--compress`, `-d/--decompress`
+with exactly one required, `-l/--level`, `--dict`, `--stdout`, `--check` /
+`--no-check`, `-q/--quiet`, `-h/--help`) and never throws. `RunAsync` opens
+file paths (null = the given stdin/stdout streams, flushed but never
+closed), deletes a created file output when the run fails, and sends
+failures to `error`.
 
 ---
 

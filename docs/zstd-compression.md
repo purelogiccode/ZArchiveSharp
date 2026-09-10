@@ -144,7 +144,7 @@ Frames ZARSharp produces decode with:
 - The official `zstd` CLI
 - Any RFC 8878-conformant decoder
 
-And ZARSharp decodes anything standard tools produce (levels 1–22, no dictionaries, no legacy frames).
+And ZARSharp decodes anything standard tools produce (levels 1–22, with or without dictionaries, no legacy frames).
 
 ### Verification
 
@@ -158,11 +158,25 @@ The test suite proves byte-identity:
 
 1. **zarchive.exe bundles libzstd 1.5.2** — its level 6 differs from 1.5.7 on some multi-transition heterogeneous 64 KiB blocks. ZARSharp follows the frozen 1.5.7 reference. Homogeneous blocks and single-transition blocks are identical; extract interops both ways regardless.
 
-2. **No dictionaries** — zstd dictionary training/usage is out of scope.
+2. **Dictionary use only, no training** — `ZstdDictionary.FromBytes`
+   (auto-detects formatted vs raw prefix) and `FromRawPrefix` supply history
+   (+ initial tables for formatted dicts) to the compressor
+   (`ZstdCompressionOptions.Dictionary`), the decompressor
+   (`ZstdDecompressor.Decompress(..., dict)`), and both stream wrappers.
+   A supplied dictionary is always active per frame; frames carrying a
+   dictionary ID require an ID match. Dictionary content counts toward
+   `ZstdDecoderOptions.MaxWindowSize`. Training (`COVER`/`DictBuilder`),
+   LDM, and multithreading stay out. Dict frames decode in stock `zstd -D`
+   (verified against libzstd 1.5.7 goldens); byte-identity with `zstd -D`
+   output is a goal, not a guarantee.
 
 3. **No multi-threaded compression** (`zstdmt`) inside one frame — use the pipeline's batch parallelism instead (archives/frames compress independently).
 
-4. **No streaming encode API** — compression is single-shot per frame/block. The seekable writer builds on this with independent frames.
+4. **Stream wrappers buffer, then emit** — `ZstdCompressionStream` buffers input
+   and emits one unknown-size-header frame at `Dispose()` (byte-identical to a
+   single-shot encode of the same bytes); `Flush()` emits the 6-byte header
+   early. `ZstdDecompressionStream` decodes incrementally with the
+   `ZstdDecoderOptions` caps enforced. Neither type seeks.
 
 ## Performance Notes
 

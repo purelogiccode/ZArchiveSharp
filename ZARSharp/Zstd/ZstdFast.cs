@@ -93,6 +93,28 @@ internal static class ZstdFast
             store, repeatOffsets, state.Prm);
     }
 
+    /// <summary>
+    /// Inserts dictionary prefix positions <c>[0, prefixLen)</c> into the
+    /// frame's persistent hash table, mirroring the steady-state inline
+    /// inserts, so block parsing can match into dictionary history. Lazy,
+    /// optimal-parser, and BT engines need no equivalent: their
+    /// <c>NextToUpdate</c> cursor inserts the prefix range on the first
+    /// block automatically.
+    /// </summary>
+    internal static void SeedDictionary(ZstdFrameState state, int prefixLen)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentOutOfRangeException.ThrowIfNegative(prefixLen);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(prefixLen, state.Frame.Length);
+        var table = state.FastHashTable();
+        var frame = state.Frame;
+        var prm = state.Prm;
+        for (var p = 0; p < prefixLen; p++)
+        {
+            table[ZstdMatchFinder.HashPtr(frame, p, prm.HashLog, prm.MinMatch)] = (uint)p + 1;
+        }
+    }
+
     private static int FindMatchesCore(
         ReadOnlySpan<byte> source, int blockStart, int blockEnd, uint[] hashTable,
         ZstdSequenceStore store, uint[] repeatOffsets, ZstdCompressionParameters prm)

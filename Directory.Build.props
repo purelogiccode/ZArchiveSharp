@@ -1,10 +1,23 @@
-<Project>
+<Project TreatAsLocalProperty="MinVerSkip">
+
+  <PropertyGroup>
+    <!-- Our projects always compute their own MinVer version, even when built
+         as a ProjectReference descendant of another repo (ZARSharp.Cli passes
+         MinVerSkip=true to the cross-repo XISOSharp reference, which would
+         otherwise flow transitively back into ZARSharp and skip OUR version
+         too, falling back to 1.0.0). Localizing the property lets this
+         explicit false win over the incoming global; XISOSharp (which does
+         not localize it) still honors the skip. -->
+    <MinVerSkip>false</MinVerSkip>
+  </PropertyGroup>
 
   <PropertyGroup>
     <LangVersion>14</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Authors>purelogiccode</Authors>
+    <Copyright>Copyright (c) purelogiccode</Copyright>
     <PackageProjectUrl>https://github.com/purelogiccode/ZARSharp</PackageProjectUrl>
     <RepositoryUrl>https://github.com/purelogiccode/ZARSharp.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

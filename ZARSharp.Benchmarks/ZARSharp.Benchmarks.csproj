@@ -11,6 +11,10 @@
 
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
+        <!-- Oracle only, never shipped: used solely by VsZstdSharpBenchmarks as a
+             third-party baseline. Pinned to the version in the local NuGet cache
+             so clean clones restore offline. Never add to ZARSharp.csproj. -->
+        <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
         <PackageReference Include="Meziantou.Analyzer" Version="3.0.234">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

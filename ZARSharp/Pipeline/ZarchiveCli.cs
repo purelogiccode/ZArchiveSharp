@@ -256,6 +256,7 @@ public static class ZarchiveCli
     {
         Level = options.Level,
         Checksum = options.Checksum,
+        Dictionary = options.Dictionary,
         Compressor = options.Compressor,
         DeterministicOrder = options.DeterministicOrder,
         CollisionPolicy = options.CollisionPolicy,

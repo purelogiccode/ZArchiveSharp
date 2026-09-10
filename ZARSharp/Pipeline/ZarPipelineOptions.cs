@@ -16,6 +16,20 @@ public sealed class ZarPipelineOptions
     public bool Checksum { get; set; }
 
     /// <summary>
+    /// Dictionary for pack block compression and archive extraction (default
+    /// null = plain frames, current behavior). When set, pack writes
+    /// dictionary frames (blocks where the dictionary pays; the rest stay
+    /// raw) and extract requires the same dictionary for those blocks — like
+    /// <c>zstd -D</c>, the dictionary file itself is never stored in the
+    /// archive, so keep it alongside. A supplied dictionary is inert for
+    /// plain frames, so extracting a plain archive with a dictionary set
+    /// yields identical bytes. Ignored when <see cref="Compressor"/> is
+    /// explicitly set (explicit compressor wins, as with
+    /// <see cref="Level"/>).
+    /// </summary>
+    public ZstdDictionary? Dictionary { get; set; }
+
+    /// <summary>
     /// Explicit block compressor, or null to build one from
     /// <see cref="Level"/>/<see cref="Checksum"/>. Pass
     /// <c>new ZarRawCompressor()</c> to store blocks raw.
@@ -57,7 +71,7 @@ public sealed class ZarPipelineOptions
     public IReadOnlyList<string>? NameOrder { get; set; }
 
     internal IZarBlockCompressor ResolveCompressor() =>
-        Compressor ?? new ZstdCompressor(new ZstdCompressionOptions { Level = Level, ChecksumFlag = Checksum });
+        Compressor ?? new ZstdCompressor(new ZstdCompressionOptions { Level = Level, ChecksumFlag = Checksum, Dictionary = Dictionary });
 
     internal int ClampedWorkers(int items) =>
         Math.Min(Math.Max(1, MaxDegreeOfParallelism), Math.Max(1, items));

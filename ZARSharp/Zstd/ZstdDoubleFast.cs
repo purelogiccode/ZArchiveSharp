@@ -99,6 +99,28 @@ internal static class ZstdDoubleFast
             store, repeatOffsets, state.Prm);
     }
 
+    /// <summary>
+    /// Inserts dictionary prefix positions <c>[0, prefixLen)</c> into the
+    /// frame's persistent long/small tables (long hashed with
+    /// <c>mls == 8</c>, small with the row minimum match, mirroring the
+    /// steady-state inserts). See
+    /// <see cref="ZstdFast.SeedDictionary(ZstdFrameState, int)"/>.
+    /// </summary>
+    internal static void SeedDictionary(ZstdFrameState state, int prefixLen)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentOutOfRangeException.ThrowIfNegative(prefixLen);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(prefixLen, state.Frame.Length);
+        var (longTable, smallTable) = state.DoubleFastTables();
+        var frame = state.Frame;
+        var prm = state.Prm;
+        for (var p = 0; p < prefixLen; p++)
+        {
+            longTable[ZstdMatchFinder.HashPtr(frame, p, prm.HashLog, 8)] = (uint)p + 1;
+            smallTable[ZstdMatchFinder.HashPtr(frame, p, prm.ChainLog, prm.MinMatch)] = (uint)p + 1;
+        }
+    }
+
     private static int FindMatchesCore(
         ReadOnlySpan<byte> source, int blockStart, int blockEnd,
         uint[] hashLong, uint[] hashSmall,
