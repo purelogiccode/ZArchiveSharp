@@ -1,0 +1,22 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>14</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/purelogiccode/XISOSharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/purelogiccode/XISOSharp.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>master</RepositoryBranch>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- No git remote yet: silence Microsoft.Build.Tasks.Git 'has no remote'
+         and empty-SourceLink warnings. Delete both once a GitHub remote is
+         configured so SourceLink embeds repository URLs again. -->
+    <EnableSourceControlManagerQueries>false</EnableSourceControlManagerQueries>
+    <EnableSourceLink>false</EnableSourceLink>
+  </PropertyGroup>
+
+</Project>

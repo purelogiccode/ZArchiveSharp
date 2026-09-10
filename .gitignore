@@ -1,0 +1,11 @@
+bin/
+obj/
+BenchmarkDotNet.Artifacts/
+TestResults/
+.vs/
+.idea/
+*.user
+*.DotSettings.user
+References/
+.github/workflows/
+PortPlan.md
