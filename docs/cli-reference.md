@@ -5,7 +5,7 @@ The `zar` command-line tool provides pack, extract, convert, and batch operation
 ## Installation
 
 ```bash
-dotnet tool install -g ZARSharp.Cli
+dotnet tool install -g ZArchiveSharp.Cli
 ```
 
 ## Usage

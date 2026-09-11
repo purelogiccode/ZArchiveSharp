@@ -1,6 +1,6 @@
-# ZARSharp Documentation
+# ZArchiveSharp Documentation
 
-Welcome to the ZARSharp documentation. This guide covers everything you need to know about using ZARSharp for archive creation, zstd compression, and batch processing.
+Welcome to the ZArchiveSharp documentation. This guide covers everything you need to know about using ZArchiveSharp for archive creation, zstd compression, and batch processing.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Welcome to the ZARSharp documentation. This guide covers everything you need to 
 
 ## Overview
 
-ZARSharp is a pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library. It provides:
+ZArchiveSharp is a pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library. It provides:
 
 1. **Archive format** — Directory-tree archives with per-block zstd compression (64 KiB blocks)
 2. **zstd codec** — Complete RFC 8878 encoder and decoder (levels 1–22, all 9 strategies)
@@ -46,7 +46,7 @@ ZARSharp is a pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbra
 
 ### Byte-Identity Guarantee
 
-ZARSharp produces **byte-identical output** to:
+ZArchiveSharp produces **byte-identical output** to:
 - The original C++ `zarchive.exe` (ZArchive 0.1.2)
 - libzstd 1.5.7 (frozen reference)
 - zeekstd (seekable format)
@@ -59,7 +59,7 @@ This is verified by over 3800 tests including parity validation against native t
 
 | Topic | Description |
 |-------|-------------|
-| [Installation](getting-started.md#installation) | How to install ZARSharp |
+| [Installation](getting-started.md#installation) | How to install ZArchiveSharp |
 | [Pack a Directory](getting-started.md#packing-a-directory) | Create your first archive |
 | [Extract an Archive](getting-started.md#extracting-an-archive) | Extract archive contents |
 | [CLI Usage](cli-reference.md#usage) | Command-line tool reference |

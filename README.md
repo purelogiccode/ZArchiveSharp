@@ -1,7 +1,7 @@
-# ZARSharp
+# ZArchiveSharp
 
-[![CI](https://github.com/purelogiccode/ZARSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/purelogiccode/ZARSharp/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/v/ZARSharp.svg)](https://www.nuget.org/packages/ZARSharp)
+[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library** — directory-tree archives with per-block zstd compression. Zero native dependencies, BCL only; trimmable and AOT-compatible (`net8.0` / `net9.0` / `net10.0`).
@@ -25,7 +25,7 @@
 ### Install
 
 ```bash
-dotnet add package ZARSharp
+dotnet add package ZArchiveSharp
 ```
 
 ### Pack & Extract
@@ -105,7 +105,7 @@ Full signatures: [API Reference](docs/api-reference.md).
 
 ```bash
 # Install as a global tool
-dotnet tool install -g ZARSharp.Cli
+dotnet tool install -g ZArchiveSharp.Cli
 
 # Pack a directory
 zar <directory> [output.zar]
@@ -181,4 +181,4 @@ MIT — see [LICENSE](LICENSE).
 
 ## Contributing
 
-Contributions are welcome! Please see the [issue tracker](https://github.com/purelogiccode/ZARSharp/issues) for known issues and feature requests.
+Contributions are welcome! Please see the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues) for known issues and feature requests.

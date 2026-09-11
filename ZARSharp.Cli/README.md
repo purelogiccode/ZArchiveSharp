@@ -1,13 +1,13 @@
-# ZARSharp.Cli
+# ZArchiveSharp.Cli
 
-Command-line tool for creating and extracting ZArchive (`.zar`) files using [ZARSharp](https://www.nuget.org/packages/ZARSharp) — pack a directory, extract an archive, convert Xbox ISOs (XISO), or batch-process a folder in parallel.
+Command-line tool for creating and extracting ZArchive (`.zar`) files using [ZArchiveSharp](https://www.nuget.org/packages/ZArchiveSharp) — pack a directory, extract an archive, convert Xbox ISOs (XISO), or batch-process a folder in parallel.
 
 A pure-C# port of the `zarchive.exe` contract (ZArchive 0.1.2): same arguments, defaults, stdout chatter and exit codes, with three documented deviations where native behavior is a bug.
 
 ## Install
 
 ```bash
-dotnet tool install -g ZARSharp.Cli
+dotnet tool install -g ZArchiveSharp.Cli
 ```
 
 ## Usage
@@ -20,9 +20,20 @@ zar [options] [input] [output]
 |---------|-------------|
 | `zar <directory> [output.zar]` | Pack a directory to `.zar` |
 | `zar <archive.zar> [output_dir]` | Extract `.zar` to a directory |
-| `zar --iso <game.iso> [output.zar]` | Convert XISO to `.zar` |
+| `zar --iso <game.iso> [output.zar]` | Convert XISO to `.zar` (Redump-aware) |
+| `zar zstd <in> [out]` | Raw zstd compress/decompress (`--dict`, `--stdout`, `--check`) |
+| `zar seekable compress [in] [out]` | Seekable-zstd compress (`-l`, `-s`, `--checksum`, `--seek-table-file`) |
+| `zar seekable decompress [in] [out]` | Seekable-zstd decompress (`--from/--to`, `--from-frame/--to-frame`) |
+| `zar seekable list <file>` | Frame/seek-table detail tables |
 
 Outputs default to `<stem>.zar` / `<stem>_extracted` next to the input, like `zarchive.exe`.
+
+Batch mode (`-b/--batch`) processes every file under the input directory:
+archives (`.zip/.rar/.7z/.tar/.gz` via an installed 7z, `--seven-zip` override)
+→ ISO/dir → `.zar`; `--mode auto/extract-archive/extract-iso/compress`
+selects the legs, `--keep-originals`/`--delete-source` (default keep) controls
+cleanup, and `--policy` (fail/skip/overwrite/auto-rename) applies to batch
+collisions only.
 
 ## Options
 
@@ -83,7 +94,7 @@ Identical to `zarchive.exe` (`-2` and `-5`..`-9` are unused upstream too):
 
 ## Documentation
 
-Full documentation lives in the [repository wiki](https://github.com/purelogiccode/ZARSharp/wiki) ([docs/](https://github.com/purelogiccode/ZARSharp/tree/master/docs)): format spec, compression guide, pipeline API, benchmarks and FAQ.
+Full documentation lives in the [repository wiki](https://github.com/purelogiccode/ZArchiveSharp/wiki) ([docs/](https://github.com/purelogiccode/ZArchiveSharp/tree/master/docs)): format spec, compression guide, pipeline API, benchmarks and FAQ.
 
 ## License
 

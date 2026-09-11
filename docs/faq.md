@@ -4,13 +4,13 @@ Frequently asked questions and troubleshooting.
 
 ## General
 
-### What is ZARSharp?
+### What is ZArchiveSharp?
 
 A pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library: directory-tree archives with per-block zstd compression. It also bundles a complete dependency-free RFC 8878 zstd codec, a zeekstd-compatible seekable zstd implementation, and a batch pipeline engine.
 
 ### Why "byte-identical" output? Why does it matter?
 
-Archives created by ZARSharp are **bit-for-bit the same** as those created by the original C++ `zarchive.exe` for the same API call sequence. This means:
+Archives created by ZArchiveSharp are **bit-for-bit the same** as those created by the original C++ `zarchive.exe` for the same API call sequence. This means:
 
 - Files pack to the exact same size, no regression risk when switching implementations
 - Existing tooling, hash checks and distribution workflows keep working
@@ -110,8 +110,8 @@ The archive is corrupt or the I/O failed mid-extract. Extraction lines printed b
 
 ### How do I contribute?
 
-Open an issue or PR on the [issue tracker](https://github.com/purelogiccode/ZARSharp/issues). If you touch compression logic, keep byte parity: the parity tests and goldens in `ZARSharp.Tests/Goldens/` must stay green, and CI holds the line with no native toolchain installed.
+Open an issue or PR on the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues). If you touch compression logic, keep byte parity: the parity tests and goldens in `ZARSharp.Tests/Goldens/` must stay green, and CI holds the line with no native toolchain installed.
 
 ### How are versions managed?
 
-Versions derive from git tags via MinVer (`v2.7.1`-style tags). Every push builds and tests on Ubuntu/Windows/macOS; tag pushes publish to NuGet.
+Versions derive from git tags via MinVer (`v1.0.0`-style annotated tags; `MinVerTagPrefix=v`). Every push builds and tests on Ubuntu/Windows/macOS; tag pushes publish to NuGet.

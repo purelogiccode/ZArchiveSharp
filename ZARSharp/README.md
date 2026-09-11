@@ -1,4 +1,4 @@
-# ZARSharp
+# ZArchiveSharp
 
 Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive)
 library: directory-tree archives with per-block zstd compression. No native
@@ -85,7 +85,9 @@ a silent truncation), and error-string paths use `/` on every OS.
 
 ## Limits
 
-- No zstd dictionaries, no legacy frames, no multithreading inside one frame.
+- No zstd dictionary *training*, LDM, legacy frames, or multithreading
+  inside one frame. Dictionary *use* (`ZstdDictionary`, `--dict`) is
+  supported.
 - Decoder caps (configurable via `ZstdDecoderOptions`): 512 MiB window,
   512 MiB frame content.
 - Corrupt archives throw documented exceptions (`ZarArchiveOpenException`,

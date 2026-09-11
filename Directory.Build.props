@@ -18,13 +18,14 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Authors>purelogiccode</Authors>
     <Copyright>Copyright (c) purelogiccode</Copyright>
-    <PackageProjectUrl>https://github.com/purelogiccode/ZARSharp</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/purelogiccode/ZArchiveSharp</PackageProjectUrl>
     <!-- Release tags are v-prefixed (v1.0.0); MinVer 8 does not assume that
          prefix, so state it explicitly or tags are silently ignored. -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
-    <RepositoryUrl>https://github.com/purelogiccode/ZARSharp</RepositoryUrl>
+    <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
+    <PackageReleaseNotes>v1.0.0 initial stable release. Pure-C# ZArchive container library + zar CLI: dependency-free zstd codec (levels 1-22), streaming and dictionary APIs, seekable-zstd compress/decompress/list, batch pipeline (7z container stage, Redump-aware ISO packing, collision policies), NuGet metadata + SourceLink + deterministic builds.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

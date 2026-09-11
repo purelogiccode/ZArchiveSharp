@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide covers installing ZARSharp and performing basic archive operations.
+This guide covers installing ZArchiveSharp and performing basic archive operations.
 
 ## Prerequisites
 
@@ -12,19 +12,19 @@ This guide covers installing ZARSharp and performing basic archive operations.
 ### Library (NuGet Package)
 
 ```bash
-dotnet add package ZARSharp
+dotnet add package ZArchiveSharp
 ```
 
 Or add to your `.csproj`:
 
 ```xml
-<PackageReference Include="ZARSharp" Version="*" />
+<PackageReference Include="ZArchiveSharp" Version="*" />
 ```
 
 ### CLI Tool (Global Tool)
 
 ```bash
-dotnet tool install -g ZARSharp.Cli
+dotnet tool install -g ZArchiveSharp.Cli
 ```
 
 Verify installation:
@@ -36,7 +36,7 @@ zar --version
 ### From Source
 
 ```bash
-git clone https://github.com/purelogiccode/ZARSharp.git
+git clone https://github.com/purelogiccode/ZArchiveSharp.git
 cd CSharp_ZARSharp
 dotnet build -c Release
 ```
@@ -186,7 +186,7 @@ var files = ZarPipeline.Extract(@"C:\output.zar", @"C:\extracted");
 
 ## Standalone zstd Compression
 
-ZARSharp includes a complete RFC 8878 zstd encoder and decoder:
+ZArchiveSharp includes a complete RFC 8878 zstd encoder and decoder:
 
 ### Compress
 

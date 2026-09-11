@@ -7,14 +7,14 @@
         <AssemblyName>ZARSharp.Cli</AssemblyName>
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>zar</ToolCommandName>
-        <PackageId>ZARSharp.Cli</PackageId>
-        <Title>ZARSharp CLI</Title>
-        <Description>Command-line tool for creating and extracting ZArchive files using ZARSharp</Description>
+        <PackageId>ZArchiveSharp.Cli</PackageId>
+        <Title>ZArchiveSharp CLI</Title>
+        <Description>Command-line tool for creating and extracting ZArchive files using ZArchiveSharp</Description>
         <PackageTags>zarchive;zar;zstd;compression;archive;cli</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>zar.png</PackageIcon>
         <IsPackable>true</IsPackable>
-        <!-- Version is derived from git tags via MinVer (same as ZARSharp library). -->
+        <!-- Version is derived from git tags via MinVer (same as ZArchiveSharp library). -->
         <MinClientVersion>5.0</MinClientVersion>
 
         <!-- XML documentation -->
