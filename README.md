@@ -1,6 +1,5 @@
 # ZArchiveSharp
 
-[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
