@@ -25,7 +25,7 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
-    <PackageReleaseNotes>v1.0.0 initial stable release. Pure-C# ZArchive container library + zar CLI: dependency-free zstd codec (levels 1-22), streaming and dictionary APIs, seekable-zstd compress/decompress/list, batch pipeline (7z container stage, Redump-aware ISO packing, collision policies), NuGet metadata + SourceLink + deterministic builds.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.0.2 fix: the v1.0.1 zar tool package failed at startup (mixed build outputs packed; that version is unlisted, v1.0.0 was unaffected) — repacked from a clean Release build and install-verified. Slimmer tool payload (debug symbols/docs excluded). No functional library changes since v1.0.1.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

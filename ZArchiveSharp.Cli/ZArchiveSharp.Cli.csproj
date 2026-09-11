@@ -9,7 +9,7 @@
         <ToolCommandName>zar</ToolCommandName>
         <PackageId>ZArchiveSharp.Cli</PackageId>
         <Title>ZArchiveSharp CLI</Title>
-        <Description>Command-line tool for creating and extracting ZArchive files using ZArchiveSharp</Description>
+        <Description>Command-line zar tool for creating and extracting ZArchive files using ZArchiveSharp (install with: dotnet tool install -g ZArchiveSharp.Cli)</Description>
         <PackageTags>zarchive;zar;zstd;compression;archive;cli</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>zar.png</PackageIcon>
@@ -24,6 +24,12 @@
         <!-- Trimming and AOT compatibility -->
         <IsTrimmable>true</IsTrimmable>
         <IsAotCompatible>true</IsAotCompatible>
+
+        <!-- Slim dotnet-tool payload: the tool ships no snupkg, so keep
+             pdbs and XML docs out of tools/ (keeps the download small).
+             Local bin/ output is unaffected. -->
+        <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+        <CopyDocumentationFileToPublishDirectory>false</CopyDocumentationFileToPublishDirectory>
 
         <!-- Source Link + reproducible builds -->
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
