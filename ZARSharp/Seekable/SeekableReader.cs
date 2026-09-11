@@ -11,7 +11,8 @@ using ZARSharp.Zstd;
 /// </summary>
 public sealed class SeekableReader
 {
-    private readonly byte[] _data;
+    private readonly byte[]? _data;
+    private readonly Stream? _stream;
 
     /// <summary>
     /// Opens a seekable file and parses its embedded <c>Foot</c> seek table
@@ -30,9 +31,45 @@ public sealed class SeekableReader
     /// </summary>
     public SeekableReader(byte[] data, SeekTable table)
     {
+        ArgumentNullException.ThrowIfNull(data);
         _data = data;
         Table = table;
         if (Table.TotalComp > (ulong)data.Length)
+        {
+            throw new ZstdException("Seek table points past the input.");
+        }
+    }
+
+    /// <summary>
+    /// Opens a seekable stream and parses its embedded <c>Foot</c> from the
+    /// tail, reading only the table up front; frame bytes are sought and
+    /// read on demand, so multi-GB files never sit fully in memory. The
+    /// stream must be readable and seekable and stay open for the reader's
+    /// lifetime (not owned — like <c>ZArchiveWriter</c>'s output stream, the
+    /// caller keeps ownership and disposes it).
+    /// </summary>
+    public SeekableReader(Stream stream)
+        : this(stream, SeekTable.ParseFoot(stream))
+    {
+    }
+
+    /// <summary>
+    /// Opens a seekable stream with an externally supplied seek table
+    /// (standalone <c>Head</c> tables, or tables parsed separately). Same
+    /// ownership and lifetime rules as <see cref="SeekableReader(Stream)"/>.
+    /// </summary>
+    public SeekableReader(Stream stream, SeekTable table)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        ArgumentNullException.ThrowIfNull(table);
+        if (!stream.CanRead || !stream.CanSeek)
+        {
+            throw new ArgumentException("SeekableReader needs a readable, seekable stream.", nameof(stream));
+        }
+
+        _stream = stream;
+        Table = table;
+        if (Table.TotalComp > (ulong)stream.Length)
         {
             throw new ZstdException("Seek table points past the input.");
         }
@@ -115,7 +152,6 @@ public sealed class SeekableReader
 
     private byte[] DecodeFrame(int index)
     {
-        var start = Table.FrameStartComp(index);
         var size = Table.FrameSizeComp(index);
         var dSize = Table.FrameSizeDecomp(index);
         if (dSize > int.MaxValue)
@@ -123,7 +159,23 @@ public sealed class SeekableReader
             throw new ZstdException("Frame too large to decode.");
         }
 
-        var slice = new ReadOnlySpan<byte>(_data, (int)start, (int)size);
+        if (_stream is not null)
+        {
+            // Stream-backed: seek past 2 GiB safely; only this frame is read.
+            // (Exactly one of _data/_stream is set; the ctors enforce it.)
+            if (size > int.MaxValue)
+            {
+                throw new ZstdException("Frame too large to decode.");
+            }
+
+            var buf = new byte[(int)size];
+            _stream.Seek((long)Table.FrameStartComp(index), SeekOrigin.Begin);
+            _stream.ReadExactly(buf);
+            return ZstdCompressor.DecompressFrame(buf, (int)dSize);
+        }
+
+        var start = Table.FrameStartComp(index);
+        var slice = new ReadOnlySpan<byte>(_data!, (int)start, (int)size);
         return ZstdCompressor.DecompressFrame(slice, (int)dSize);
     }
 }

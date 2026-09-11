@@ -19,7 +19,9 @@ using ZARSharp.Zstd;
 /// <c>Finish</c>, never during <c>Write</c>.</item>
 /// <item><c>Compressed</c>: a frame ends once its compressed size reaches the
 /// threshold, evaluated after each 128 KiB input chunk (the oracle CLI's read
-/// size). Mid-chunk output-buffer refills are not modeled: if the oracle ends
+/// size). Odd <c>Write</c> splits or short stream reads can shift boundaries
+/// exactly as odd oracle reads would; every framing stays valid and decodes
+/// identically. Mid-chunk output-buffer refills are not modeled: if the oracle ends
 /// a frame strictly inside a chunk because its output buffer filled there,
 /// boundaries can differ by part of a chunk. Both outputs stay valid seekable
 /// files; byte-identity holds whenever no such refill fires (always the case
@@ -43,6 +45,8 @@ public sealed class SeekableWriter
     private int _pendingLen;
     private long _consumed;
     private bool _finished;
+    // Pump scratch sized to the oracle CLI read granularity.
+    private readonly byte[] _streamPump = new byte[InputChunkSize];
 
     /// <summary>Creates a writer with the given options (CLI-matching defaults).</summary>
     public SeekableWriter(SeekableOptions? options = null)
@@ -83,9 +87,11 @@ public sealed class SeekableWriter
         else
         {
             // Chunk takes align to 128 KiB boundaries of the whole stream
-            // (not of each Write call): the oracle reads its input in 128 KiB
-            // units, so only stream-aligned chunking reproduces its framing
-            // for identical logical inputs regardless of Write splitting.
+            // (not of each Write call): whole-input (or 128 KiB-aligned)
+            // feeding reproduces oracle framing exactly, since the oracle
+            // reads its input in 128 KiB units. Odd Write splits or short
+            // stream reads can shift boundaries exactly as odd oracle reads
+            // would; every framing stays valid and decodes identically.
             var pos = 0;
             while (pos < data.Length)
             {
@@ -99,6 +105,37 @@ public sealed class SeekableWriter
                     EmitPending(_pendingLen);
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Appends all bytes from <paramref name="input"/> to the current frame,
+    /// pumped in 128 KiB takes, so regular files frame exactly like one span
+    /// <see cref="Write(ReadOnlySpan{byte})"/> and like the oracle CLI.
+    /// Short-read streams (pipes, sockets) can shift
+    /// <see cref="SeekableFrameSizePolicy.Compressed"/> boundaries — like the
+    /// oracle's own framing shifting with its input read sizes — while
+    /// <see cref="SeekableFrameSizePolicy.Uncompressed"/> boundaries never
+    /// move; every framing decodes identically.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">When <paramref name="input"/> is null.</exception>
+    /// <exception cref="ArgumentException">When <paramref name="input"/> is unreadable.</exception>
+    public void Write(Stream input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (!input.CanRead)
+        {
+            throw new ArgumentException("Stream must be readable.", nameof(input));
+        }
+
+        // Fail fast on finished even for empty input (the loop below would
+        // otherwise never reach the span overload's check).
+        Write(ReadOnlySpan<byte>.Empty);
+
+        int read;
+        while ((read = input.Read(_streamPump, 0, _streamPump.Length)) > 0)
+        {
+            Write(_streamPump.AsSpan(0, read));
         }
     }
 

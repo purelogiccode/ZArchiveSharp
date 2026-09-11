@@ -14,7 +14,7 @@
 - **Dictionary use** — compress/decompress with supplied dicts (formatted + raw prefix); `ZstdDictionary`, per-file 4× smaller small entries (training out of scope)
 - **At native speed on the hot path** — L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× (measured; see [Benchmarks](docs/benchmarks.md))
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
-- **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies
+- **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
 - **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
@@ -88,6 +88,19 @@ byte[] small = new ZstdCompressor(opts).CompressBlock(entry);
 byte[] orig = ZstdDecompressor.Decompress(small, dict);
 ```
 
+### API Surface
+
+| Subsystem | Key types | One line |
+|-----------|-----------|----------|
+| Container | `ZArchiveWriter`, `ZArchiveReader`, `ZArchiveTool` | Directory-tree `.zar` archives; `Pack`/`Extract` one-liners |
+| zstd codec | `ZstdCompressor`, `ZstdDecompressor`, `ZstdCompressionOptions`, `ZstdDecoderOptions` | Levels 1–22, byte-identical to libzstd 1.5.7 |
+| Streams & dicts | `ZstdCompressionStream`, `ZstdDecompressionStream`, `ZstdDictionary` | `Stream` wrappers; formatted + raw-prefix dictionary use |
+| Seekable | `SeekableWriter`, `SeekableReader`, `SeekTable`, `SeekableOptions` | Foot + Head seek tables, subrange decode |
+| Pipeline | `ZarPipeline`, `ZarPackEngine`, `ZarPipelineOptions`, `ZarBatchRequest`, `ProcessRunner`, `SevenZip` | Parallel batches, 7z container stage, collision policies |
+| CLI runners | `ZarchiveCli`, `ZstdCli`, `SeekableCli` | Callable forms of every `zar` command (same exit codes) |
+
+Full signatures: [API Reference](docs/api-reference.md).
+
 ### CLI Tool
 
 ```bash
@@ -100,7 +113,7 @@ zar <directory> [output.zar]
 # Extract an archive
 zar <archive.zar> [output_dir]
 
-# Convert XISO to .zar
+# Convert XISO to .zar (Redump ISOs auto-detected: packs the game partition)
 zar --iso <game.iso> [output.zar]
 
 # Raw zstd files (stdin/stdout by default, pipes compose)
@@ -110,6 +123,16 @@ zar zstd -c big.bin | zar zstd -d > big.bin
 
 # Archives with dictionaries + checksums
 zar --dict words.dict --check <directory> [output.zar]
+
+# Seekable zstd files (zeekstd-compatible framing + slicing)
+zar seekable compress big.bin big.zst
+zar seekable list big.zst
+zar seekable decompress --from 1M --to 2M big.zst slice.bin
+
+# Batch: archives through 7z to ISO/dir to .zar, ISOs straight to .zar
+zar --batch C:\games C:\archives
+zar --batch --mode extract-archive C:\games C:\unpacked
+zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 ```
 
 ## Projects
@@ -119,7 +142,7 @@ zar --dict words.dict --check <directory> [output.zar]
 | **ZARSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZARSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZARSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZARSharp.Tests** | Comprehensive test suite (4023 tests, parity validation) |
+| **ZARSharp.Tests** | Comprehensive test suite (4171 tests, parity validation) |
 
 ## Documentation
 

@@ -13,6 +13,7 @@ dotnet tool install -g ZARSharp.Cli
 ```
 zar [options] [input] [output]
 zar zstd -c|-d [options] [input] [output]
+zar seekable compress|decompress|list [options] [input] [output]
 ```
 
 ## Commands
@@ -49,6 +50,56 @@ Inside `zar zstd`, `-c` means `--compress` (not `--stdout`).
 
 Note: a pack/extract path literally named `zstd` must be spelled `./zstd`
 so it is not taken for the subcommand.
+
+### Seekable zstd Files
+
+```bash
+zar seekable compress [input] [output]
+zar seekable decompress [input] [output]
+zar seekable list <file>
+```
+
+Compresses, decompresses, or inspects seekable zstd files (zeekstd-compatible
+framing: independently compressed frames plus a seek table) — not single-frame
+`zar zstd` streams and not `.zar` archives. Omitted input reads stdin
+(compress streams it in 128 KiB chunks; decompress buffers it, since the Foot
+table lives at the end of the file), omitted output writes stdout, so pipes work:
+
+```bash
+zar seekable compress big.bin | zar seekable decompress > big.back
+zar seekable compress big.bin big.zst
+zar seekable decompress big.zst restored.bin
+zar seekable list big.zst
+```
+
+Compress derives the output name when omitted (`<input>.zst`); decompress
+defaults to stdout. Compress options: `-l/--level <N>` 1–22 (default: 3, like
+the oracle — an explicit global `-l` before `seekable` overrides it),
+`-s/--frame-size <S>` with `B/K/M/G` suffixes (default: `2M`, capped at `1G`),
+`--frame-size-policy compressed|uncompressed` (default: uncompressed),
+`--checksum/--no-checksum` (also `--check/--no-check`; default on, last wins),
+`--seek-table-file <file>` (write a standalone Head table there instead of
+appending the Foot table). Decompress options: `--from/--to` byte offsets
+(`--to` takes `end`), `--from-frame/--to-frame` frame indices (`--to-frame`
+takes `last`), `--seek-table-file <file>` (read the table from there instead
+of the file tail). List options: `--from-frame/--to-frame/--num-frames`,
+`-d/--detail` (per-frame table; implied by frame bounds),
+`--seek-table-format foot|head` (`head` means the input IS a standalone table
+file). `-f/--force` overwrites existing outputs (default: refuse, `-11`);
+`-c/--stdout` forces stdout; `-q/--quiet` suppresses the input → output line
+(ignored by `list`, whose table always prints). A global `--dict` with
+`seekable` is a usage error (seekable frames carry no dictionary).
+
+Subcommand aliases: `c`, `d`, `l`. A path literally named `seekable` must be
+spelled `./seekable`.
+
+Deliberate deviations from the `zeekstd` 0.4.5 CLI: argument shape follows this
+CLI's convention (positional `[input] [output]`, not `-o`); existing outputs
+are refused rather than prompting (`-f` overrides); sizes always print raw
+(no humanized units, no `-r/--raw-bytes`); no progress bar (no
+`--no-progress`); `--patch-from/--patch-apply` (diff engine) and
+`--mmap-prefix` are unsupported (managed code, no diff engine); levels run
+1–22 (the oracle stops at 19); size suffixes accept any case.
 
 ### Pack a Directory
 
@@ -97,6 +148,19 @@ zar --iso <game.iso> [output.zar]
 
 Converts an Xbox ISO (XISO) file to a `.zar` archive. Requires the XISOSharp dependency.
 
+The CLI builds with or without the sibling `CSharp_XISOSharp` checkout: without
+it, `zar --iso` fails fast on stderr (exit `-1`) with rebuild instructions and
+`--help` marks the flag unavailable; everything else works. A published tool
+without XISO support is a valid shape — clone the sibling for the full build.
+
+Redump ISOs (full disc dumps starting with the video partition) are
+auto-detected by exact file size: the CLI resolves the wave-dependent game
+partition offset from the same `XgdTables` the `XISOSharp.Cli --zar` mode
+uses (PVD wave read for the ambiguous sizes, video-type-0 fallback when the
+wave is unreadable) and packs the game partition — never the video area. A
+Redump pack is byte-identical to packing the plain extracted XISO. `game`
+derives from `game.redump.iso` to `game.zar`.
+
 **Examples:**
 
 ```bash
@@ -115,6 +179,23 @@ zar --batch <input_dir> [output_dir]
 
 Processes all eligible files in the input directory in parallel.
 
+- `auto` (default): archives run the 7z container stage (extract to
+  `temp_<stem>`, first `.iso` keeps going as `<stem>.iso`, otherwise the
+  whole tree becomes `<stem>/`) then continue to `.zar`; plain ISOs
+  convert straight to `.zar`; directories pack to `.zar`.
+- `extract-archive` (aliases `extract-arc`, `archive`): `.zip/.rar/.7z/.tar/.gz`
+  only — extract with 7z and stop (no `.zar`).
+- `extract-iso` (aliases `extract`, `iso`): `.iso` only — convert to `.zar`.
+- `compress`: directories only — pack to `.zar`.
+
+7z stays external: the CLI uses `7z`/`7zz` from `PATH` (plus the standard
+Windows install location); `--seven-zip <exe>` overrides the path, and
+archive items fail with rebuild-free instructions when no binary is found.
+`--delete-source` removes each source (archive *and* intermediate) after
+sources are kept by default (`--keep-originals`, last wins against
+`--delete-source`). The collision `--policy` applies to every stage output
+(intermediate and `.zar`). All three flags are `--batch`-only.
+
 **Examples:**
 
 ```bash
@@ -123,6 +204,15 @@ zar --batch C:\games
 
 # Batch process with 8 workers
 zar -b -j 8 C:\games C:\archives
+
+# Pack only the extracted directories, deleting each source on success
+zar -b --mode compress --delete-source C:\games C:\archives
+
+# Extract just the containers, keep the trees/ISOs, no .zar files
+zar -b --mode extract-archive C:\games C:\unpacked
+
+# Use a 7z outside PATH
+zar -b --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 ```
 
 ---
@@ -133,9 +223,9 @@ zar -b -j 8 C:\games C:\archives
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--level <N>` | `-l` | Compression level (1–22) | 6 |
+| `--level <N>` | `-l` | Compression level (1–22; `seekable compress`: 1–22, default 3) | 6 |
 | `--dict <file>` | | Dictionary file (pack/`zstd`; never stored, keep alongside) | none |
-| `--check` / `--no-check` | | Write / omit content checksums (pack/`zstd` compress; last wins) | off |
+| `--check` / `--no-check` | | Write / omit content checksums (pack/`zstd` compress; last wins; `seekable compress` defaults on) | off |
 | `--no-compress` | | Store blocks without compression (ignores `--dict`) | false |
 
 ### Input / Output
@@ -149,13 +239,16 @@ zar -b -j 8 C:\games C:\archives
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--output <path>` | `-o` | Output path | Auto-derived |
-| `--policy <P>` | `-p` | Collision policy: `fail`, `skip`, `overwrite`, `auto-rename` | `fail` |
+| `--policy <P>` | `-p` | Collision policy: `fail`, `skip`, `overwrite`, `auto-rename` (`--batch` only) | `fail` |
 
 ### Parallelism
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--jobs <N>` | `-j` | Number of parallel workers | 4 |
+| `--mode <M>` | | Batch stages: `auto`, `extract-archive`, `extract-iso`, `compress` (`--batch` only) | `auto` |
+| `--seven-zip <exe>` | | 7z binary for the archive stage: explicit path, else `PATH` + install location (`--batch` only) | auto-detect |
+| `--keep-originals` / `--delete-source` | | Keep / delete each batch source after its pack succeeds (`--batch` only, last wins) | keep |
 
 ### Other
 
@@ -195,11 +288,19 @@ input → output line goes to stdout, except to stderr when stdout carries
 binary data. A file output created by `zar zstd` is deleted when the run
 fails, like incomplete pack outputs.
 
+`zar seekable` reuses the same table the same way: compress failures report
+pack codes (`-13` failure, `-15` unreadable input, `-16` uncreatable output),
+decompress and list failures report extract codes (`-12` failure — including
+a missing/unparseable seek table, an out-of-range frame, or a bad range —
+`-10` missing input/table file). Refusals are `-11`, bad ranges that do not
+depend on the file (`--from` past `--to`, start frame past end frame) are
+`-1`. Failed runs delete the file outputs they created.
+
 ---
 
 ## Collision Policies
 
-When the output file already exists, the `--policy` option controls behavior:
+On `--batch` runs, when a stage output already exists, the `--policy` option controls behavior:
 
 | Policy | Behavior |
 |--------|----------|
@@ -207,6 +308,13 @@ When the output file already exists, the `--policy` option controls behavior:
 | `skip` | Skip the item, continue processing |
 | `overwrite` | Delete existing file and write new one |
 | `auto-rename` | Write to `{stem}_{n}{suffix}` (first free `n` from 1) |
+
+Single pack/extract/`--iso` and the `zstd`/`seekable` subcommands keep the
+`zarchive.exe` contract instead: an existing pack output is refused with
+`-11` (extract overwrites into the destination directory, like the native
+tool), and an explicit non-`fail` `--policy` there is a `-1` usage error —
+never silently ignored. Unknown values (`--policy bogus`) and a missing
+value are `-1` on every path.
 
 ---
 
@@ -244,6 +352,16 @@ zar -b -p overwrite C:\games C:\archives
 ```bash
 # Convert Xbox ISO to ZAR
 zar --iso C:\games\game.iso C:\games\game.zar
+```
+
+### Seekable Files
+
+```bash
+# Compress with small frames, inspect, slice-decode one range
+zar seekable compress -s 256K big.bin big.zst
+zar seekable list big.zst
+zar seekable list --detail --from-frame 2 --to-frame 4 big.zst
+zar seekable decompress --from 1M --to 2M big.zst slice.bin
 ```
 
 ### Quiet Mode

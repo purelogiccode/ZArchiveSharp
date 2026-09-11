@@ -165,6 +165,16 @@ var results = ZarPipeline.ExtractBatch(
 
 For UIs, a `ZarBatchRequest` models the full input set with modes and collision handling; `ZarItemResult`/`ZarItemStatus` carry outcomes (`Completed`, `Skipped`, `Failed`, ...).
 
+### Archive-Container Stage (7z)
+
+`FindTool` locates the external binary (explicit path, then the standard
+Windows install location, then `7z`/`7zz` on `PATH`) and `Extract` runs it
+via `ProcessRunner` (`x` for full paths, `-bsp1` for progress, exit 0/1
+accepted). `PickIsoCandidate` selects the first `.iso` out of the extracted
+tree. The CLI owns the orchestration (temp dir, collision-resolved moves,
+`extract-archive` terminal vs. continue-to-`.zar`, source cleanup), since the
+ISO→`.zar` leg needs the CLI-side XISO bridge.
+
 ## Exit Codes (zarchive.exe Contract)
 
 `ZarchiveCli.Run` is the callable form of the `zarchive.exe input_path [output_path]` contract: directory input packs, file input extracts, outputs default to `<stem>.zar` / `<stem>_extracted`, existing pack outputs are refused, incomplete outputs are deleted.

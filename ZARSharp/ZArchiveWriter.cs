@@ -68,6 +68,10 @@ public sealed class ZArchiveWriter : IDisposable
     private Footer _footer;
     private readonly byte[] _currentWriteBuffer = new byte[ZArchiveCommon.CompressedBlockSize];
     private int _bufferedBytes;
+    // Dedicated pump scratch: AppendData(Stream) must NOT reuse
+    // _currentWriteBuffer, whose live tail would alias the chunk being
+    // appended when the staging buffer is partially full.
+    private readonly byte[] _streamPump = new byte[ZArchiveCommon.CompressedBlockSize];
     private readonly byte[] _compressionBuffer;
     private ulong _currentCompressedWriteIndex;
     private ulong _currentInputOffset;
@@ -306,6 +310,31 @@ public sealed class ZArchiveWriter : IDisposable
     public void AppendData(byte[] data, int offset, int count)
     {
         AppendData(data.AsSpan(offset, count));
+    }
+
+    /// <summary>
+    /// Appends all bytes from <paramref name="input"/> to the currently
+    /// active file, so callers need not buffer entry streams manually.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">When <paramref name="input"/> is null.</exception>
+    /// <exception cref="ArgumentException">When <paramref name="input"/> is unreadable.</exception>
+    public void AppendData(Stream input)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        if (!input.CanRead)
+        {
+            throw new ArgumentException("Stream must be readable.", nameof(input));
+        }
+
+        // Fail fast on disposed/finalized even for empty input (the loop
+        // below would otherwise never reach the span overload's checks).
+        AppendData(ReadOnlySpan<byte>.Empty);
+
+        int read;
+        while ((read = input.Read(_streamPump, 0, _streamPump.Length)) > 0)
+        {
+            AppendData(_streamPump.AsSpan(0, read));
+        }
     }
 
     // ------------------------------------------------------------------

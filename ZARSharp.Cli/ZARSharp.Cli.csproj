@@ -12,6 +12,7 @@
         <Description>Command-line tool for creating and extracting ZArchive files using ZARSharp</Description>
         <PackageTags>zarchive;zar;zstd;compression;archive;cli</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>zar.png</PackageIcon>
         <IsPackable>true</IsPackable>
         <!-- Version is derived from git tags via MinVer (same as ZARSharp library). -->
         <MinClientVersion>5.0</MinClientVersion>
@@ -36,37 +37,58 @@
         <EnableStrictModeForPackageValidation>true</EnableStrictModeForPackageValidation>
     </PropertyGroup>
 
+    <PropertyGroup>
+        <!-- Cross-repo source dependency (MissingFeatures HIGH #2): path to the
+             sibling XISOSharp checkout. Evaluated with Exists so a clean clone
+             without the sibling still builds (CLI without iso support; the
+             library, tests and benchmarks never need XISOSharp). Override with
+             -p:XisoSharpAvailable=false to simulate that shape locally. -->
+        <XisoSharpProject>..\..\CSharp_XISOSharp\XISOSharp\XISOSharp.csproj</XisoSharpProject>
+        <XisoSharpAvailable Condition="'$(XisoSharpAvailable)' == '' and Exists('$(XisoSharpProject)')">true</XisoSharpAvailable>
+        <XisoSharpAvailable Condition="'$(XisoSharpAvailable)' == ''">false</XisoSharpAvailable>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(XisoSharpAvailable)' == 'true'">
+        <DefineConstants>$(DefineConstants);HAS_XISO</DefineConstants>
+    </PropertyGroup>
+
     <ItemGroup>
         <ProjectReference Include="..\ZARSharp\ZARSharp.csproj" />
-        <!-- Cross-repo source dependency (see MissingFeatures HIGH #2: replace
-             with a NuGet reference once XISOSharp publishes). Two guards:
-             MinVerSkip=true: MinVer 8 caches one version per MSBuild session
-             keyed by options only (no repo path), so letting the sibling
-             repo's MinVer run in our session nondeterministically stamps
-             ZARSharp.Cli.dll and the tool package with XISOSharp's version
-             (observed: 1.0.1-alpha.0.99 instead of ours) and vice versa.
-             Skipping it keeps our session's version hermetic; XISOSharp's own
-             repo builds are unaffected. Mirror fix wanted on XISOSharp's
-             reference back to ZARSharp for the same reason.
-             Known residual wart (pre-existing, dies with HIGH #2): under
-             SOLUTION builds, out-of-solution references fall back to the
-             default (Debug) configuration, so a solution-built Release tool
-             links a Debug-built XISOSharp.dll (verified via
-             DebuggableAttribute flags). Project builds and plain dotnet pack
-             build it Release. Neither SetConfiguration metadata nor a
-             Configuration pin in AdditionalProperties overrides the solution
-             fallback (both verified ineffective); only replacing the source
-             reference with a NuGet dependency fixes it. CI only packs the
-             ZARSharp library today, so no shipped artifact is affected.
-             Pack-shape rule: pack the CLI WITH its build (plain dotnet pack
-             on the csproj); packing with the no-build flag after a solution
-             build fails (MSB3030) because the Publish step resolves the
-             Release-path dependency the solution build never produced. -->
-        <ProjectReference Include="..\..\CSharp_XISOSharp\XISOSharp\XISOSharp.csproj" AdditionalProperties="MinVerSkip=true" />
+        <!-- When the sibling is absent the reference is skipped and Program.cs
+              compiles its no-XISO shape (the iso flag fails at runtime with rebuild
+              instructions; see HAS_XISO there). When present, one guard:
+              MinVerSkip=true: MinVer 8 caches one version per MSBuild session
+              keyed by options only (no repo path), so letting the sibling
+              repo's MinVer run in our session nondeterministically stamps
+              ZARSharp.Cli.dll and the tool package with XISOSharp's version
+              (observed: 1.0.1-alpha.0.99 instead of ours) and vice versa.
+              Skipping it keeps our session's version hermetic; XISOSharp's own
+              repo builds are unaffected. Mirror fix wanted on XISOSharp's
+              reference back to ZARSharp for the same reason.
+              Known residual wart (pre-existing): under SOLUTION builds,
+              out-of-solution references fall back to the default (Debug)
+              configuration, so a solution-built Release tool links a
+              Debug-built XISOSharp.dll (verified via DebuggableAttribute
+              flags). Project builds and plain dotnet pack build it Release.
+              Neither SetConfiguration metadata nor a Configuration pin in
+              AdditionalProperties overrides the solution fallback (both
+              verified ineffective); only replacing the source reference with
+              a NuGet dependency fixes it. CI only packs the library today,
+              so no shipped artifact is affected.
+              Pack-shape rule: pack the CLI WITH its build (plain dotnet pack
+              on the csproj); packing with the no-build flag after a solution
+              build fails (MSB3030) because the Publish step resolves the
+              Release-path dependency the solution build never produced. -->
+        <ProjectReference Include="$(XisoSharpProject)" AdditionalProperties="MinVerSkip=true" Condition="'$(XisoSharpAvailable)' == 'true'" />
     </ItemGroup>
+
+    <Target Name="WarnMissingXisoSharp" BeforeTargets="BeforeBuild" Condition="'$(XisoSharpAvailable)' != 'true'">
+        <Warning Text="XISOSharp sibling not found at '$(XisoSharpProject)': building zar WITHOUT --iso support. Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support (MissingFeatures HIGH #2)." />
+    </Target>
 
     <ItemGroup>
         <None Include="README.md" Pack="true" PackagePath="\" />
+        <None Include="..\ZARSharp\icon\zar.png" Pack="true" PackagePath="\" />
         <None Include="..\LICENSE" Pack="true" PackagePath="\" />
     </ItemGroup>
 

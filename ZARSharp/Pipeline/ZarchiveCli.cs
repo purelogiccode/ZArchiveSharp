@@ -21,6 +21,11 @@ namespace ZARSharp.Pipeline;
 /// <item>entry paths in error strings use <c>/</c> on every OS (native
 /// <c>pathEntry.string()</c> prints <c>\</c> on Windows); only the
 /// <c>Adding</c> display line converts to OS separators.</item>
+/// <item>pack forces <see cref="ZarCollisionPolicy.Fail"/> regardless of
+/// <see cref="ZarPipelineOptions.CollisionPolicy"/> (the native
+/// refuse-overwrite contract: an existing output is
+/// <see cref="Refused"/>); policy-aware packing lives in
+/// <see cref="ZarPipeline.Pack"/>.</item>
 /// </list>
 /// </remarks>
 public static class ZarchiveCli

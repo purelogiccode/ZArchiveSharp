@@ -51,9 +51,13 @@ Begins writing a new file entry. Path is relative to the archive root, using `/`
 
 ```csharp
 public void AppendData(ReadOnlySpan<byte> data)
+public void AppendData(byte[] data, int offset, int count)
+public void AppendData(Stream input)
 ```
 
 Appends data to the current file. Data is buffered and compressed in 64 KiB blocks.
+The `Stream` overload pumps the stream to end (64 KiB takes), so entry streams
+need no manual buffering; all three forms produce identical bytes.
 
 **Parameters:**
 - `data` — Bytes to append
@@ -531,6 +535,60 @@ failures to `error`.
 
 ---
 
+## SeekableCli (ZARSharp.Pipeline)
+
+Callable form of the `zar seekable` contract (seekable zstd files:
+compress, decompress with byte/frame slicing, and seek-table listing).
+Same conventions as `ZstdCli` (exit-code reuse, cancellation, partial-output
+cleanup).
+
+```csharp
+public static bool TryParse(string[] args, out SeekableJob? job, out string? error,
+    int defaultLevel = 3, bool? defaultChecksum = null,
+    bool defaultQuiet = false, bool defaultStdout = false);
+public static Task<int> RunAsync(SeekableJob job, Stream stdin, Stream stdout,
+    Action<string>? log, Action<string> error, CancellationToken ct = default);
+public static bool TryParseByteSize(string? value, out ulong size, out string? error);
+```
+
+`TryParse` takes the tokens after `seekable`, verb first (`compress|c`,
+`decompress|d`, `list|l`): compress takes `-l/--level` (1–22, default 3),
+`-s/--frame-size` (`TryParseByteSize` syntax, default 2M, capped at 1G),
+`--frame-size-policy`, `--checksum/--no-checksum` (default on),
+`--seek-table-file`; decompress takes `--from/--to` (`end`),
+`--from-frame/--to-frame` (`last`), `--seek-table-file`; list takes
+`--from-frame/--to-frame/--num-frames`, `-d/--detail`,
+`--seek-table-format foot|head`. Compress/decompress share `-f/--force`,
+`-c/--stdout`, `-q/--quiet` (ignored by list). The verb validates its own
+options, so a misplaced flag errors instead of being ignored. Compress with a
+file input and no output path derives `<input>.zst`; decompress defaults to
+stdout.
+
+---
+
+## SevenZip (ZARSharp.Pipeline)
+
+Archive-container stage: finds an external 7z binary and extracts
+7z stays external by design).
+
+```csharp
+public static string? FindTool(string? preferredPath = null,
+    IEnumerable<string>? searchDirectories = null, bool probeWellKnownLocations = true);
+public static void Extract(string archivePath, string destDir, string? toolPath = null,
+    IProgress<double>? progress = null, PauseToken pause = default,
+    CancellationToken cancellationToken = default);
+public static string? PickIsoCandidate(IEnumerable<string> extractedFiles);
+```
+
+`FindTool` checks the explicit path, then the standard Windows install
+location, then `searchDirectories` (default: `PATH`) for `7z`/`7zz`.
+`Extract` runs `x "archive" -o"dest" -y -bsp1` with full paths preserved
+(the oracle's flat `e` would mangle directory trees). `PickIsoCandidate`
+returns the first `.iso` in ordinal order (extension case-insensitive) or
+null — when several ISOs are present the rest are ignored, like the oracle.
+
+---
+
 ## ZstdStrategy (ZARSharp.Zstd)
 
 Compression strategy selector. Maps to libzstd's `ZSTD_strategy`.
@@ -571,9 +629,14 @@ public SeekableWriter(SeekableOptions? options = null)
 
 ```csharp
 public void Write(ReadOnlySpan<byte> data)
+public void Write(Stream input)
 ```
 
-Appends data, emitting full frames as needed.
+Appends data, emitting full frames as needed. The `Stream` overload pumps in
+128 KiB takes, so regular files frame exactly like one span write and like the
+oracle CLI; short-read streams can shift `Compressed`-policy boundaries (like
+odd oracle reads would) while `Uncompressed` boundaries never move — every
+framing decodes identically.
 
 #### Finish
 
@@ -605,7 +668,15 @@ public SeekableReader(byte[] data)
 
 // Use external seek table (e.g., standalone Head)
 public SeekableReader(byte[] data, SeekTable table)
+
+// Stream-backed: parses the Foot from the tail, reads frames on demand
+// (multi-GB files never sit fully in memory; stream not owned)
+public SeekableReader(Stream stream)
+public SeekableReader(Stream stream, SeekTable table)
 ```
+
+The stream must be readable and seekable and stay open for the reader's
+lifetime; decode results are identical to the byte-array constructors.
 
 ### Properties
 

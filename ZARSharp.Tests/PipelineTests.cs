@@ -551,6 +551,52 @@ public sealed class PipelineTests : IDisposable
         Assert.Equal((string[])["sub"], dirs.Select(p => Path.GetFileName(p)!).ToArray());
     }
 
+    [Theory]
+    [InlineData("auto", ZarProcessMode.Auto)]
+    [InlineData("AUTO", ZarProcessMode.Auto)]
+    [InlineData("extract-archive", ZarProcessMode.ExtractArchive)]
+    [InlineData("extract-arc", ZarProcessMode.ExtractArchive)]
+    [InlineData("archive", ZarProcessMode.ExtractArchive)]
+    [InlineData("ARCHIVE", ZarProcessMode.ExtractArchive)]
+    [InlineData("extract-iso", ZarProcessMode.ExtractIso)]
+    [InlineData("extract", ZarProcessMode.ExtractIso)]
+    [InlineData("iso", ZarProcessMode.ExtractIso)]
+    [InlineData("ISO", ZarProcessMode.ExtractIso)]
+    [InlineData("compress", ZarProcessMode.Compress)]
+    [InlineData("Compress", ZarProcessMode.Compress)]
+    [InlineData(" compress ", ZarProcessMode.Compress)]
+    public void ProcessModes_TryParse_Aliases(string value, ZarProcessMode expected)
+    {
+        // Locks the --mode flag mapping (MissingFeatures HIGH #3): the CLI
+        // batch path filters via ProcessableFiles.Find with this result.
+        Assert.True(ZarProcessModes.TryParse(value, out var mode));
+        Assert.Equal(expected, mode);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("bogus")]
+    [InlineData("auto,compress")]
+    [InlineData("extract_archive")]
+    [InlineData("extract iso")]
+    public void ProcessModes_TryParse_Rejects(string? value)
+    {
+        Assert.False(ZarProcessModes.TryParse(value, out _));
+    }
+
+    [Fact]
+    public void BatchRequest_KeepOriginals_MapsToDeleteSource()
+    {
+        // The --keep-originals (default) / --delete-source pair is last-wins
+        // in the CLI and lands here: keeping never deletes, deleting does.
+        var keep = new ZarBatchRequest(["a"], @"C:\out", KeepOriginals: true);
+        Assert.False(keep.ToPipelineOptions().DeleteSourceOnSuccess);
+        var drop = new ZarBatchRequest(["a"], @"C:\out", KeepOriginals: false);
+        Assert.True(drop.ToPipelineOptions().DeleteSourceOnSuccess);
+    }
+
     [Fact]
     public void Pause_DefaultToken_NeverBlocks()
     {

@@ -15,6 +15,7 @@
         <PackageDescription>Pure-C# port of the ZArchive 0.1.2 library: directory-tree archives with per-block zstd compression (levels 1-6, raw fallback for incompressible blocks). Includes a dependency-free RFC 8878 zstd encoder and decoder. BCL-only, trimmable, and AOT-compatible.</PackageDescription>
         <PackageTags>zarchive;zar;zstd;compression;archive</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>zar.png</PackageIcon>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <MinClientVersion>5.0</MinClientVersion>
 
@@ -49,6 +50,7 @@
 
     <ItemGroup>
         <None Include="README.md" Pack="true" PackagePath="\" />
+        <None Include="icon\zar.png" Pack="true" PackagePath="\" />
         <None Include="..\LICENSE" Pack="true" PackagePath="\" />
     </ItemGroup>
 

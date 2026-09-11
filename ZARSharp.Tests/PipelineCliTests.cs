@@ -101,6 +101,23 @@ public sealed class PipelineCliTests : IDisposable
     }
 
     [Fact]
+    public void Cli_PackForcesFailPolicyOption_StillRefusesExisting()
+    {
+        // ZarchiveCli is the refuse-overwrite contract: even an Overwrite
+        // policy in options is forced to Fail (MissingFeatures §2.1);
+        // policy-aware packing lives in ZarPipeline.Pack.
+        var root = NewTempDir("cli_policy");
+        var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
+        File.WriteAllBytes(Path.Combine(root, "game.zar"), [9, 9, 9]);
+
+        var sink = new LogSink();
+        var options = new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Overwrite };
+        Assert.Equal(ZarchiveCli.Refused, ZarchiveCli.Run([src], options, log: sink.Log));
+        Assert.Equal([9, 9, 9], File.ReadAllBytes(Path.Combine(root, "game.zar")));
+    }
+
+    [Fact]
     public void Cli_PackOutputIsDirectory_ReturnsNotFound()
     {
         var root = NewTempDir("cli_outdir");

@@ -82,9 +82,8 @@ public sealed class SeekTable
             throw new ZstdException("File too short for seek table.");
         }
 
-        var integrity = fileBytes.Slice(fileBytes.Length - IntegritySize);
-        ParseIntegrity(integrity, out var numFrames, out var sizePerFrame);
-        var tableSize = (long)numFrames * sizePerFrame + SkippableHeaderSize + IntegritySize;
+        var (tableSize, numFrames, sizePerFrame) =
+            FootLayout(fileBytes.Slice(fileBytes.Length - IntegritySize));
         if (tableSize > fileBytes.Length)
         {
             throw new ZstdException("Truncated seek table.");
@@ -93,6 +92,63 @@ public sealed class SeekTable
         var start = fileBytes.Length - (int)tableSize;
         VerifySkippableHeader(fileBytes.Slice(start, SkippableHeaderSize), tableSize);
         return ParseEntries(fileBytes.Slice(start + SkippableHeaderSize), numFrames, sizePerFrame);
+    }
+
+    private static (long TableSize, uint NumFrames, int SizePerFrame) FootLayout(ReadOnlySpan<byte> integrity)
+    {
+        if (integrity.Length < IntegritySize)
+        {
+            throw new ZstdException("File too short for seek table.");
+        }
+
+        ParseIntegrity(integrity, out var numFrames, out var sizePerFrame);
+        return ((long)numFrames * sizePerFrame + SkippableHeaderSize + IntegritySize, numFrames, sizePerFrame);
+    }
+
+    /// <summary>
+    /// Total <c>Foot</c> size implied by a 9-byte integrity field (entries +
+    /// skippable header + integrity). Lets stream readers fetch exactly the
+    /// tail window <see cref="ParseFoot(ReadOnlySpan{byte})"/> needs without
+    /// loading the frames.
+    /// </summary>
+    /// <param name="integrity">The file's last <c>IntegritySize</c> bytes.</param>
+    internal static long FootTableSize(ReadOnlySpan<byte> integrity) => FootLayout(integrity).TableSize;
+
+    /// <summary>
+    /// Parses an embedded <c>Foot</c> from the tail of a seekable stream,
+    /// reading only the table bytes (never the frames). The stream must be
+    /// readable and seekable; its position is restored.
+    /// </summary>
+    internal static SeekTable ParseFoot(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        if (!stream.CanRead || !stream.CanSeek)
+        {
+            throw new ArgumentException("Seek-table parsing needs a readable, seekable stream.", nameof(stream));
+        }
+
+        var length = stream.Length;
+        var probe = new byte[(int)Math.Min(length, IntegritySize)];
+        var saved = stream.Position;
+        try
+        {
+            stream.Seek(-probe.Length, SeekOrigin.End);
+            stream.ReadExactly(probe);
+            var tableSize = FootTableSize(probe);
+            if (tableSize > length)
+            {
+                throw new ZstdException("Truncated seek table.");
+            }
+
+            var window = new byte[(int)tableSize];
+            stream.Seek(-tableSize, SeekOrigin.End);
+            stream.ReadExactly(window);
+            return ParseFoot(window);
+        }
+        finally
+        {
+            stream.Seek(saved, SeekOrigin.Begin);
+        }
     }
 
     /// <summary>
