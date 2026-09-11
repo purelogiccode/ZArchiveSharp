@@ -37,7 +37,7 @@ zar --version
 
 ```bash
 git clone https://github.com/purelogiccode/ZArchiveSharp.git
-cd CSharp_ZARSharp
+cd CSharp_ZArchiveSharp
 dotnet build -c Release
 ```
 

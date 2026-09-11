@@ -24,7 +24,7 @@ The test suite enforces this with thousands of parity vectors and committed gold
 
 ### Is it production ready?
 
-The port is complete (Steps 1–6 of the port plan), with 3800+ green tests including native-tool parity matrices and committed goldens. Performance is the main known gap (see [Benchmarks](benchmarks.md)).
+The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4171 green tests including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
 
 ## Compatibility
 
@@ -79,7 +79,7 @@ Inside one frame, no (like upstream). Across items, yes: the pipeline packs batc
 
 ### Are dictionaries supported?
 
-No — zstd dictionaries are out of scope. Negative levels are also rejected (locked by tests).
+Dictionary *use* is supported: `ZstdDictionary.FromBytes` (formatted dicts) / `FromRawPrefix` (raw content prefix), `ZstdCompressionOptions.Dictionary`, and CLI `--dict` on pack and `zar zstd` (extract needs the same dict; it is never stored). Dictionary *training* is out of scope, as are negative levels (rejected, locked by tests).
 
 ## Errors
 

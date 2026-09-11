@@ -73,8 +73,9 @@
               Neither SetConfiguration metadata nor a Configuration pin in
               AdditionalProperties overrides the solution fallback (both
               verified ineffective); only replacing the source reference with
-              a NuGet dependency fixes it. CI only packs the library today,
-              so no shipped artifact is affected.
+               a NuGet dependency fixes it. CI packs the library and the CLI
+               tool per project (clean clone, no sibling present), so the
+               shipped tool is Release-built and unaffected.
               Pack-shape rule: pack the CLI WITH its build (plain dotnet pack
               on the csproj); packing with the no-build flag after a solution
               build fails (MSB3030) because the Publish step resolves the

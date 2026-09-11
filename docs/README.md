@@ -51,7 +51,7 @@ ZArchiveSharp produces **byte-identical output** to:
 - libzstd 1.5.7 (frozen reference)
 - zeekstd (seekable format)
 
-This is verified by over 3800 tests including parity validation against native tools.
+This is verified by 4171 tests including parity validation against native tools.
 
 ---
 

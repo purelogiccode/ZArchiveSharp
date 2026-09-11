@@ -189,4 +189,4 @@ Current baseline (net10.0, Release — see [Benchmarks](benchmarks.md)):
 | Level 19 compress | ~38 MB/s |
 | Decode | ~860 MB/s |
 
-Pure C# is slower than native libzstd (~0.28× at L6). The port prioritizes byte-exact parity and safe (no `unsafe`) code; performance work is opt-in follow-up.
+Measured hot-path speed is at native parity (L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× — see [Benchmarks](benchmarks.md)). The standing trade-off is byte-exact parity and safe (no `unsafe`) code over squeezing the last microseconds; the tracked levers are ArrayPool rental of the per-frame bound-size buffer and span-specializing the hot match-finder loop.
