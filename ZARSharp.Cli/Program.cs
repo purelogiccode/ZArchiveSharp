@@ -901,7 +901,7 @@ public static class Program
             return typeof(Program).Assembly.GetName().Version?.ToString() ?? "1.0.0";
         }
 
-        // MinVer stamps e.g. "0.0.0-alpha.0.4+githash"; keep the version core.
+        // MinVer stamps e.g. "1.0.0+githash" ("0.0.0-alpha.0.N+githash" with no tag); keep the version core.
         int plus = info.IndexOf('+');
         return plus >= 0 ? info[..plus] : info;
     }

@@ -19,6 +19,9 @@
     <Authors>purelogiccode</Authors>
     <Copyright>Copyright (c) purelogiccode</Copyright>
     <PackageProjectUrl>https://github.com/purelogiccode/ZARSharp</PackageProjectUrl>
+    <!-- Release tags are v-prefixed (v1.0.0); MinVer 8 does not assume that
+         prefix, so state it explicitly or tags are silently ignored. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
     <RepositoryUrl>https://github.com/purelogiccode/ZARSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>

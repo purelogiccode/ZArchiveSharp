@@ -96,10 +96,12 @@ a silent truncation), and error-string paths use `/` on every OS.
 
 ## Release process
 
-Versions derive from git tags via MinVer (`v2.7.1`-style stable tags).
-Every push builds and tests on Ubuntu/Windows/macOS; `dotnet pack` runs for
-both `XISOSharp` and `ZARSharp` (API-validated, symbols + SourceLink), and
-tag pushes publish to NuGet. See `.github/workflows/ci.yml`.
+Versions derive from git tags via MinVer; tags must be v-prefixed annotated
+tags (`v1.0.0`-style — `MinVerTagPrefix=v` in `Directory.Build.props`;
+without it MinVer 8 silently ignores `v*` tags). Every push builds and
+tests on Ubuntu/Windows/macOS; `dotnet pack` runs for the library
+(API-validated, symbols + SourceLink), and pushed `v*` tags publish to
+NuGet. See `.github/workflows/ci.yml`.
 
 ## License
 
