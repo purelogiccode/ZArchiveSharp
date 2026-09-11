@@ -1,13 +1,13 @@
 # Pipeline
 
-`ZARSharp.Pipeline` is the shared engine behind `ZArchiveTool`, the XISO `.zar` bridges and the CLI: directory pack, archive extract, and parallel batches with progress, pause, cancellation and collision handling. One engine, one set of semantics.
+`ZArchiveSharp.Pipeline` is the shared engine behind `ZArchiveTool`, the XISO `.zar` bridges and the CLI: directory pack, archive extract, and parallel batches with progress, pause, cancellation and collision handling. One engine, one set of semantics.
 
 ## Basic Usage
 
 ### Pack
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 // Minimal: defaults are zstd level 6, Fail policy, 4 workers
 string? result = ZarPipeline.Pack(@"C:\mydata");
@@ -24,7 +24,7 @@ string? path = ZarPipeline.Pack(
 ### Extract
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 // Returns extracted file paths relative to the archive root ('/' separated)
 IReadOnlyList<string> files = ZarPipeline.Extract(
@@ -38,7 +38,7 @@ IReadOnlyList<string> files = ZarPipeline.Extract(
 Anything that can enumerate (path, size, content stream) pairs can be packed via `IZarPackSource` — the directory tree and the XISO walk are both built on it:
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 ZarPipeline.PackSource(mySource, @"C:\out.zar", options);
 ```
@@ -95,7 +95,7 @@ var progress = new Progress<ZarProgress>(p =>
 ## Cancellation and Pause
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 using var cts = new CancellationTokenSource();
 using var pauseSource = new PauseTokenSource();
@@ -133,7 +133,7 @@ What happens when an output path already exists:
 ### Pack Batch
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 var results = ZarPipeline.PackBatch(
     sourceDirectories: [@"C:\game1", @"C:\game2", @"C:\game3"],
@@ -180,7 +180,7 @@ ISO→`.zar` leg needs the CLI-side XISO bridge.
 `ZarchiveCli.Run` is the callable form of the `zarchive.exe input_path [output_path]` contract: directory input packs, file input extracts, outputs default to `<stem>.zar` / `<stem>_extracted`, existing pack outputs are refused, incomplete outputs are deleted.
 
 ```csharp
-using ZARSharp.Pipeline;
+using ZArchiveSharp.Pipeline;
 
 int code = ZarchiveCli.Run(
     args: ["C:\\mydata", "C:\\mydata.zar"],
@@ -215,7 +215,7 @@ With `log` supplied, `ZarchiveCli` reproduces native chatter:
 
 ### Three Intentional Deviations
 
-Where native behavior is a bug, ZARSharp deviates (all tested):
+Where native behavior is a bug, ZArchiveSharp deviates (all tested):
 
 1. An unopenable extract output **throws** (native prints `Unable to write file:` then keeps writing into the dead stream)
 2. A mid-file input read error **fails the pack with `-16`** (native treats a short read as EOF and silently packs a truncated file)

@@ -31,7 +31,7 @@ dotnet add package ZArchiveSharp
 ### Pack & Extract
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 // Pack a directory (each 64 KiB block zstd level 6 by default)
 ZArchiveTool.Pack(@"C:\game", @"C:\game.zar");
@@ -43,8 +43,8 @@ ZArchiveTool.Extract(@"C:\game.zar", @"C:\game_out");
 ### Low-Level Writer / Reader
 
 ```csharp
-using ZARSharp;
-using ZARSharp.Zstd;
+using ZArchiveSharp;
+using ZArchiveSharp.Zstd;
 
 // Write an archive
 using var output = File.Create("game.zar");
@@ -60,7 +60,7 @@ using var reader = ZArchiveReader.TryOpen("game.zar");
 ### Standalone zstd Compression
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 // Compress (byte-identical to libzstd)
 var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
@@ -73,7 +73,7 @@ byte[] back = ZstdCompressor.DecompressFrame(frame, maxSize: data.Length);
 ### Streams & Dictionaries
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 // Stream a file through zstd (any chunk size; flushed, never closed)
 using var input = File.OpenRead("big.bin");
@@ -139,10 +139,10 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 
 | Project | Description |
 |---------|-------------|
-| **ZARSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
-| **ZARSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
-| **ZARSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZARSharp.Tests** | Comprehensive test suite (4171 tests, parity validation) |
+| **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
+| **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
+| **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4171 tests, parity validation) |
 
 ## Documentation
 
@@ -158,7 +158,7 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 
 ## Byte-Identity Target
 
-The encoder, archive container and seekable framing are **byte-identical** to the frozen references (libzstd 1.5.7, zeekstd). The test suite proves it against native tools on thousands of vectors, and `ZARSharp.Tests/Goldens/` pins native bytes so CI holds the line with no toolchain installed.
+The encoder, archive container and seekable framing are **byte-identical** to the frozen references (libzstd 1.5.7, zeekstd). The test suite proves it against native tools on thousands of vectors, and `ZArchiveSharp.Tests/Goldens/` pins native bytes so CI holds the line with no toolchain installed.
 
 Two known boundaries:
 - The shipped `zarchive.exe` bundles libzstd 1.5.2, whose level 6 can differ from 1.5.7 on multi-transition hetero 64 KiB blocks. Our frames follow the frozen 1.5.7.

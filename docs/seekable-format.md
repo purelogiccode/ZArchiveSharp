@@ -1,6 +1,6 @@
 # Seekable Format
 
-ZARSharp implements the seekable zstd format (spec v0.1.1, Foot + Head) as used by [zeekstd](https://github.com/rorosen/zeekstd) and the original C [seekable format](https://github.com/facebook/zstd/tree/dev/contrib/seekable_format) — independently compressed frames plus a skippable-frame seek table that enables **random access** without decoding the whole stream.
+ZArchiveSharp implements the seekable zstd format (spec v0.1.1, Foot + Head) as used by [zeekstd](https://github.com/rorosen/zeekstd) and the original C [seekable format](https://github.com/facebook/zstd/tree/dev/contrib/seekable_format) — independently compressed frames plus a skippable-frame seek table that enables **random access** without decoding the whole stream.
 
 ## Why Seekable?
 
@@ -20,7 +20,7 @@ Typical uses: large datasets queried by offset, video/indexed media containers, 
 ### Basic
 
 ```csharp
-using ZARSharp.Seekable;
+using ZArchiveSharp.Seekable;
 
 var writer = new SeekableWriter();           // defaults: level 3, 2 MiB frames, checksums on
 writer.Write(chunk1);
@@ -31,7 +31,7 @@ byte[] file = writer.Finish();               // complete seekable file (Foot)
 ### Options
 
 ```csharp
-using ZARSharp.Seekable;
+using ZArchiveSharp.Seekable;
 
 var writer = new SeekableWriter(new SeekableOptions
 {
@@ -75,7 +75,7 @@ The standalone Head is useful when the table must precede the data (e.g., an obj
 ### Open and Query
 
 ```csharp
-using ZARSharp.Seekable;
+using ZArchiveSharp.Seekable;
 
 var reader = new SeekableReader(file);       // parses the embedded Foot table
 
@@ -155,7 +155,7 @@ Per-frame bytes are streaming-style, byte-identical to real libzstd streaming (v
 
 ## Compatibility
 
-- Files written by ZARSharp decode with the `zeekstd` CLI and the C seekable format reference
+- Files written by ZArchiveSharp decode with the `zeekstd` CLI and the C seekable format reference
 - Stock `zstd` ignores the skippable table and decodes the frame stream linearly
 - Files produced by either reference flavor (plain frames, checksummed frames) decode here
 - Verified by 585 seekable tests, including 248 byte-identity vectors vs a gcc oracle over real libzstd streaming (levels 1–19, Foot + Head + Compressed policy)

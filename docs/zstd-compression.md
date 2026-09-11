@@ -1,10 +1,10 @@
 # Zstd Compression
 
-ZARSharp includes a complete, dependency-free implementation of the [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) zstd format — both encoder and decoder. It is a faithful port of libzstd 1.5.7 and produces **byte-identical frames** to `ZSTD_compress(src, level)` for single-shot compression at every level 1–22.
+ZArchiveSharp includes a complete, dependency-free implementation of the [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) zstd format — both encoder and decoder. It is a faithful port of libzstd 1.5.7 and produces **byte-identical frames** to `ZSTD_compress(src, level)` for single-shot compression at every level 1–22.
 
 ## Compression Levels
 
-ZARSharp supports the full zstd level range, 1–22. Parameters per level come from an exact port of libzstd's `clevels.h` table — no values are invented.
+ZArchiveSharp supports the full zstd level range, 1–22. Parameters per level come from an exact port of libzstd's `clevels.h` table — no values are invented.
 
 | Level | Strategy | Typical Use |
 |-------|----------|-------------|
@@ -30,7 +30,7 @@ ZARSharp supports the full zstd level range, 1–22. Parameters per level come f
 ### Single-Shot Compression
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
 
@@ -50,7 +50,7 @@ if (written == -1)
 ### Decompression
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 // Array-based with a size cap (required — protects against zip bombs)
 byte[] data = ZstdCompressor.DecompressFrame(frame, maxSize: expectedSize);
@@ -90,7 +90,7 @@ Strategy is selected automatically by level — you cannot set it independently 
 
 ## Size Tiers
 
-libzstd selects compression parameters not just by level but by **input size**. ZARSharp ports this exactly (`ZstdCompressionParameters.ForSizeAndLevel`):
+libzstd selects compression parameters not just by level but by **input size**. ZArchiveSharp ports this exactly (`ZstdCompressionParameters.ForSizeAndLevel`):
 
 | Tier | Input Size |
 |------|-----------|
@@ -103,7 +103,7 @@ For multi-block frames, the parameter row is derived **once** from the total inp
 
 ## Frame Structure
 
-Frames ZARSharp writes follow RFC 8878 §3:
+Frames ZArchiveSharp writes follow RFC 8878 §3:
 
 ```
 +-------------+--------+--------+--------+--------+
@@ -127,7 +127,7 @@ Frames ZARSharp writes follow RFC 8878 §3:
 
 ## Block Splitting (High Levels)
 
-At levels with `windowLog ≥ 17` using optimal parsers (btopt and above), libzstd may split 128 KiB blocks into sub-blocks using an entropy-estimation search to squeeze extra ratio. ZARSharp ports this:
+At levels with `windowLog ≥ 17` using optimal parsers (btopt and above), libzstd may split 128 KiB blocks into sub-blocks using an entropy-estimation search to squeeze extra ratio. ZArchiveSharp ports this:
 
 - `ZstdBlockSplitter` — recursive entropy-estimation search (`ZSTD_deriveBlockSplits`)
 - Per-partition offset-code resolution with dual repcode histories
@@ -140,11 +140,11 @@ This is why byte parity holds across the full multi-block matrix (636 vectors, l
 
 ### With Standard zstd Tools
 
-Frames ZARSharp produces decode with:
+Frames ZArchiveSharp produces decode with:
 - The official `zstd` CLI
 - Any RFC 8878-conformant decoder
 
-And ZARSharp decodes anything standard tools produce (levels 1–22, with or without dictionaries, no legacy frames).
+And ZArchiveSharp decodes anything standard tools produce (levels 1–22, with or without dictionaries, no legacy frames).
 
 ### Verification
 
@@ -156,7 +156,7 @@ The test suite proves byte-identity:
 
 ## Known Boundaries
 
-1. **zarchive.exe bundles libzstd 1.5.2** — its level 6 differs from 1.5.7 on some multi-transition heterogeneous 64 KiB blocks. ZARSharp follows the frozen 1.5.7 reference. Homogeneous blocks and single-transition blocks are identical; extract interops both ways regardless.
+1. **zarchive.exe bundles libzstd 1.5.2** — its level 6 differs from 1.5.7 on some multi-transition heterogeneous 64 KiB blocks. ZArchiveSharp follows the frozen 1.5.7 reference. Homogeneous blocks and single-transition blocks are identical; extract interops both ways regardless.
 
 2. **Dictionary use only, no training** — `ZstdDictionary.FromBytes`
    (auto-detects formatted vs raw prefix) and `FromRawPrefix` supply history

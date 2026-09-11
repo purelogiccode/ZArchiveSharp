@@ -50,7 +50,7 @@ dotnet build -c Release
 The simplest way to create an archive:
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 // Pack with default settings (zstd level 6, deterministic order)
 ZArchiveTool.Pack(@"C:\mydata", @"C:\mydata.zar");
@@ -59,7 +59,7 @@ ZArchiveTool.Pack(@"C:\mydata", @"C:\mydata.zar");
 ### With Progress Reporting
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 ZArchiveTool.Pack(
     inputDirectory: @"C:\mydata",
@@ -71,8 +71,8 @@ ZArchiveTool.Pack(
 ### Custom Compression Level
 
 ```csharp
-using ZARSharp;
-using ZARSharp.Zstd;
+using ZArchiveSharp;
+using ZArchiveSharp.Zstd;
 
 var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(9));
 ZArchiveTool.Pack(@"C:\mydata", @"C:\mydata.zar", compressor: compressor);
@@ -81,7 +81,7 @@ ZArchiveTool.Pack(@"C:\mydata", @"C:\mydata.zar", compressor: compressor);
 ### Raw Storage (No Compression)
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 ZArchiveTool.Pack(
     @"C:\mydata",
@@ -95,8 +95,8 @@ ZArchiveTool.Pack(
 For fine-grained control over archive construction:
 
 ```csharp
-using ZARSharp;
-using ZARSharp.Zstd;
+using ZArchiveSharp;
+using ZArchiveSharp.Zstd;
 
 using var output = File.Create("game.zar");
 using var writer = new ZArchiveWriter(output);
@@ -119,7 +119,7 @@ writer.Finalize();
 ### High-Level API
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 ZArchiveTool.Extract(@"C:\mydata.zar", @"C:\extracted");
 ```
@@ -127,7 +127,7 @@ ZArchiveTool.Extract(@"C:\mydata.zar", @"C:\extracted");
 ### Low-Level Reader API
 
 ```csharp
-using ZARSharp;
+using ZArchiveSharp;
 
 // TryOpen returns null on invalid archives (never throws)
 using var reader = ZArchiveReader.TryOpen("game.zar");
@@ -155,8 +155,8 @@ Console.WriteLine(System.Text.Encoding.UTF8.GetString(data));
 The pipeline API provides batch operations with progress, pause, cancellation, and collision handling:
 
 ```csharp
-using ZARSharp;
-using ZARSharp.Pipeline;
+using ZArchiveSharp;
+using ZArchiveSharp.Pipeline;
 
 var options = new ZarPipelineOptions
 {
@@ -191,7 +191,7 @@ ZArchiveSharp includes a complete RFC 8878 zstd encoder and decoder:
 ### Compress
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
 byte[] frame = compressor.CompressBlock(data);
@@ -207,7 +207,7 @@ if (written == -1)
 ### Decompress
 
 ```csharp
-using ZARSharp.Zstd;
+using ZArchiveSharp.Zstd;
 
 byte[] decompressed = ZstdCompressor.DecompressFrame(frameBytes, maxSize: 1024 * 1024);
 

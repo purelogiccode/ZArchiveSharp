@@ -1,15 +1,15 @@
 # API Reference
 
-Complete API documentation for ZARSharp. All types are in the `ZARSharp` namespace unless otherwise noted.
+Complete API documentation for ZArchiveSharp. All types are in the `ZArchiveSharp` namespace unless otherwise noted.
 
 ## Namespaces
 
 | Namespace | Contents |
 |-----------|----------|
-| `ZARSharp` | Archive reader/writer, format structures, tool |
-| `ZARSharp.Zstd` | zstd encoder/decoder, compression options |
-| `ZARSharp.Seekable` | Seekable zstd format (Foot + Head) |
-| `ZARSharp.Pipeline` | Pipeline engine, batch operations, progress |
+| `ZArchiveSharp` | Archive reader/writer, format structures, tool |
+| `ZArchiveSharp.Zstd` | zstd encoder/decoder, compression options |
+| `ZArchiveSharp.Seekable` | Seekable zstd format (Foot + Head) |
+| `ZArchiveSharp.Pipeline` | Pipeline engine, batch operations, progress |
 
 ---
 
@@ -287,7 +287,7 @@ Extracts an archive to a directory.
 
 ---
 
-## ZarPipelineOptions (ZARSharp.Pipeline)
+## ZarPipelineOptions (ZArchiveSharp.Pipeline)
 
 Options for `ZarPipeline` pack/extract work (also honored by the `zar`
 CLI flags `--level`, `--check`, `--dict`).
@@ -327,7 +327,7 @@ public sealed class ZarRawCompressor : IZarBlockCompressor
 
 ---
 
-## ZstdCompressionOptions (ZARSharp.Zstd)
+## ZstdCompressionOptions (ZArchiveSharp.Zstd)
 
 Options for the zstd compressor.
 
@@ -349,7 +349,7 @@ Creates options for the specified level (1–22).
 
 ---
 
-## ZstdCompressor (ZARSharp.Zstd)
+## ZstdCompressor (ZArchiveSharp.Zstd)
 
 Pure-C# zstd encoder. Implements `IZarBlockCompressor`.
 
@@ -407,7 +407,7 @@ Decompresses a zstd frame.
 
 ---
 
-## ZstdCompressionStream (ZARSharp.Zstd)
+## ZstdCompressionStream (ZArchiveSharp.Zstd)
 
 Write-only zstd compression stream. Buffers everything written and emits one
 logical frame with an unknown-size header on `Dispose()` — byte-identical to
@@ -436,7 +436,7 @@ using (var enc = new ZstdCompressionStream(dest, level: 6, checksum: true))
 
 ---
 
-## ZstdDecompressionStream (ZARSharp.Zstd)
+## ZstdDecompressionStream (ZArchiveSharp.Zstd)
 
 Read-only zstd decompression stream over concatenated frames (skippable frames
 skipped). Decodes incrementally through the shared block path with
@@ -464,7 +464,7 @@ await dec.CopyToAsync(outMs);
 
 ---
 
-## ZstdDictionary (ZARSharp.Zstd)
+## ZstdDictionary (ZArchiveSharp.Zstd)
 
 Immutable, thread-safe reusable zstd dictionary (use only; training is out
 of scope). A supplied dictionary is always active per frame — history plus,
@@ -512,7 +512,7 @@ byte[] back = ZstdDecompressor.Decompress(frame, dict);
 
 ---
 
-## ZstdCli (ZARSharp.Pipeline)
+## ZstdCli (ZArchiveSharp.Pipeline)
 
 Callable form of the `zar zstd` contract (single zstd streams, not
 archives). Failures map onto the `ZarchiveCli` exit-code table (no new
@@ -535,7 +535,7 @@ failures to `error`.
 
 ---
 
-## SeekableCli (ZARSharp.Pipeline)
+## SeekableCli (ZArchiveSharp.Pipeline)
 
 Callable form of the `zar seekable` contract (seekable zstd files:
 compress, decompress with byte/frame slicing, and seek-table listing).
@@ -566,7 +566,7 @@ stdout.
 
 ---
 
-## SevenZip (ZARSharp.Pipeline)
+## SevenZip (ZArchiveSharp.Pipeline)
 
 Archive-container stage: finds an external 7z binary and extracts
 7z stays external by design).
@@ -589,7 +589,7 @@ null — when several ISOs are present the rest are ignored, like the oracle.
 
 ---
 
-## ZstdStrategy (ZARSharp.Zstd)
+## ZstdStrategy (ZArchiveSharp.Zstd)
 
 Compression strategy selector. Maps to libzstd's `ZSTD_strategy`.
 
@@ -607,7 +607,7 @@ Compression strategy selector. Maps to libzstd's `ZSTD_strategy`.
 
 ---
 
-## SeekableWriter (ZARSharp.Seekable)
+## SeekableWriter (ZArchiveSharp.Seekable)
 
 Writes seekable zstd files with Foot/Head seek tables.
 
@@ -656,7 +656,7 @@ Returns just the seek table as a standalone Head frame.
 
 ---
 
-## SeekableReader (ZARSharp.Seekable)
+## SeekableReader (ZArchiveSharp.Seekable)
 
 Reads seekable zstd files.
 
@@ -712,10 +712,10 @@ Decompresses a byte range, decoding only the frames the range touches.
 
 | Exception | Namespace | When Thrown |
 |-----------|-----------|------------|
-| `ZarArchiveOpenException` | `ZARSharp.Pipeline` | Archive fails to open |
-| `ZarInputOpenException` | `ZARSharp.Pipeline` | Input file cannot be opened |
-| `ZarEntryCreateException` | `ZARSharp.Pipeline` | Archive entry creation fails |
-| `ZstdException` | `ZARSharp.Zstd` | zstd decompression error |
+| `ZarArchiveOpenException` | `ZArchiveSharp.Pipeline` | Archive fails to open |
+| `ZarInputOpenException` | `ZArchiveSharp.Pipeline` | Input file cannot be opened |
+| `ZarEntryCreateException` | `ZArchiveSharp.Pipeline` | Archive entry creation fails |
+| `ZstdException` | `ZArchiveSharp.Zstd` | zstd decompression error |
 | `IOException` | `System` | I/O errors |
 | `InvalidOperationException` | `System` | Invalid state (corrupt archive, etc.) |
 

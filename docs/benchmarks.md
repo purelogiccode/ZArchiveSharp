@@ -1,21 +1,21 @@
 # Benchmarks
 
-ZARSharp ships a [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) suite (`ZARSharp.Benchmarks`) covering the zstd codec and the archive container. This page records the current baseline and explains how to run and interpret the benchmarks.
+ZArchiveSharp ships a [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet) suite (`ZArchiveSharp.Benchmarks`) covering the zstd codec and the archive container. This page records the current baseline and explains how to run and interpret the benchmarks.
 
 ## Running
 
 ```bash
-dotnet run -c Release -f net10.0 --project ZARSharp.Benchmarks
+dotnet run -c Release -f net10.0 --project ZArchiveSharp.Benchmarks
 ```
 
 BenchmarkDotNet prompts for a benchmark filter interactively; pass `--filter` to select directly:
 
 ```bash
 # Compress benchmarks only
-dotnet run -c Release --project ZARSharp.Benchmarks -- --filter *ZstdCompress*
+dotnet run -c Release --project ZArchiveSharp.Benchmarks -- --filter *ZstdCompress*
 
 # Everything
-dotnet run -c Release --project ZARSharp.Benchmarks -- --filter *
+dotnet run -c Release --project ZArchiveSharp.Benchmarks -- --filter *
 ```
 
 Filters are space-separated unions (`--filter *A* *B*` runs both; comma
@@ -72,11 +72,11 @@ per-file averages give the ratio side.
 ### VsZstdSharpBenchmarks
 
 Optional third-party baseline (see below): same 64 KiB payloads through
-`ZstdSharp.Port` 0.8.8 next to ZARSharp. Oracle only, never shipped; excluded
+`ZstdSharp.Port` 0.8.8 next to ZArchiveSharp. Oracle only, never shipped; excluded
 from default runs, select explicitly:
 
 ```bash
-dotnet run -c Release --project ZARSharp.Benchmarks -- --filter *VsZstdSharp*
+dotnet run -c Release --project ZArchiveSharp.Benchmarks -- --filter *VsZstdSharp*
 ```
 
 ## Baseline Results
@@ -170,21 +170,21 @@ to the exact input bytes, and alternating-input probes rule out same-input
 caching — the gap below is genuine per-call work, both libraries measured
 under the same BDN job.
 
-| Benchmark | Mean | Ratio vs ZARSharp |
+| Benchmark | Mean | Ratio vs ZArchiveSharp |
 |-----------|------|-------------------|
-| ZARSharp L6, hetero 64 KiB (baseline) | 155.8 µs | 1.00 |
+| ZArchiveSharp L6, hetero 64 KiB (baseline) | 155.8 µs | 1.00 |
 | ZstdSharp L6, hetero 64 KiB | 23.3 µs | 0.15 |
-| ZARSharp L1, hetero 64 KiB | 53.4 µs | 0.34 |
+| ZArchiveSharp L1, hetero 64 KiB | 53.4 µs | 0.34 |
 | ZstdSharp L1, hetero 64 KiB | 7.0 µs | 0.04 |
-| ZARSharp L6, text 64 KiB | 112.2 µs | 0.72 |
+| ZArchiveSharp L6, text 64 KiB | 112.2 µs | 0.72 |
 | ZstdSharp L6, text 64 KiB | 8.1 µs | 0.05 |
-| ZARSharp decode, hetero 64 KiB | 83.5 µs | 0.54 |
+| ZArchiveSharp decode, hetero 64 KiB | 83.5 µs | 0.54 |
 | ZstdSharp decode, same bytes | 3.3 µs | 0.02 |
 
 Note this supersedes the older "~0.96–1.13× native" remark below for current
 versions: pinned 0.8.8 measures several× faster than stock libzstd itself on
 these payloads (see native table), so it is a harsh oracle, not a peer.
-ZARSharp trades that speed for byte-exact parity with stock decisions, safe
+ZArchiveSharp trades that speed for byte-exact parity with stock decisions, safe
 code, and no dependencies — the measured cost is in this table.
 
 ## Interpretation
@@ -196,7 +196,7 @@ Python `compression.zstd`, compressing/decompressing the *identical* frozen
 payload bytes (a few µs of Python call overhead flatter native slightly, so
 treat near-parity as parity):
 
-| Workload | ZARSharp (BDN) | Native 1.5.7 | × native |
+| Workload | ZArchiveSharp (BDN) | Native 1.5.7 | × native |
 |----------|----------------|--------------|----------|
 | L1 hetero 64 KiB | 46.1 µs | 38.0 µs | ~0.8× |
 | L6 hetero 64 KiB | 152.8 µs | 174.8 µs | ~1.0× (parity) |

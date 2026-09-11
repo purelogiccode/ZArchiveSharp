@@ -1,6 +1,6 @@
 # ZAR Format Specification
 
-The `.zar` format is ZArchive 0.1.2 by Exzap ([unknownbrackets/ZArchive](https://github.com/unknownbrackets/ZArchive)). This page documents the on-disk layout as implemented by ZARSharp, which is byte-identical to the reference implementation.
+The `.zar` format is ZArchive 0.1.2 by Exzap ([unknownbrackets/ZArchive](https://github.com/unknownbrackets/ZArchive)). This page documents the on-disk layout as implemented by ZArchiveSharp, which is byte-identical to the reference implementation.
 
 ## Overview
 
@@ -167,5 +167,5 @@ The SHA-256 covers **every output byte written before the footer**, then the foo
 
 ## Compatibility
 
-- ZARSharp-written archives extract with the original `zarchive.exe` and vice versa (tested both directions)
+- ZArchiveSharp-written archives extract with the original `zarchive.exe` and vice versa (tested both directions)
 - Byte-parity is at the **writer API sequence** level: filesystem enumeration order is OS-unspecified in C++, so `ZArchiveTool.Pack` sorts entries by default (`deterministicOrder: true`); pass `false` to mirror native enumeration for parity runs

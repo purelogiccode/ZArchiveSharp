@@ -398,7 +398,7 @@ Note: Extract entry lines include a leading `/` (the native quirk) and use OS-na
 
 ## Differences from `zarchive.exe`
 
-ZARSharp's CLI is intentionally compatible but has three documented deviations where native behavior is a bug:
+ZArchiveSharp's CLI is intentionally compatible but has three documented deviations where native behavior is a bug:
 
 1. **Unopenable extract output** — Throws an exception (native writes into the dead stream)
 2. **Mid-file read errors** — Fails the pack with `-16` (native silently truncates)

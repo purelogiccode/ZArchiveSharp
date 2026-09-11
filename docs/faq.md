@@ -34,11 +34,11 @@ Yes, both directions. The suite tests interop both ways, and a native-packed `.z
 
 ### Can standard zstd tools read the standalone frames?
 
-Yes — frames follow RFC 8878 and decode with the official `zstd` CLI. Conversely, ZARSharp decodes anything standard tools produce at levels 1–22 (no dictionaries, no legacy frames).
+Yes — frames follow RFC 8878 and decode with the official `zstd` CLI. Conversely, ZArchiveSharp decodes anything standard tools produce at levels 1–22 (no dictionaries, no legacy frames).
 
 ### Why does my output differ from zarchive.exe in rare cases?
 
-The shipped `zarchive.exe` bundles **libzstd 1.5.2**; ZARSharp targets the frozen **1.5.7** reference. On some multi-transition heterogeneous 64 KiB blocks, level 6 differs between those libzstd versions (a 1.5.2-vs-1.5.7 upstream change, not a bug). Homogeneous blocks are identical; extract interops both ways regardless.
+The shipped `zarchive.exe` bundles **libzstd 1.5.2**; ZArchiveSharp targets the frozen **1.5.7** reference. On some multi-transition heterogeneous 64 KiB blocks, level 6 differs between those libzstd versions (a 1.5.2-vs-1.5.7 upstream change, not a bug). Homogeneous blocks are identical; extract interops both ways regardless.
 
 ### Can I read seekable files made by zeekstd / the C reference?
 
@@ -97,7 +97,7 @@ Data blocks carry no per-block checksums (same as native). The footer SHA-256 ca
 
 ### My pack fails with exit code -16 / an IOException
 
-`-16` (`PackOutputFailed`) is an output I/O error — disk full, permission denied, or the destination vanished mid-run. ZARSharp fails the pack here where native `zarchive.exe` would silently pack a truncated file (a documented intentional deviation).
+`-16` (`PackOutputFailed`) is an output I/O error — disk full, permission denied, or the destination vanished mid-run. ZArchiveSharp fails the pack here where native `zarchive.exe` would silently pack a truncated file (a documented intentional deviation).
 
 ### Extraction fails with -12 (ExtractionFailed)
 
@@ -110,7 +110,7 @@ The archive is corrupt or the I/O failed mid-extract. Extraction lines printed b
 
 ### How do I contribute?
 
-Open an issue or PR on the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues). If you touch compression logic, keep byte parity: the parity tests and goldens in `ZARSharp.Tests/Goldens/` must stay green, and CI holds the line with no native toolchain installed.
+Open an issue or PR on the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues). If you touch compression logic, keep byte parity: the parity tests and goldens in `ZArchiveSharp.Tests/Goldens/` must stay green, and CI holds the line with no native toolchain installed.
 
 ### How are versions managed?
 
