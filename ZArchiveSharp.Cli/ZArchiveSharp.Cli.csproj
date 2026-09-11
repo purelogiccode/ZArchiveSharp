@@ -25,12 +25,6 @@
         <IsTrimmable>true</IsTrimmable>
         <IsAotCompatible>true</IsAotCompatible>
 
-        <!-- Slim dotnet-tool payload: the tool ships no snupkg, so keep
-             pdbs and XML docs out of tools/ (keeps the download small).
-             Local bin/ output is unaffected. -->
-        <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
-        <CopyDocumentationFileToPublishDirectory>false</CopyDocumentationFileToPublishDirectory>
-
         <!-- Source Link + reproducible builds -->
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>
