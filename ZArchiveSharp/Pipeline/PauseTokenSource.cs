@@ -17,8 +17,14 @@ public sealed class PauseTokenSource
     public PauseToken Token => new(_running);
 
     /// <summary>Pauses workers at their next gate check.</summary>
-    public void Pause() => _running.Reset();
+    public void Pause()
+    {
+        _running.Reset();
+    }
 
     /// <summary>Resumes paused workers.</summary>
-    public void Resume() => _running.Set();
+    public void Resume()
+    {
+        _running.Set();
+    }
 }

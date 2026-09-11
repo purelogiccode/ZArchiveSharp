@@ -35,7 +35,7 @@ public sealed class ZstdHuffmanTests
         if (result == 0)
         {
             // Valid answer for hard inputs (stored raw by the caller).
-            Assert.True(IsHardCase(kind, size, src), $"Unexpected raw fallback for {kind} x {size}.");
+            Assert.True(IsHardCase(size, src), $"Unexpected raw fallback for {kind} x {size}.");
             return;
         }
 
@@ -373,7 +373,7 @@ public sealed class ZstdHuffmanTests
         return src;
     }
 
-    private static bool IsHardCase(string kind, int size, byte[] src)
+    private static bool IsHardCase(int size, byte[] src)
     {
         // Only tiny or low-redundancy inputs may validly fall back to raw.
         if (size < 32)

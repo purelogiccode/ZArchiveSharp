@@ -34,7 +34,8 @@ public sealed class Step1ParityTests
         Assert.Equal(ZstdCompressionParameters.SizeTier.Le16K, ZstdCompressionParameters.TierForSize(16 * 1024));
         Assert.Equal(ZstdCompressionParameters.SizeTier.Le128K, ZstdCompressionParameters.TierForSize(64 * 1024));
         Assert.Equal(ZstdCompressionParameters.SizeTier.Le256K, ZstdCompressionParameters.TierForSize(256 * 1024));
-        Assert.Equal(ZstdCompressionParameters.SizeTier.Default, ZstdCompressionParameters.TierForSize((256 * 1024) + 1));
+        Assert.Equal(ZstdCompressionParameters.SizeTier.Default,
+            ZstdCompressionParameters.TierForSize((256 * 1024) + 1));
     }
 
     [Theory]
@@ -96,6 +97,9 @@ public sealed class Step1ParityTests
     [Fact]
     public void Container_RawBlocks_SameSequenceYieldsIdenticalBytes()
     {
+        Assert.Equal(Build(), Build());
+        return;
+
         static byte[] Build()
         {
             using var ms = new MemoryStream();
@@ -111,8 +115,6 @@ public sealed class Step1ParityTests
 
             return ms.ToArray();
         }
-
-        Assert.Equal(Build(), Build());
     }
 
     [Fact]

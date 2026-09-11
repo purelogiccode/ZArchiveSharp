@@ -63,7 +63,8 @@ public sealed class ParityVsNativeMultiblockTests
             "hetero" => 5,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        var rng = new Random(unchecked((int)(0x5332026u + (uint)kindIndex * 0x9E3779B9u + (uint)n * 31u + (uint)seed * 131u)));
+        var rng = new Random(unchecked((int)(0x5332026u + ((uint)kindIndex * 0x9E3779B9u) + ((uint)n * 31u) +
+                                             ((uint)seed * 131u))));
         var buf = new byte[n];
         switch (kind)
         {
@@ -119,7 +120,7 @@ public sealed class ParityVsNativeMultiblockTests
                 var code = MakeInput("code", n, seed);
                 var binary = MakeInput("binary", n, seed);
                 Array.Copy(code, buf, n);
-                var secondStart = 131072 + 65536;
+                const int secondStart = 131072 + 65536;
                 var secondEnd = Math.Min(n, 131072 + 131072);
                 if (secondEnd > secondStart)
                 {

@@ -46,7 +46,8 @@ public sealed class ZstdEncoderFuzzTests
             "allbytes" => 6,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        var rng = new Random(unchecked((int)(0x5332026u + (uint)kindIndex * 0x9E3779B9u + (uint)n * 31u + (uint)level * 131u + (uint)Seed * 131u)));
+        var rng = new Random(unchecked((int)(0x5332026u + ((uint)kindIndex * 0x9E3779B9u) + ((uint)n * 31u) +
+                                             ((uint)level * 131u) + ((uint)Seed * 131u))));
         var buf = new byte[n];
         switch (kind)
         {
@@ -195,7 +196,8 @@ public sealed class ZstdEncoderFuzzTests
 
             File.WriteAllText(
                 Path.Combine(work, "manifest.json"),
-                JsonSerializer.Serialize(manifest.Select(m => new[] { m.Name, m.Frame, m.Input, $"{m.Size}", $"{m.Level}" })));
+                JsonSerializer.Serialize(manifest.Select(m => new[]
+                    { m.Name, m.Frame, m.Input, $"{m.Size}", $"{m.Level}" })));
 
             const string script =
                 "import compression.zstd as z, json, os, sys\n" +

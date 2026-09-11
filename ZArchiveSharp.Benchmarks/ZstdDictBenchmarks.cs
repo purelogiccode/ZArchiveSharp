@@ -6,28 +6,20 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// Dictionary payoff for small files: 64 × 2 KiB and 32 × 8 KiB phrase-cycle
-/// files (varied offsets, fixed seeds) compressed at L6 with and without an
-/// 8 KiB raw-prefix dictionary, plus both decode directions. Each benchmark
-/// covers the whole file set and returns the total bytes so per-file averages
-/// (printed by <c>GlobalSetup</c>, deterministic corpus) give the ratio side
-/// of the "dict is worth it" claim for archive entries.
-/// </summary>
 public class ZstdDictBenchmarks
 {
-    private const int Files2k = 64;
-    private const int Files8k = 32;
+    private const int Files2K = 64;
+    private const int Files8K = 32;
 
     private ZstdCompressor _plain = null!;
     private ZstdCompressor _withDict = null!;
     private ZstdDictionary _dict = null!;
-    private byte[][] _small2k = null!;
-    private byte[][] _small8k = null!;
-    private byte[][] _plain2k = null!;
-    private byte[][] _dict2k = null!;
-    private byte[][] _plain8k = null!;
-    private byte[][] _dict8k = null!;
+    private byte[][] _small2K = null!;
+    private byte[][] _small8K = null!;
+    private byte[][] _plain2K = null!;
+    private byte[][] _dict2K = null!;
+    private byte[][] _plain8K = null!;
+    private byte[][] _dict8K = null!;
 
     /// <summary>
     /// Builds the dictionary, the file corpus and all decode fixtures once per
@@ -39,23 +31,24 @@ public class ZstdDictBenchmarks
         _dict = ZstdDictionary.FromRawPrefix(BenchmarkCorpus.CycleText(8192));
         _plain = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
         _withDict = new ZstdCompressor(new ZstdCompressionOptions { Level = 6, Dictionary = _dict });
-        _small2k = new byte[Files2k][];
-        _small8k = new byte[Files8k][];
-        for (var i = 0; i < Files2k; i++)
+        _small2K = new byte[Files2K][];
+        _small8K = new byte[Files8K][];
+        for (var i = 0; i < Files2K; i++)
         {
-            _small2k[i] = BenchmarkCorpus.CycleTextAt(2048, i * 53);
+            _small2K[i] = BenchmarkCorpus.CycleTextAt(2048, i * 53);
         }
 
-        for (var i = 0; i < Files8k; i++)
+        for (var i = 0; i < Files8K; i++)
         {
-            _small8k[i] = BenchmarkCorpus.CycleTextAt(8192, i * 211);
+            _small8K[i] = BenchmarkCorpus.CycleTextAt(8192, i * 211);
         }
 
-        _plain2k = CompressAll(_plain, _small2k);
-        _dict2k = CompressAll(_withDict, _small2k);
-        _plain8k = CompressAll(_plain, _small8k);
-        _dict8k = CompressAll(_withDict, _small8k);
-        Console.WriteLine($"[fixtures] 2k/file plain={Avg(_plain2k)} dict={Avg(_dict2k)} 8k/file plain={Avg(_plain8k)} dict={Avg(_dict8k)}");
+        _plain2K = CompressAll(_plain, _small2K);
+        _dict2K = CompressAll(_withDict, _small2K);
+        _plain8K = CompressAll(_plain, _small8K);
+        _dict8K = CompressAll(_withDict, _small8K);
+        Console.WriteLine(
+            $"[fixtures] 2k/file plain={Avg(_plain2K)} dict={Avg(_dict2K)} 8k/file plain={Avg(_plain8K)} dict={Avg(_dict8K)}");
     }
 
     private static byte[][] CompressAll(ZstdCompressor compressor, byte[][] files)
@@ -96,7 +89,7 @@ public class ZstdDictBenchmarks
     [Benchmark]
     public long Compress_2k_Plain()
     {
-        return TotalLength(CompressAll(_plain, _small2k));
+        return TotalLength(CompressAll(_plain, _small2K));
     }
 
     /// <summary>Compresses the 2 KiB set with the dictionary.</summary>
@@ -104,7 +97,7 @@ public class ZstdDictBenchmarks
     [Benchmark]
     public long Compress_2k_Dict()
     {
-        return TotalLength(CompressAll(_withDict, _small2k));
+        return TotalLength(CompressAll(_withDict, _small2K));
     }
 
     /// <summary>Compresses the 8 KiB set with no dictionary.</summary>
@@ -112,7 +105,7 @@ public class ZstdDictBenchmarks
     [Benchmark]
     public long Compress_8k_Plain()
     {
-        return TotalLength(CompressAll(_plain, _small8k));
+        return TotalLength(CompressAll(_plain, _small8K));
     }
 
     /// <summary>Compresses the 8 KiB set with the dictionary.</summary>
@@ -120,7 +113,7 @@ public class ZstdDictBenchmarks
     [Benchmark]
     public long Compress_8k_Dict()
     {
-        return TotalLength(CompressAll(_withDict, _small8k));
+        return TotalLength(CompressAll(_withDict, _small8K));
     }
 
     /// <summary>Decodes the plain 2 KiB frames.</summary>
@@ -129,7 +122,7 @@ public class ZstdDictBenchmarks
     public long Decompress_2k_Plain()
     {
         long total = 0;
-        foreach (var frame in _plain2k)
+        foreach (var frame in _plain2K)
         {
             total += ZstdCompressor.DecompressFrame(frame, maxSize: 2048).Length;
         }
@@ -143,7 +136,7 @@ public class ZstdDictBenchmarks
     public long Decompress_2k_Dict()
     {
         long total = 0;
-        foreach (var frame in _dict2k)
+        foreach (var frame in _dict2K)
         {
             total += ZstdDecompressor.Decompress(frame, _dict).Length;
         }
@@ -157,7 +150,7 @@ public class ZstdDictBenchmarks
     public long Decompress_8k_Plain()
     {
         long total = 0;
-        foreach (var frame in _plain8k)
+        foreach (var frame in _plain8K)
         {
             total += ZstdCompressor.DecompressFrame(frame, maxSize: 8192).Length;
         }
@@ -171,7 +164,7 @@ public class ZstdDictBenchmarks
     public long Decompress_8k_Dict()
     {
         long total = 0;
-        foreach (var frame in _dict8k)
+        foreach (var frame in _dict8K)
         {
             total += ZstdDecompressor.Decompress(frame, _dict).Length;
         }

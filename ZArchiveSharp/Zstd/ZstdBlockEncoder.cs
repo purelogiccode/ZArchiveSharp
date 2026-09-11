@@ -107,7 +107,8 @@ internal static class ZstdBlockEncoder
 
     // Sequence baseline / extra-bit tables (RFC 8878 §4.1.1; same values as
     // the ZstdDecompressor LLBase/LLBits/MLBase/MLBits tables they invert).
-    private static readonly byte[] LlBits =    [
+    private static readonly byte[] LlBits =
+    [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12,
         13, 14, 15, 16,
@@ -198,7 +199,8 @@ internal static class ZstdBlockEncoder
         }
 
         var prm = ZstdCompressionParameters.ForSizeAndLevel(src.Length, level).AdjustForSize(src.Length);
-        var payload = EncodeBlockPayload(src, level, prm, dst, dstOffset + BlockHeaderSize, dstCapacity - BlockHeaderSize, rep);
+        var payload = EncodeBlockPayload(src, prm, dst, dstOffset + BlockHeaderSize,
+            dstCapacity - BlockHeaderSize, rep);
         if (payload > MaxBlockPayload)
         {
             throw new ZstdException("Block too large.");
@@ -228,7 +230,7 @@ internal static class ZstdBlockEncoder
     /// emitted compressed blocks).
     /// </summary>
     internal static int EncodeBlockPayload(
-        ReadOnlySpan<byte> src, int level, ZstdCompressionParameters prm,
+        ReadOnlySpan<byte> src, ZstdCompressionParameters prm,
         byte[] dst, int dstOffset, int dstCapacity, uint[] rep)
     {
         var end = dstOffset + dstCapacity;
@@ -237,10 +239,9 @@ internal static class ZstdBlockEncoder
             throw new ZstdException("Block destination too small.");
         }
 
-        var finder = new ZstdMatchFinder(level);
         var store = new ZstdSequenceStore(Math.Max(1, src.Length));
         var srcCopy = src.ToArray();
-        finder.FindMatches(srcCopy, store, rep, prm);
+        ZstdMatchFinder.FindMatches(srcCopy, store, rep, prm);
         // Standalone block: entropy starts with no previous tables (first-
         // block behavior); the staged next state is discarded.
         return EncodeStore(store, prm.Strategy, dst, dstOffset, end, new ZstdEntropyState(), new ZstdEntropyState());
@@ -251,7 +252,7 @@ internal static class ZstdBlockEncoder
     /// state's persistent match tables (M2) and entropy tables (M3). The next
     /// entropy state stages into the frame; the frame writer confirms it only
     /// for emitted compressed blocks. Same return/throw contract as
-    /// <see cref="EncodeBlockPayload(ReadOnlySpan{byte},int,ZstdCompressionParameters,byte[],int,int,uint[])"/>.
+    /// <see cref="EncodeBlockPayload(ReadOnlySpan{byte},ZstdCompressionParameters,byte[],int,int,uint[])"/>.
     /// </summary>
     internal static int EncodeBlockPayloadStateful(
         ZstdFrameState state, int blockStart, int blockEnd, byte[] dst, int dstOffset, int dstCapacity, uint[] rep)
@@ -381,7 +382,7 @@ internal static class ZstdBlockEncoder
         if (huffSize == 1)
         {
             // Single-symbol alphabet: RLE when large or truly uniform.
-            if (litLen >= 8 || AllIdentical(litBuf, out _))
+            if (litLen >= 8 || AllIdentical(litBuf))
             {
                 return WriteRawOrRle(dst, pos, end, litLen, SetRle, litBuf[0]);
             }
@@ -406,7 +407,7 @@ internal static class ZstdBlockEncoder
         // The stream layout matches the encoder's choice (single below 256
         // literals, or below 1 KiB with a valid table).
         var singleStream = litLen < ZstdHuffmanEncoder.SingleStreamThreshold
-            || (prev.HufRepeat == ZstdHufRepeat.Valid && litLen < 1024);
+                           || (prev.HufRepeat == ZstdHufRepeat.Valid && litLen < 1024);
         var sizeFormat = lhSize switch
         {
             3 => (singleStream ? 0 : 1),
@@ -495,9 +496,9 @@ internal static class ZstdBlockEncoder
         return pos - start;
     }
 
-    private static bool AllIdentical(byte[] buf, out byte value)
+    private static bool AllIdentical(byte[] buf)
     {
-        value = buf[0];
+        var value = buf[0];
         for (var i = 1; i < buf.Length; i++)
         {
             if (buf[i] != value)
@@ -661,10 +662,18 @@ internal static class ZstdBlockEncoder
     /// <param name="OfMax">Maximum offset code.</param>
     /// <param name="MlMax">Maximum match-length code.</param>
     internal readonly record struct SeqCodes(
-        byte[] Ll, byte[] Of, byte[] Ml,
-        uint[] LitLens, uint[] MlBases, uint[] OffBases,
-        uint[] LlCount, uint[] OfCount, uint[] MlCount,
-        int LlMax, int OfMax, int MlMax);
+        byte[] Ll,
+        byte[] Of,
+        byte[] Ml,
+        uint[] LitLens,
+        uint[] MlBases,
+        uint[] OffBases,
+        uint[] LlCount,
+        uint[] OfCount,
+        uint[] MlCount,
+        int LlMax,
+        int OfMax,
+        int MlMax);
 
     /// <summary>
     /// Converts <paramref name="nbSeq"/> sequences from
@@ -762,7 +771,8 @@ internal static class ZstdBlockEncoder
                 var dynamicMin = ((1 << defaultNormLog) * mult) >> 3;
                 if (mode == ZstdFseRepeat.Valid && prevTable is not null && nbSeq < 1000)
                 {
-                    return new SeqAlphabet(prevTable, SeqModeRepeat, prevTable.TableLog, null, prevTable.MaxSymbolValue);
+                    return new SeqAlphabet(prevTable, SeqModeRepeat, prevTable.TableLog, null,
+                        prevTable.MaxSymbolValue);
                 }
 
                 if (nbSeq < dynamicMin || mostFrequent < (uint)(nbSeq >> (defaultNormLog - 1)))
@@ -779,13 +789,13 @@ internal static class ZstdBlockEncoder
             // against a fresh table (the previous table scores ulong.MaxValue
             // when it cannot cover the distribution, like ERROR(GENERIC)).
             var basicCost = defaultAllowed
-                ? CrossEntropyCost(defaultNorm, (uint)defaultNormLog, count, (uint)maxObserved)
+                ? CrossEntropyCost(defaultNorm, defaultNormLog, count, maxObserved)
                 : ulong.MaxValue;
             var repeatCost = mode != ZstdFseRepeat.None && prevTable is not null
                 ? ZstdFseEncoder.FseBitCost(prevTable, count, maxObserved)
                 : ulong.MaxValue;
             var ncountCost = NCountCost(count, maxObserved, nbSeq, maxLog);
-            var compressedCost = (ncountCost << 3) + EntropyCost(count, (uint)maxObserved, nbSeq);
+            var compressedCost = (ncountCost << 3) + EntropyCost(count, maxObserved, nbSeq);
             if (defaultAllowed && basicCost <= repeatCost && basicCost <= compressedCost)
             {
                 mode = ZstdFseRepeat.None;
@@ -795,7 +805,7 @@ internal static class ZstdBlockEncoder
 
             if (repeatCost <= compressedCost)
             {
-                return new SeqAlphabet(prevTable!, SeqModeRepeat, prevTable!.TableLog, null, prevTable!.MaxSymbolValue);
+                return new SeqAlphabet(prevTable!, SeqModeRepeat, prevTable!.TableLog, null, prevTable.MaxSymbolValue);
             }
         }
 
@@ -849,11 +859,11 @@ internal static class ZstdBlockEncoder
         5, 4, 2, 1,
     ];
 
-    internal static ulong CrossEntropyCost(        short[] norm, uint accuracyLog, uint[] count, uint max)
+    internal static ulong CrossEntropyCost(short[] norm, int accuracyLog, uint[] count, int max)
     {
-        var shift = 8 - (int)accuracyLog;
+        var shift = 8 - accuracyLog;
         ulong cost = 0;
-        for (uint s = 0; s <= max; s++)
+        for (var s = 0; s <= max; s++)
         {
             var normAcc = norm[s] != -1 ? (uint)norm[s] : 1;
             var norm256 = normAcc << shift;
@@ -863,10 +873,10 @@ internal static class ZstdBlockEncoder
         return cost >> 8;
     }
 
-    internal static ulong EntropyCost(uint[] count, uint max, int total)
+    internal static ulong EntropyCost(uint[] count, int max, int total)
     {
         ulong cost = 0;
-        for (uint s = 0; s <= max; s++)
+        for (var s = 0; s <= max; s++)
         {
             var norm = (uint)(((ulong)256 * count[s]) / (uint)total);
             if (count[s] != 0 && norm == 0)

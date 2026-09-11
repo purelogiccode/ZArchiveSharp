@@ -1,3 +1,4 @@
+using Xunit.Sdk;
 using ZArchiveSharp.Zstd;
 
 namespace ZArchiveSharp.Tests;

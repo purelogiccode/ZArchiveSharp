@@ -21,7 +21,8 @@ public sealed class SeekableTests
             "binary" => 4,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        var rng = new Random(unchecked((int)(0x5332026u + (uint)kindIndex * 0x9E3779B9u + (uint)n * 31u + (uint)seed * 131u)));
+        var rng = new Random(unchecked((int)(0x5332026u + ((uint)kindIndex * 0x9E3779B9u) + ((uint)n * 31u) +
+                                             ((uint)seed * 131u))));
         var buf = new byte[n];
         switch (kind)
         {

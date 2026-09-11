@@ -249,7 +249,8 @@ public static class ZstdDecompressor
     /// <c>MaxWindowSize</c>).
     /// </summary>
     /// <exception cref="ZstdException">On corrupt input, dictionary mismatch, or unsupported features.</exception>
-    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict, ZstdDecoderOptions options)
+    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict,
+        ZstdDecoderOptions options)
     {
         ArgumentNullException.ThrowIfNull(src);
         ArgumentNullException.ThrowIfNull(options);
@@ -479,7 +480,12 @@ public static class ZstdDecompressor
         uint frameDictId = 0;
         if (dictFlag != 0)
         {
-            var idSize = dictFlag == 1 ? 1 : dictFlag == 2 ? 2 : 4;
+            var idSize = dictFlag switch
+            {
+                1 => 1,
+                2 => 2,
+                _ => 4
+            };
             if (pos + idSize > end)
             {
                 throw new ZstdException("Truncated zstd frame header.");
@@ -1155,7 +1161,8 @@ public static class ZstdDecompressor
                 ofState = of.NextState + (int)bitD.ReadBits(of.NumBits);
             }
 
-            ExecuteSequence(literals, ref litPos, output, maxOut, frameStart, historyStart, dictSize, ctx.WindowSize, litLen, matchLen, dist);
+            ExecuteSequence(literals, ref litPos, output, maxOut, frameStart, historyStart, dictSize, ctx.WindowSize,
+                litLen, matchLen, dist);
         }
 
         if (!bitD.IsAtEnd)

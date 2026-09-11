@@ -80,11 +80,13 @@
               on the csproj); packing with the no-build flag after a solution
               build fails (MSB3030) because the Publish step resolves the
               Release-path dependency the solution build never produced. -->
-        <ProjectReference Include="$(XisoSharpProject)" AdditionalProperties="MinVerSkip=true" Condition="'$(XisoSharpAvailable)' == 'true'" />
+        <ProjectReference Include="$(XisoSharpProject)" AdditionalProperties="MinVerSkip=true"
+                          Condition="'$(XisoSharpAvailable)' == 'true'" />
     </ItemGroup>
 
     <Target Name="WarnMissingXisoSharp" BeforeTargets="BeforeBuild" Condition="'$(XisoSharpAvailable)' != 'true'">
-        <Warning Text="XISOSharp sibling not found at '$(XisoSharpProject)': building zar WITHOUT --iso support. Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support." />
+        <Warning
+            Text="XISOSharp sibling not found at '$(XisoSharpProject)': building zar WITHOUT --iso support. Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support." />
     </Target>
 
     <ItemGroup>

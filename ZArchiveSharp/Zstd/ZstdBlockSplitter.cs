@@ -126,7 +126,7 @@ internal static class ZstdBlockSplitter
         HistAdd(middle, src, ip + (blockSize / 2) - (SegmentSize / 2), SegmentSize);
         var distFromBegin = FpDistance(past, middle, 8);
         var distFromEnd = FpDistance(future, middle, 8);
-        var minDistance = (ulong)SegmentSize * SegmentSize / 3;
+        const ulong minDistance = (ulong)SegmentSize * SegmentSize / 3;
         var gap = distFromBegin >= distFromEnd ? distFromBegin - distFromEnd : distFromEnd - distFromBegin;
         if (gap < minDistance)
         {
@@ -586,7 +586,11 @@ internal static class ZstdBlockSplitter
     /// whose statistics builder also skips both.
     /// </summary>
     internal readonly record struct HuffmanStats(
-        int Type, int DesSize, HuffmanCTable? Table, uint[] Count, int MaxSymbolValue);
+        int Type,
+        int DesSize,
+        HuffmanCTable? Table,
+        uint[] Count,
+        int MaxSymbolValue);
 
     internal static HuffmanStats BuildHuffmanStats(
         byte[] litBytes, HuffmanCTable? prevTable, ZstdHufRepeat prevRepeat, ZstdStrategy strategy)
@@ -649,7 +653,8 @@ internal static class ZstdBlockSplitter
         if (hSize <= 0)
         {
             if (repeat != ZstdHufRepeat.None && prevTable is not null
-                && ZstdHuffmanEncoder.EstimateCompressedSize(prevTable, count, maxSv) < litSize)
+                                             && ZstdHuffmanEncoder.EstimateCompressedSize(prevTable, count, maxSv) <
+                                             litSize)
             {
                 return new HuffmanStats(3, 0, prevTable, count, maxSv);
             }
@@ -714,17 +719,17 @@ internal static class ZstdBlockSplitter
         long fseTablesSize)
     {
         var estimate = EstimateSymbol(ofType, ofCodes, nbSeq, ZstdBlockEncoder.MaxOff,
-                ofTable, additionalBits: null,
-                ZstdBlockEncoder.OfDefaultNorm, ZstdBlockEncoder.OfDefaultNormLog,
-                ZstdBlockEncoder.DefaultMaxOff)
-            + EstimateSymbol(llType, llCodes, nbSeq, ZstdBlockEncoder.MaxLl,
-                llTable, ZstdBlockEncoder.LlExtraBits,
-                ZstdBlockEncoder.LlDefaultNorm, ZstdBlockEncoder.LlDefaultNormLog,
-                ZstdBlockEncoder.MaxLl)
-            + EstimateSymbol(mlType, mlCodes, nbSeq, ZstdBlockEncoder.MaxMl,
-                mlTable, ZstdBlockEncoder.MlExtraBits,
-                ZstdBlockEncoder.MlDefaultNorm, ZstdBlockEncoder.MlDefaultNormLog,
-                ZstdBlockEncoder.MaxMl);
+                           ofTable, additionalBits: null,
+                           ZstdBlockEncoder.OfDefaultNorm, ZstdBlockEncoder.OfDefaultNormLog,
+                           ZstdBlockEncoder.DefaultMaxOff)
+                       + EstimateSymbol(llType, llCodes, nbSeq, ZstdBlockEncoder.MaxLl,
+                           llTable, ZstdBlockEncoder.LlExtraBits,
+                           ZstdBlockEncoder.LlDefaultNorm, ZstdBlockEncoder.LlDefaultNormLog,
+                           ZstdBlockEncoder.MaxLl)
+                       + EstimateSymbol(mlType, mlCodes, nbSeq, ZstdBlockEncoder.MaxMl,
+                           mlTable, ZstdBlockEncoder.MlExtraBits,
+                           ZstdBlockEncoder.MlDefaultNorm, ZstdBlockEncoder.MlDefaultNormLog,
+                           ZstdBlockEncoder.MaxMl);
         estimate += fseTablesSize;
         return estimate + 1 + 1 + (nbSeq >= 128 ? 1 : 0) + (nbSeq >= ZstdBlockEncoder.LongNbSeq ? 1 : 0);
     }
@@ -742,7 +747,11 @@ internal static class ZstdBlockSplitter
             var count = new uint[maxCode + 1];
             var max = maxCode;
             CountCodes(count, codes, nbSeq, ref max);
-            bits = ZstdBlockEncoder.CrossEntropyCost(defaultNorm, (uint)defaultNormLog, count, (uint)max);
+            // Price the whole default distribution: the norm tables span
+            // exactly [0, defaultMax], so the estimate is sized by the table,
+            // not the observed max (observed codes past it ride the table
+            // tail; sizing by max would overrun the table for of-codes 29+).
+            bits = ZstdBlockEncoder.CrossEntropyCost(defaultNorm, defaultNormLog, count, defaultMax);
         }
         else if (type == ZstdBlockEncoder.SeqModeRle)
         {

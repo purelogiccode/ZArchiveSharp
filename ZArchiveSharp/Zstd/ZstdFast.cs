@@ -292,7 +292,7 @@ internal static class ZstdFast
 
                 continue;
 
-            storeMatch:
+                storeMatch:
                 // _match: count forward, store, refill, immediate reps.
                 seqLen += CountMatches(source, seqIp + seqLen, seqMatch + seqLen, blockEnd);
                 store.StoreSequence(source.Slice(anchor, seqIp - anchor), seqOff, seqLen);
@@ -307,7 +307,7 @@ internal static class ZstdFast
                     hashTable[ZstdMatchFinder.HashPtr(source, ip0 - 2, hashLog, mls)] = (uint)(ip0 - 2) + 1;
 
                     while (ip0 <= ilimit && rep2 > 0
-                        && ip0 - (int)rep2 >= 0 && Read32(source, ip0) == Read32(source, ip0 - (int)rep2))
+                                         && ip0 >= (int)rep2 && Read32(source, ip0) == Read32(source, ip0 - (int)rep2))
                     {
                         var repLen = 4 + CountMatches(source, ip0 + 4, ip0 + 4 - (int)rep2, blockEnd);
                         (rep2, rep1) = (rep1, rep2);

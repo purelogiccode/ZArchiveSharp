@@ -42,11 +42,12 @@ public sealed class ZstdCliTests : IDisposable
 
     private static byte[] CycleBytes(int size)
     {
-        const string alphabet = "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
+        const string alphabet =
+            "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
         var data = new byte[size];
         for (int i = 0; i < size; i++)
         {
-            data[i] = (byte)alphabet[(i * 31 + i / 7) % alphabet.Length];
+            data[i] = (byte)alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
 
         return data;
@@ -99,7 +100,9 @@ public sealed class ZstdCliTests : IDisposable
 
     private static ZstdCli.ZstdJob CompressJob(
         string? input = null, string? output = null, int level = 6,
-        string? dict = null, bool checksum = false, bool quiet = false) => new()
+        string? dict = null, bool checksum = false, bool quiet = false)
+    {
+        return new ZstdCli.ZstdJob
         {
             Compress = true,
             InputPath = input,
@@ -109,9 +112,12 @@ public sealed class ZstdCliTests : IDisposable
             Checksum = checksum,
             Quiet = quiet,
         };
+    }
 
     private static ZstdCli.ZstdJob DecompressJob(
-        string? input = null, string? output = null, string? dict = null, bool quiet = false) => new()
+        string? input = null, string? output = null, string? dict = null, bool quiet = false)
+    {
+        return new ZstdCli.ZstdJob
         {
             Compress = false,
             InputPath = input,
@@ -119,8 +125,10 @@ public sealed class ZstdCliTests : IDisposable
             DictPath = dict,
             Quiet = quiet,
         };
+    }
 
-    private Task<int> RunStreamsAsync(ZstdCli.ZstdJob job, MemoryStream stdin, MemoryStream stdout, CancellationToken ct = default)
+    private Task<int> RunStreamsAsync(ZstdCli.ZstdJob job, MemoryStream stdin, MemoryStream stdout,
+        CancellationToken ct = default)
     {
         _log.Clear();
         _errors.Clear();
@@ -229,7 +237,8 @@ public sealed class ZstdCliTests : IDisposable
     public void Parse_InheritedDefaults_Overridable()
     {
         Assert.True(ZstdCli.TryParse(["-c"], out var job, out _,
-            defaultLevel: 3, defaultDictPath: "g.dict", defaultChecksum: true, defaultQuiet: true, defaultStdout: true));
+            defaultLevel: 3, defaultDictPath: "g.dict", defaultChecksum: true, defaultQuiet: true,
+            defaultStdout: true));
         Assert.NotNull(job);
         Assert.Equal(3, job.Level);
         Assert.Equal("g.dict", job.DictPath);
@@ -267,7 +276,7 @@ public sealed class ZstdCliTests : IDisposable
     public async Task Streams_RoundTrip_MultiBlock()
     {
         var data = HeteroBytes(200_000, seed: 0x5EED2026);
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(CompressJob(), new MemoryStream(data, writable: false), compressed));
         Assert.Contains(_log, l => l.Contains("Compressing stdin -> stdout", StringComparison.Ordinal));
@@ -278,7 +287,7 @@ public sealed class ZstdCliTests : IDisposable
         Assert.Equal(data, ZstdDecompressor.Decompress(compressed.ToArray()));
 
         compressed.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(DecompressJob(), compressed, back));
         Assert.Equal(data, back.ToArray());
@@ -289,11 +298,11 @@ public sealed class ZstdCliTests : IDisposable
     {
         // Phase 3 acceptance: 10 MiB through pipes at L6.
         var data = HeteroBytes(10 * 1024 * 1024, seed: 0xC10C);
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(CompressJob(level: 6), new MemoryStream(data, writable: false), compressed));
         compressed.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(DecompressJob(), compressed, back));
         Assert.Equal(data, back.ToArray());
@@ -303,12 +312,12 @@ public sealed class ZstdCliTests : IDisposable
     public async Task Streams_Checksum_RoundTrip()
     {
         var data = CycleBytes(50_000);
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(CompressJob(checksum: true), new MemoryStream(data, writable: false), compressed));
         Assert.Contains(_log, l => l.Contains("+checksum", StringComparison.Ordinal));
         compressed.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(DecompressJob(), compressed, back));
         Assert.Equal(data, back.ToArray());
@@ -318,7 +327,7 @@ public sealed class ZstdCliTests : IDisposable
     public async Task Streams_Quiet_SuppressesLog()
     {
         var data = CycleBytes(1000);
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(CompressJob(quiet: true), new MemoryStream(data, writable: false), compressed));
         Assert.Empty(_log);
@@ -327,8 +336,8 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public async Task Streams_Help_PrintsUsage()
     {
-        using var stdin = new MemoryStream();
-        using var stdout = new MemoryStream();
+        await using var stdin = new MemoryStream();
+        await using var stdout = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(new ZstdCli.ZstdJob { ShowHelp = true }, stdin, stdout));
         Assert.Contains(_log, l => l.Contains("zar zstd -c|-d", StringComparison.Ordinal));
@@ -337,8 +346,8 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public async Task Streams_BadJobLevel_Rejects()
     {
-        using var stdin = new MemoryStream();
-        using var stdout = new MemoryStream();
+        await using var stdin = new MemoryStream();
+        await using var stdout = new MemoryStream();
         Assert.Equal(ZarchiveCli.BadUsage,
             await RunStreamsAsync(new ZstdCli.ZstdJob { Compress = true, Level = 99 }, stdin, stdout));
         Assert.Contains(_errors, l => l.Contains("level", StringComparison.OrdinalIgnoreCase));
@@ -359,8 +368,8 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public async Task Streams_CorruptInput_MapsExtractCode()
     {
-        using var stdin = new MemoryStream([0xDE, 0xAD, 0xBE, 0xEF, 1, 2, 3, 4], writable: false);
-        using var stdout = new MemoryStream();
+        await using var stdin = new MemoryStream([0xDE, 0xAD, 0xBE, 0xEF, 1, 2, 3, 4], writable: false);
+        await using var stdout = new MemoryStream();
         Assert.Equal(ZarchiveCli.ExtractionFailed, await RunStreamsAsync(DecompressJob(), stdin, stdout));
         Assert.Contains(_errors, l => l.Contains("decompression failed", StringComparison.OrdinalIgnoreCase));
     }
@@ -381,7 +390,7 @@ public sealed class ZstdCliTests : IDisposable
         var dictFile = Path.Combine(NewTempDir("zstdcli_dict"), "raw.dict");
         await File.WriteAllBytesAsync(dictFile, dictBytes);
 
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok, await RunStreamsAsync(
             CompressJob(dict: dictFile), new MemoryStream(data, writable: false), compressed));
         Assert.Contains(_log, l => l.Contains("dict", StringComparison.OrdinalIgnoreCase));
@@ -390,7 +399,7 @@ public sealed class ZstdCliTests : IDisposable
         Assert.Throws<ZstdException>(() => ZstdDecompressor.Decompress(compressed.ToArray()));
 
         compressed.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok, await RunStreamsAsync(
             DecompressJob(dict: dictFile), compressed, back));
         Assert.Equal(data, back.ToArray());
@@ -408,7 +417,7 @@ public sealed class ZstdCliTests : IDisposable
             await File.ReadAllBytesAsync(Path.Combine(GoldensDir(), "dict-words.dict")));
         var data = CycleBytes(2048);
 
-        using var compressed = new MemoryStream();
+        await using var compressed = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok, await RunStreamsAsync(
             CompressJob(dict: dictFile), new MemoryStream(data, writable: false), compressed));
 
@@ -422,7 +431,7 @@ public sealed class ZstdCliTests : IDisposable
     public async Task Streams_PlainFrame_WithDict_SucceedsIdentical()
     {
         var data = CycleBytes(20_000);
-        using var plain = new MemoryStream();
+        await using var plain = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(CompressJob(), new MemoryStream(data, writable: false), plain));
 
@@ -430,7 +439,7 @@ public sealed class ZstdCliTests : IDisposable
         var dictFile = Path.Combine(NewTempDir("zstdcli_inert"), "d.dict");
         await File.WriteAllBytesAsync(dictFile, CycleBytes(1024));
         plain.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok,
             await RunStreamsAsync(DecompressJob(dict: dictFile), plain, back));
         Assert.Equal(data, back.ToArray());
@@ -440,7 +449,7 @@ public sealed class ZstdCliTests : IDisposable
     public async Task Streams_MissingDictFile_IsBadUsage()
     {
         var missing = Path.Combine(NewTempDir("zstdcli_miss"), "nope.dict");
-        using var stdin = new MemoryStream(CycleBytes(100), writable: false);
+        await using var stdin = new MemoryStream(CycleBytes(100), writable: false);
         Assert.Equal(ZarchiveCli.BadUsage,
             await RunStreamsAsync(CompressJob(dict: missing), stdin, new MemoryStream()));
         Assert.Contains(_errors, l => l.Contains("dictionary file not found", StringComparison.OrdinalIgnoreCase));
@@ -453,7 +462,7 @@ public sealed class ZstdCliTests : IDisposable
         var bad = Path.Combine(dir, "bad.dict");
         // Formatted magic + truncated body: structurally invalid.
         await File.WriteAllBytesAsync(bad, [0x37, 0xA4, 0x30, 0xEC, 0x01, 0x02, 0x03, 0x04, 0xFF]);
-        using var stdin = new MemoryStream(CycleBytes(100), writable: false);
+        await using var stdin = new MemoryStream(CycleBytes(100), writable: false);
         Assert.Equal(ZarchiveCli.BadUsage,
             await RunStreamsAsync(CompressJob(dict: bad), stdin, new MemoryStream()));
         Assert.Contains(_errors, l => l.Contains("invalid dictionary", StringComparison.OrdinalIgnoreCase));
@@ -476,12 +485,15 @@ public sealed class ZstdCliTests : IDisposable
         _log.Clear();
         _errors.Clear();
         Assert.Equal(ZarchiveCli.Ok,
-            await ZstdCli.RunAsync(CompressJob(input: src, output: zst), Stream.Null, Stream.Null, _log.Add, _errors.Add));
-        Assert.Contains(_log, l => l.Contains(src, StringComparison.Ordinal) && l.Contains(zst, StringComparison.Ordinal));
+            await ZstdCli.RunAsync(CompressJob(input: src, output: zst), Stream.Null, Stream.Null, _log.Add,
+                _errors.Add));
+        Assert.Contains(_log,
+            l => l.Contains(src, StringComparison.Ordinal) && l.Contains(zst, StringComparison.Ordinal));
 
         _log.Clear();
         Assert.Equal(ZarchiveCli.Ok,
-            await ZstdCli.RunAsync(DecompressJob(input: zst, output: back), Stream.Null, Stream.Null, _log.Add, _errors.Add));
+            await ZstdCli.RunAsync(DecompressJob(input: zst, output: back), Stream.Null, Stream.Null, _log.Add,
+                _errors.Add));
         Assert.Equal(data, await File.ReadAllBytesAsync(back));
     }
 
@@ -494,7 +506,7 @@ public sealed class ZstdCliTests : IDisposable
         var zst = Path.Combine(dir, "out.zst");
         await File.WriteAllBytesAsync(src, data);
 
-        using var viaStdout = new MemoryStream();
+        await using var viaStdout = new MemoryStream();
         Assert.Equal(ZarchiveCli.Ok, await RunStreamsAsync(
             CompressJob(input: src), new MemoryStream(), viaStdout));
 
@@ -511,15 +523,16 @@ public sealed class ZstdCliTests : IDisposable
         var src = Path.Combine(dir, "in.bin");
         var zst = Path.Combine(dir, "out.zst");
         await File.WriteAllBytesAsync(src, CycleBytes(1000));
-        await File.WriteAllBytesAsync(zst, [9, 9, 9]);
+        await File.WriteAllBytesAsync(zst, "\t\t\t"u8.ToArray());
 
         _errors.Clear();
         Assert.Equal(ZarchiveCli.Refused,
             await ZstdCli.RunAsync(CompressJob(input: src, output: zst), Stream.Null, Stream.Null, null, _errors.Add));
-        Assert.Equal([9, 9, 9], await File.ReadAllBytesAsync(zst));
+        Assert.Equal("\t\t\t"u8.ToArray(), await File.ReadAllBytesAsync(zst));
 
         Assert.Equal(ZarchiveCli.Refused,
-            await ZstdCli.RunAsync(DecompressJob(input: src, output: zst), Stream.Null, Stream.Null, null, _errors.Add));
+            await ZstdCli.RunAsync(DecompressJob(input: src, output: zst), Stream.Null, Stream.Null, null,
+                _errors.Add));
     }
 
     [Fact]
@@ -530,9 +543,11 @@ public sealed class ZstdCliTests : IDisposable
         var out1 = Path.Combine(dir, "o1");
         _errors.Clear();
         Assert.Equal(ZarchiveCli.InputNotReadable,
-            await ZstdCli.RunAsync(CompressJob(input: missing, output: out1), Stream.Null, Stream.Null, null, _errors.Add));
+            await ZstdCli.RunAsync(CompressJob(input: missing, output: out1), Stream.Null, Stream.Null, null,
+                _errors.Add));
         Assert.Equal(ZarchiveCli.NotFound,
-            await ZstdCli.RunAsync(DecompressJob(input: missing, output: out1), Stream.Null, Stream.Null, null, _errors.Add));
+            await ZstdCli.RunAsync(DecompressJob(input: missing, output: out1), Stream.Null, Stream.Null, null,
+                _errors.Add));
         Assert.False(File.Exists(out1));
     }
 
@@ -556,10 +571,12 @@ public sealed class ZstdCliTests : IDisposable
 
         _errors.Clear();
         Assert.Equal(ZarchiveCli.Ok,
-            await ZstdCli.RunAsync(CompressJob(input: src, output: zst, dict: dictA), Stream.Null, Stream.Null, null, _errors.Add));
+            await ZstdCli.RunAsync(CompressJob(input: src, output: zst, dict: dictA), Stream.Null, Stream.Null, null,
+                _errors.Add));
 
         Assert.Equal(ZarchiveCli.ExtractionFailed,
-            await ZstdCli.RunAsync(DecompressJob(input: zst, output: back, dict: dictB), Stream.Null, Stream.Null, null, _errors.Add));
+            await ZstdCli.RunAsync(DecompressJob(input: zst, output: back, dict: dictB), Stream.Null, Stream.Null, null,
+                _errors.Add));
         Assert.Contains(_errors, l => l.Contains("mismatch", StringComparison.OrdinalIgnoreCase));
         Assert.False(File.Exists(back));
     }
@@ -568,33 +585,31 @@ public sealed class ZstdCliTests : IDisposable
     // Archive pack/extract with a dictionary
     // ------------------------------------------------------------------
 
-    private static (string Src, byte[] Expected) DictArchiveFixture(string root)
+    private static string DictArchiveFixture(string root)
     {
         // Small files sharing one boilerplate: the dictionary-win zone.
         // Each file is one 64 KiB block: 2x boilerplate + unique tail.
         var boilerplate = CycleBytes(8192);
         var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
-        var expected = new Dictionary<string, byte[]>();
         for (int f = 0; f < 8; f++)
         {
-            var content = new byte[2 * boilerplate.Length + 256];
+            var content = new byte[(2 * boilerplate.Length) + 256];
             Array.Copy(boilerplate, 0, content, 0, boilerplate.Length);
             Array.Copy(boilerplate, 0, content, boilerplate.Length, boilerplate.Length);
             var tail = HeteroBytes(256, seed: 1000 + f);
             Array.Copy(tail, 0, content, 2 * boilerplate.Length, 256);
             string name = $"file{f}.bin";
             File.WriteAllBytes(Path.Combine(src, name), content);
-            expected[name] = content;
         }
 
-        return (src, expected.Values.SelectMany(b => b).ToArray());
+        return src;
     }
 
     [Fact]
     public void Archive_Dict_PackExtract_RoundTrip()
     {
         var root = NewTempDir("zstdcli_arch");
-        var (src, _) = DictArchiveFixture(root);
+        var src = DictArchiveFixture(root);
         var dictBytes = CycleBytes(8192);
         var dict = ZstdDictionary.FromRawPrefix(dictBytes, dictId: 0xAABBCCDD);
 
@@ -621,7 +636,7 @@ public sealed class ZstdCliTests : IDisposable
     public void Archive_Dict_ExtractWithoutDict_Fails()
     {
         var root = NewTempDir("zstdcli_archfail");
-        var (src, _) = DictArchiveFixture(root);
+        var src = DictArchiveFixture(root);
         var dict = ZstdDictionary.FromRawPrefix(CycleBytes(8192), dictId: 0xAABBCCDD);
         var zar = Path.Combine(root, "dict.zar");
         ZarPipeline.Pack(src, zar, new ZarPipelineOptions { Level = 6, Dictionary = dict });
@@ -635,7 +650,7 @@ public sealed class ZstdCliTests : IDisposable
     public void Archive_Plain_ExtractWithDict_Identical()
     {
         var root = NewTempDir("zstdcli_archinert");
-        var (src, _) = DictArchiveFixture(root);
+        var src = DictArchiveFixture(root);
         var plainZar = Path.Combine(root, "plain.zar");
         ZarPipeline.Pack(src, plainZar, new ZarPipelineOptions { Level = 6 });
 
@@ -648,7 +663,8 @@ public sealed class ZstdCliTests : IDisposable
         foreach (var file in Directory.GetFiles(src))
         {
             string name = Path.GetFileName(file);
-            Assert.Equal(File.ReadAllBytes(Path.Combine(destPlain, name)), File.ReadAllBytes(Path.Combine(destDict, name)));
+            Assert.Equal(File.ReadAllBytes(Path.Combine(destPlain, name)),
+                File.ReadAllBytes(Path.Combine(destDict, name)));
         }
     }
 
@@ -657,7 +673,7 @@ public sealed class ZstdCliTests : IDisposable
     {
         // Acceptance: pack honors --level and --dict together.
         var root = NewTempDir("zstdcli_archlvl");
-        var (src, _) = DictArchiveFixture(root);
+        var src = DictArchiveFixture(root);
         var dict = ZstdDictionary.FromRawPrefix(CycleBytes(8192));
         var z1 = Path.Combine(root, "l1.zar");
         var z19 = Path.Combine(root, "l19.zar");

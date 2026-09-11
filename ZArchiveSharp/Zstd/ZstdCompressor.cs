@@ -91,8 +91,8 @@ public sealed class ZstdCompressor : IZarBlockCompressor
 
     /// <summary>
     /// Blocks below this size go raw without attempting compression
-    /// (<c>ZSTD_buildSeqStore</c>: <c>srcSize &lt; MIN_CBLOCK_SIZE +
-    /// ZSTD_blockHeaderSize + 1 + 1</c>, with <c>MIN_CBLOCK_SIZE == 2</c>).
+    /// (<c>ZSTD_buildSeqStore</c>: <code>srcSize &lt; MIN_CBLOCK_SIZE +
+    /// ZSTD_blockHeaderSize + 1 + 1</code>, with <c>MIN_CBLOCK_SIZE == 2</c>).
     /// </summary>
     private const int MinCompressibleBlock = 2 + 3 + 1 + 1;
 
@@ -303,7 +303,8 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     /// unknown-size (no FCS) header plus dictionary ID. Empty input takes
     /// the <see cref="EncodeDictFrame"/> path.
     /// </summary>
-    internal static byte[] EncodeDictStreamingFrame(ReadOnlySpan<byte> chunk, int level, bool checksum, ZstdDictionary dict)
+    internal static byte[] EncodeDictStreamingFrame(ReadOnlySpan<byte> chunk, int level, bool checksum,
+        ZstdDictionary dict)
     {
         ArgumentNullException.ThrowIfNull(dict);
         if (chunk.Length == 0)
@@ -337,7 +338,8 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     {
         var dictFlag = dictId == 0 ? 0 : dictId < 256 ? 1 : dictId < 65536 ? 2 : 3;
         var content = (long)contentSize;
-        var fcsCode = (content >= 256 ? 1 : 0) + (content >= 65792 ? 1 : 0) + (content >= 0xFFFFFFFFL ? 1 : 0);
+        // No 8-byte FCS term: contentSize is int (< 4 GiB), so the 4 GiB addend is always 0.
+        var fcsCode = (content >= 256 ? 1 : 0) + (content >= 65792 ? 1 : 0);
         dst[offset] = (byte)(FrameMagic & 0xFF);
         dst[offset + 1] = (byte)((FrameMagic >> 8) & 0xFF);
         dst[offset + 2] = (byte)((FrameMagic >> 16) & 0xFF);
@@ -360,8 +362,6 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 dst[pos++] = (byte)(dictId >> 16);
                 dst[pos++] = (byte)(dictId >> 24);
                 break;
-            default:
-                break;
         }
 
         switch (fcsCode)
@@ -379,16 +379,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 dst[pos++] = (byte)(content >> 16);
                 dst[pos++] = (byte)(content >> 24);
                 break;
-            default:
-                dst[pos++] = (byte)content;
-                dst[pos++] = (byte)(content >> 8);
-                dst[pos++] = (byte)(content >> 16);
-                dst[pos++] = (byte)(content >> 24);
-                dst[pos++] = (byte)(content >> 32);
-                dst[pos++] = (byte)(content >> 40);
-                dst[pos++] = (byte)(content >> 48);
-                dst[pos++] = (byte)(content >> 56);
-                break;
+            // No 8-byte FCS arm: contentSize is int (< 4 GiB), so fcsCode never reaches 3.
         }
 
         return pos - offset;
@@ -424,8 +415,6 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 dst[pos++] = (byte)(dictId >> 16);
                 dst[pos++] = (byte)(dictId >> 24);
                 break;
-            default:
-                break;
         }
 
         return pos - offset;
@@ -435,7 +424,6 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         ReadOnlySpan<byte> content, byte[]? prefix, int level, ZstdCompressionParameters prm, int blockMax,
         byte[] dst, int pos, bool checksum, bool streaming = false, uint[]? repSeed = null)
     {
-
         // Persistent match state (M2) for every strategy: the state holds the
         // frame copy the engines index absolutely (copied only when
         // stateful). Single-shot inputs below two blocks never touch it
@@ -512,6 +500,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 last = false;
                 trailingEmptyBlock = true;
             }
+
             var chunkBytes = state is not null
                 ? new ReadOnlySpan<byte>(frame, inPos, chunk)
                 : content.Slice(inPos - contentOffset, chunk);
@@ -526,7 +515,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             else
             {
                 written = WriteFrameBlock(
-                    chunkBytes, inPos, level, prm,
+                    chunkBytes, inPos, prm,
                     dst, pos, dst.Length - pos, last, rep, ref isFirstBlock, state);
             }
 
@@ -574,7 +563,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     /// slack covers headers plus one raw block per chunk.
     /// </summary>
     private static int WriteFrameBlock(
-        ReadOnlySpan<byte> chunk, int blockStart, int level, ZstdCompressionParameters prm,
+        ReadOnlySpan<byte> chunk, int blockStart, ZstdCompressionParameters prm,
         byte[] dst, int pos, int capacity, bool last, uint[] rep, ref bool isFirstBlock,
         ZstdFrameState? state)
     {
@@ -598,7 +587,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 ? ZstdBlockEncoder.EncodeBlockPayloadStateful(
                     state, blockStart, blockStart + chunk.Length, dst, pos + 3, capacity - 3, rep)
                 : ZstdBlockEncoder.EncodeBlockPayload(
-                    chunk, level, prm, dst, pos + 3, capacity - 3, rep);
+                    chunk, prm, dst, pos + 3, capacity - 3, rep);
         }
         catch (ZstdException)
         {
@@ -707,7 +696,8 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         var content = (long)contentSize;
         var windowSize = 1L << windowLog;
         var singleSegment = windowSize >= content ? 1 : 0;
-        var fcsCode = (content >= 256 ? 1 : 0) + (content >= 65792 ? 1 : 0) + (content >= 0xFFFFFFFFL ? 1 : 0);
+        // No 8-byte FCS term: contentSize is int (< 4 GiB), so the 4 GiB addend is always 0.
+        var fcsCode = (content >= 256 ? 1 : 0) + (content >= 65792 ? 1 : 0);
         dst[offset] = (byte)(FrameMagic & 0xFF);
         dst[offset + 1] = (byte)((FrameMagic >> 8) & 0xFF);
         dst[offset + 2] = (byte)((FrameMagic >> 16) & 0xFF);
@@ -739,16 +729,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
                 dst[pos++] = (byte)(content >> 16);
                 dst[pos++] = (byte)(content >> 24);
                 break;
-            default:
-                dst[pos++] = (byte)content;
-                dst[pos++] = (byte)(content >> 8);
-                dst[pos++] = (byte)(content >> 16);
-                dst[pos++] = (byte)(content >> 24);
-                dst[pos++] = (byte)(content >> 32);
-                dst[pos++] = (byte)(content >> 40);
-                dst[pos++] = (byte)(content >> 48);
-                dst[pos++] = (byte)(content >> 56);
-                break;
+            // No 8-byte FCS arm: contentSize is int (< 4 GiB), so fcsCode never reaches 3.
         }
 
         return pos - offset;

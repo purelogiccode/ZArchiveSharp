@@ -185,8 +185,8 @@ internal static class ZstdDoubleFast
                 hashLong[hl0] = hashSmall[hs0] = (uint)(ip + 1); // +1: 0 means empty
 
                 // Repcode at ip+1.
-                if (offset1 > 0 && ip + 1 - (int)offset1 >= 0
-                    && Read32(source, ip + 1 - (int)offset1) == Read32(source, ip + 1))
+                if (offset1 > 0 && ip + 1 >= (int)offset1
+                                && Read32(source, ip + 1 - (int)offset1) == Read32(source, ip + 1))
                 {
                     lastLen = 4 + CountMatches(source, ip + 1 + 4, ip + 1 + 4 - (int)offset1, blockEnd);
                     ip++;
@@ -248,11 +248,11 @@ internal static class ZstdDoubleFast
 
                     if (idxl1 > 0 && Read64(source, idxl1) == Read64(source, ip1))
                     {
-                        var l1len = 8 + CountMatches(source, ip1 + 8, idxl1 + 8, blockEnd);
-                        if (l1len > foundLen)
+                        var l1Len = 8 + CountMatches(source, ip1 + 8, idxl1 + 8, blockEnd);
+                        if (l1Len > foundLen)
                         {
                             foundIp = ip1;
-                            foundLen = l1len;
+                            foundLen = l1Len;
                             foundOff = (uint)(foundIp - idxl1);
                             back = idxl1;
                         }
@@ -302,8 +302,8 @@ internal static class ZstdDoubleFast
                 hashSmall[ZstdMatchFinder.HashPtr(source, ip - 1, hBitsS, mls)] = (uint)(ip - 1) + 1;
 
                 // Immediate repcode.
-                while (ip <= ilimit && offset2 > 0 && ip - (int)offset2 >= 0
-                    && Read32(source, ip) == Read32(source, ip - (int)offset2))
+                while (ip <= ilimit && offset2 > 0 && ip >= (int)offset2
+                       && Read32(source, ip) == Read32(source, ip - (int)offset2))
                 {
                     var repLen = 4 + CountMatches(source, ip + 4, ip + 4 - (int)offset2, blockEnd);
                     (offset2, offset1) = (offset1, offset2);

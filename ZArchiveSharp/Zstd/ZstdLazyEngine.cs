@@ -68,15 +68,15 @@ internal static class ZstdLazyEngine
         return value ^ (value >> 28);
     }
 
-    private static uint Read32LE(ReadOnlySpan<byte> src, int pos)
+    private static uint Read32Le(ReadOnlySpan<byte> src, int pos)
     {
         return (uint)(src[pos] | (src[pos + 1] << 8) | (src[pos + 2] << 16) | (src[pos + 3] << 24));
     }
 
-    private static ulong Read64LE(ReadOnlySpan<byte> src, int pos)
+    private static ulong Read64Le(ReadOnlySpan<byte> src, int pos)
     {
-        var lo = (ulong)Read32LE(src, pos);
-        var hi = (ulong)Read32LE(src, pos + 4);
+        var lo = (ulong)Read32Le(src, pos);
+        var hi = (ulong)Read32Le(src, pos + 4);
         return lo | (hi << 32);
     }
 
@@ -92,11 +92,11 @@ internal static class ZstdLazyEngine
     {
         if (minMatch <= 4)
         {
-            var u = pos + 4 <= src.Length ? Read32LE(src, pos) : ReadPadded32(src, pos);
+            var u = pos + 4 <= src.Length ? Read32Le(src, pos) : ReadPadded32(src, pos);
             return (uint)(((u * Prime4) ^ (uint)salt) >> (32 - hBits));
         }
 
-        var value = pos + 8 <= src.Length ? Read64LE(src, pos) : ReadPadded64(src, pos);
+        var value = pos + 8 <= src.Length ? Read64Le(src, pos) : ReadPadded64(src, pos);
         if (minMatch == 5)
         {
             return (uint)((((value << 24) * Prime5) ^ salt) >> (64 - hBits));
@@ -302,7 +302,7 @@ internal static class ZstdLazyEngine
             var start = ip + 1;
 
             // Repcode probe at ip+1.
-            if (offset1 > 0 && Read32LE(source, ip + 1 - (int)offset1) == Read32LE(source, ip + 1))
+            if (offset1 > 0 && Read32Le(source, ip + 1 - (int)offset1) == Read32Le(source, ip + 1))
             {
                 matchLength = 4 + CountMatches(source, ip + 5, ip + 5 - (int)offset1, blockEnd);
                 if (depth == 0)
@@ -344,7 +344,7 @@ internal static class ZstdLazyEngine
                 while (ip < ilimit)
                 {
                     ip++;
-                    if (offBase != 0 && offset1 > 0 && Read32LE(source, ip) == Read32LE(source, ip - (int)offset1))
+                    if (offBase != 0 && offset1 > 0 && Read32Le(source, ip) == Read32Le(source, ip - (int)offset1))
                     {
                         var mlRep = 4 + CountMatches(source, ip + 4, ip + 4 - (int)offset1, blockEnd);
                         var gain2 = mlRep * 3;
@@ -363,9 +363,11 @@ internal static class ZstdLazyEngine
                             ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog, searchLog,
                                 windowLog, hashTable, tagTable, ref nextToUpdate, ref lazySkipping)
                             : useBt
-                                ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog,
+                                ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog,
+                                    searchLog,
                                     chainLog, windowLog, hashTable, chainTable, ref nextToUpdate)
-                                : HcFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog, chainLog,
+                                : HcFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog,
+                                    chainLog,
                                     windowLog, hashTable, chainTable, ref nextToUpdate, ref lazySkipping);
                         var gain2 = (ml2 * 4) - Highbit32(candidate);
                         var gain1 = (matchLength * 4) - Highbit32(offBase) + 4;
@@ -381,7 +383,7 @@ internal static class ZstdLazyEngine
                     if (depth == 2 && ip < ilimit)
                     {
                         ip++;
-                        if (offBase != 0 && offset1 > 0 && Read32LE(source, ip) == Read32LE(source, ip - (int)offset1))
+                        if (offBase != 0 && offset1 > 0 && Read32Le(source, ip) == Read32Le(source, ip - (int)offset1))
                         {
                             var mlRep = 4 + CountMatches(source, ip + 4, ip + 4 - (int)offset1, blockEnd);
                             var gain2 = mlRep * 4;
@@ -397,12 +399,15 @@ internal static class ZstdLazyEngine
                         {
                             uint candidate = 999999999;
                             var ml2 = useRow
-                                ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog, searchLog,
+                                ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog,
+                                    searchLog,
                                     windowLog, hashTable, tagTable, ref nextToUpdate, ref lazySkipping)
                                 : useBt
-                                    ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog,
+                                    ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog,
+                                        searchLog,
                                         chainLog, windowLog, hashTable, chainTable, ref nextToUpdate)
-                                    : HcFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog, chainLog,
+                                    : HcFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog, searchLog,
+                                        chainLog,
                                         windowLog, hashTable, chainTable, ref nextToUpdate, ref lazySkipping);
                             var gain2 = (ml2 * 4) - Highbit32(candidate);
                             var gain1 = (matchLength * 4) - Highbit32(offBase) + 7;
@@ -420,12 +425,12 @@ internal static class ZstdLazyEngine
                 }
             }
 
-        StoreSequence:
+            StoreSequence:
             // Catch up: match may extend backwards while strictly above the prefix start.
             if (ZstdSeq.IsOffset(offBase))
             {
                 var offset = (int)ZstdSeq.ToOffset(offBase);
-                while (start > anchor && start - offset > 0 && source[start - 1] == source[start - offset - 1])
+                while (start > anchor && start > offset && source[start - 1] == source[start - offset - 1])
                 {
                     start--;
                     matchLength++;
@@ -442,7 +447,7 @@ internal static class ZstdLazyEngine
 
             // Immediate repcode (offset_2), ll=0 with swap.
             while (ip <= ilimit && offset2 > 0
-                && Read32LE(source, ip) == Read32LE(source, ip - (int)offset2))
+                                && Read32Le(source, ip) == Read32Le(source, ip - (int)offset2))
             {
                 var repLength = 4 + CountMatches(source, ip + 4, ip + 4 - (int)offset2, blockEnd);
                 var swap = offset2;
@@ -513,7 +518,7 @@ internal static class ZstdLazyEngine
             // Prefilter reads 4 bytes at (match + best - 3); both must be
             // in range (native over-reads; see class remarks).
             if (matchIndex + best + 1 <= end && ip + best + 1 <= end
-                && Read32LE(src, matchIndex + best - 3) == Read32LE(src, ip + best - 3))
+                                             && Read32Le(src, matchIndex + best - 3) == Read32Le(src, ip + best - 3))
             {
                 current = CountMatches(src, ip, matchIndex, end);
             }
@@ -604,7 +609,8 @@ internal static class ZstdLazyEngine
         {
             if (ip - nextToUpdate > 384)
             {
-                RowUpdateRange(src, nextToUpdate, nextToUpdate + 96, mls, rowHashLog, rowLog, rowMask, hashTable, tagTable);
+                RowUpdateRange(src, nextToUpdate, nextToUpdate + 96, mls, rowHashLog, rowLog, rowMask, hashTable,
+                    tagTable);
                 nextToUpdate = ip - 32;
             }
 
@@ -661,7 +667,7 @@ internal static class ZstdLazyEngine
             var matchIndex = (int)matchBuffer[m];
             var current = 0;
             if (matchIndex + best + 1 <= end && ip + best + 1 <= end
-                && Read32LE(src, matchIndex + best - 3) == Read32LE(src, ip + best - 3))
+                                             && Read32Le(src, matchIndex + best - 3) == Read32Le(src, ip + best - 3))
             {
                 current = CountMatches(src, ip, matchIndex, end);
             }

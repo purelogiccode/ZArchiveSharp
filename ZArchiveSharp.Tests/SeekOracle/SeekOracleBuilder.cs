@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace ZArchiveSharp.Tests;
+namespace ZArchiveSharp.Tests.SeekOracle;
 
 /// <summary>
 /// Builds the <c>seekoracle</c> ground-truth binary (committed C source over
@@ -8,11 +8,9 @@ namespace ZArchiveSharp.Tests;
 /// temp dir, once per machine. Returns null when gcc is absent or the build
 /// fails, in which case oracle parity tests skip (vacuous pass).
 /// </summary>
-internal static class SeekOracle
+internal static class SeekOracleBuilder
 {
-    private static readonly string? Exe = Build();
-
-    public static string? ExePath => Exe;
+    public static string? ExePath { get; } = Build();
 
     private static string? Build()
     {
@@ -56,8 +54,8 @@ internal static class SeekOracle
 
             Directory.CreateDirectory(dir);
             var args = $"-O1 -o \"{exe}\" -I\"{lib}\" -I\"{Path.Combine(lib, "common")}\" "
-                + "-DZSTD_LEGACY_SUPPORT=0 "
-                + string.Join(" ", inputs.Select(f => $"\"{f}\""));
+                       + "-DZSTD_LEGACY_SUPPORT=0 "
+                       + string.Join(" ", inputs.Select(f => $"\"{f}\""));
             using var proc = Process.Start(new ProcessStartInfo
             {
                 FileName = "gcc",

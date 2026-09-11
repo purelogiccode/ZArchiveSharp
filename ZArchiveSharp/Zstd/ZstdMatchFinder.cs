@@ -141,7 +141,7 @@ public sealed class ZstdMatchFinder
     /// here instead of re-resolving it per block. Tables stay block-scoped
     /// (fresh per call); persistent match state is follow-up work.
     /// </summary>
-    internal int FindMatches(
+    internal static int FindMatches(
         ReadOnlySpan<byte> source, ZstdSequenceStore store, uint[] repeatOffsets,
         ZstdCompressionParameters prm)
     {

@@ -58,8 +58,10 @@ public static class ZarStageWeights
     }
 
     /// <summary>Maps a stage-local 0..1 fraction to the item-global 0..1.</summary>
-    public static double Rebase(IReadOnlyList<Segment> segments, string stage, double local) =>
-        segments.FirstOrDefault(s => string.Equals(s.Stage, stage, StringComparison.Ordinal)) is { } seg
+    public static double Rebase(IReadOnlyList<Segment> segments, string stage, double local)
+    {
+        return segments.FirstOrDefault(s => string.Equals(s.Stage, stage, StringComparison.Ordinal)) is { } seg
             ? seg.Base + (seg.Length * local)
             : local;
+    }
 }

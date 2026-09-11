@@ -63,14 +63,17 @@ public sealed class ZstdGoldenTests
         return data;
     }
 
-    private static byte[] LoadInput(string dir, string name) => name switch
+    private static byte[] LoadInput(string dir, string name)
     {
-        "text8k" => CycleText(8192),
-        "text200k" => CycleText(200000),
-        "random8k" => File.ReadAllBytes(Path.Combine(dir, "random8k.bin")),
-        "hetero64" => File.ReadAllBytes(Path.Combine(dir, "hetero64.bin")),
-        _ => throw new ArgumentOutOfRangeException(nameof(name)),
-    };
+        return name switch
+        {
+            "text8k" => CycleText(8192),
+            "text200k" => CycleText(200000),
+            "random8k" => File.ReadAllBytes(Path.Combine(dir, "random8k.bin")),
+            "hetero64" => File.ReadAllBytes(Path.Combine(dir, "hetero64.bin")),
+            _ => throw new ArgumentOutOfRangeException(nameof(name)),
+        };
+    }
 
     [Theory]
     [MemberData(nameof(Cases))]

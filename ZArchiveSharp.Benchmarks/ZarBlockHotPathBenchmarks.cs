@@ -6,31 +6,21 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// The core 64 KiB claim: single-shot compress + decode of text, hetero and
-/// random 64 KiB blocks at L1 and L6 (the ZAR container's hot path, default 6),
-/// plus an L6 200 KiB multi-block control. The ZAR container packs independent
-/// 64 KiB frames, so this table — not the 8 KiB micro-rows — is the number that
-/// decides whether the codec bottlenecks directory-tree archives. Expected
-/// frame sizes/ratios are printed by <c>GlobalSetup</c> (deterministic corpus,
-/// so they are stable across runs) and transcribed into
-/// <c>docs/benchmarks.md</c>.
-/// </summary>
 public class ZarBlockHotPathBenchmarks
 {
     private ZstdCompressor _l1 = null!;
     private ZstdCompressor _l6 = null!;
-    private byte[] _text64k = null!;
-    private byte[] _hetero64k = null!;
-    private byte[] _random64k = null!;
-    private byte[] _text200k = null!;
-    private byte[] _l1Text64k = null!;
-    private byte[] _l6Text64k = null!;
-    private byte[] _l1Hetero64k = null!;
-    private byte[] _l6Hetero64k = null!;
-    private byte[] _l1Random64k = null!;
-    private byte[] _l6Random64k = null!;
-    private byte[] _l6Text200k = null!;
+    private byte[] _text64K = null!;
+    private byte[] _hetero64K = null!;
+    private byte[] _random64K = null!;
+    private byte[] _text200K = null!;
+    private byte[] _l1Text64K = null!;
+    private byte[] _l6Text64K = null!;
+    private byte[] _l1Hetero64K = null!;
+    private byte[] _l6Hetero64K = null!;
+    private byte[] _l1Random64K = null!;
+    private byte[] _l6Random64K = null!;
+    private byte[] _l6Text200K = null!;
 
     /// <summary>
     /// Builds the compressors, frozen payloads and decode fixtures once per
@@ -41,19 +31,21 @@ public class ZarBlockHotPathBenchmarks
     {
         _l1 = new ZstdCompressor(ZstdCompressionOptions.FromLevel(1));
         _l6 = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6));
-        _text64k = BenchmarkCorpus.CycleText(65536);
-        _hetero64k = BenchmarkCorpus.Hetero64();
-        _random64k = BenchmarkCorpus.Random(65536);
-        _text200k = BenchmarkCorpus.CycleText(200000);
-        _l1Text64k = _l1.CompressBlock(_text64k);
-        _l6Text64k = _l6.CompressBlock(_text64k);
-        _l1Hetero64k = _l1.CompressBlock(_hetero64k);
-        _l6Hetero64k = _l6.CompressBlock(_hetero64k);
-        _l1Random64k = _l1.CompressBlock(_random64k);
-        _l6Random64k = _l6.CompressBlock(_random64k);
-        _l6Text200k = _l6.CompressBlock(_text200k);
-        Console.WriteLine($"[fixtures] L1 text64k={_l1Text64k.Length} hetero64k={_l1Hetero64k.Length} random64k={_l1Random64k.Length}");
-        Console.WriteLine($"[fixtures] L6 text64k={_l6Text64k.Length} hetero64k={_l6Hetero64k.Length} random64k={_l6Random64k.Length} text200k={_l6Text200k.Length}");
+        _text64K = BenchmarkCorpus.CycleText(65536);
+        _hetero64K = BenchmarkCorpus.Hetero64();
+        _random64K = BenchmarkCorpus.Random(65536);
+        _text200K = BenchmarkCorpus.CycleText(200000);
+        _l1Text64K = _l1.CompressBlock(_text64K);
+        _l6Text64K = _l6.CompressBlock(_text64K);
+        _l1Hetero64K = _l1.CompressBlock(_hetero64K);
+        _l6Hetero64K = _l6.CompressBlock(_hetero64K);
+        _l1Random64K = _l1.CompressBlock(_random64K);
+        _l6Random64K = _l6.CompressBlock(_random64K);
+        _l6Text200K = _l6.CompressBlock(_text200K);
+        Console.WriteLine(
+            $"[fixtures] L1 text64k={_l1Text64K.Length} hetero64k={_l1Hetero64K.Length} random64k={_l1Random64K.Length}");
+        Console.WriteLine(
+            $"[fixtures] L6 text64k={_l6Text64K.Length} hetero64k={_l6Hetero64K.Length} random64k={_l6Random64K.Length} text200k={_l6Text200K.Length}");
     }
 
     /// <summary>Level 1 over 64 KiB of phrase-cycle text.</summary>
@@ -61,7 +53,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L1_Text64k()
     {
-        return _l1.CompressBlock(_text64k);
+        return _l1.CompressBlock(_text64K);
     }
 
     /// <summary>Level 6 over 64 KiB of phrase-cycle text.</summary>
@@ -69,7 +61,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L6_Text64k()
     {
-        return _l6.CompressBlock(_text64k);
+        return _l6.CompressBlock(_text64K);
     }
 
     /// <summary>Level 1 over the hetero 64 KiB block.</summary>
@@ -77,7 +69,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L1_Hetero64k()
     {
-        return _l1.CompressBlock(_hetero64k);
+        return _l1.CompressBlock(_hetero64K);
     }
 
     /// <summary>Level 6 over the hetero 64 KiB block (the container's typical block).</summary>
@@ -85,7 +77,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L6_Hetero64k()
     {
-        return _l6.CompressBlock(_hetero64k);
+        return _l6.CompressBlock(_hetero64K);
     }
 
     /// <summary>Level 1 over 64 KiB of random bytes (raw-fallback path at block scale).</summary>
@@ -93,7 +85,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L1_Random64k()
     {
-        return _l1.CompressBlock(_random64k);
+        return _l1.CompressBlock(_random64K);
     }
 
     /// <summary>Level 6 over 64 KiB of random bytes (raw-fallback path at block scale).</summary>
@@ -101,7 +93,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L6_Random64k()
     {
-        return _l6.CompressBlock(_random64k);
+        return _l6.CompressBlock(_random64K);
     }
 
     /// <summary>Level 6 over 200 KiB of text (multi-block control).</summary>
@@ -109,7 +101,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] L6_Text200k()
     {
-        return _l6.CompressBlock(_text200k);
+        return _l6.CompressBlock(_text200K);
     }
 
     /// <summary>Decodes the level-1 text 64 KiB frame.</summary>
@@ -117,7 +109,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L1_Text64k()
     {
-        return ZstdCompressor.DecompressFrame(_l1Text64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l1Text64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-6 text 64 KiB frame.</summary>
@@ -125,7 +117,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L6_Text64k()
     {
-        return ZstdCompressor.DecompressFrame(_l6Text64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l6Text64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-1 hetero 64 KiB frame.</summary>
@@ -133,7 +125,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L1_Hetero64k()
     {
-        return ZstdCompressor.DecompressFrame(_l1Hetero64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l1Hetero64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-6 hetero 64 KiB frame.</summary>
@@ -141,7 +133,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L6_Hetero64k()
     {
-        return ZstdCompressor.DecompressFrame(_l6Hetero64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l6Hetero64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-1 random 64 KiB frame.</summary>
@@ -149,7 +141,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L1_Random64k()
     {
-        return ZstdCompressor.DecompressFrame(_l1Random64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l1Random64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-6 random 64 KiB frame.</summary>
@@ -157,7 +149,7 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L6_Random64k()
     {
-        return ZstdCompressor.DecompressFrame(_l6Random64k, maxSize: 65536);
+        return ZstdCompressor.DecompressFrame(_l6Random64K, maxSize: 65536);
     }
 
     /// <summary>Decodes the level-6 multi-block 200 KiB frame.</summary>
@@ -165,6 +157,6 @@ public class ZarBlockHotPathBenchmarks
     [Benchmark]
     public byte[] Decode_L6_Text200k()
     {
-        return ZstdCompressor.DecompressFrame(_l6Text200k, maxSize: 200000);
+        return ZstdCompressor.DecompressFrame(_l6Text200K, maxSize: 200000);
     }
 }

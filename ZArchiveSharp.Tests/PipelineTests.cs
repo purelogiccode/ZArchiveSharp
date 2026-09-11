@@ -51,7 +51,7 @@ public sealed class PipelineTests : IDisposable
         return data;
     }
 
-    private static string PopulateRich(string dir)
+    private static void PopulateRich(string dir)
     {
         File.WriteAllText(Path.Combine(dir, "a.txt"), "hello");
         File.WriteAllBytes(Path.Combine(dir, "empty.bin"), []);
@@ -59,7 +59,6 @@ public sealed class PipelineTests : IDisposable
         Directory.CreateDirectory(Path.Combine(dir, "sub"));
         File.WriteAllText(Path.Combine(dir, "sub", "deep.txt"), new string('z', 70000));
         Directory.CreateDirectory(Path.Combine(dir, "sub", "emptydir"));
-        return dir;
     }
 
     private static Dictionary<string, byte[]> SnapshotFiles(string dir)
@@ -89,11 +88,13 @@ public sealed class PipelineTests : IDisposable
 
     private sealed class CancelOnFirstFile(CancellationTokenSource cts) : IProgress<ZarProgress>
     {
+        private readonly CancellationTokenSource _cts = cts;
+
         public void Report(ZarProgress value)
         {
             if (value.FilesCompleted >= 1)
             {
-                cts.Cancel();
+                _cts.Cancel();
             }
         }
     }
@@ -197,8 +198,8 @@ public sealed class PipelineTests : IDisposable
 
         var zar = Path.Combine(root, "out.zar");
         using var cts = new CancellationTokenSource();
-        Assert.Throws<OperationCanceledException>(
-            () => ZarPipeline.Pack(src, zar, null, new CancelOnFirstFile(cts), cts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            ZarPipeline.Pack(src, zar, null, new CancelOnFirstFile(cts), cts.Token));
         Assert.False(File.Exists(zar));
     }
 
@@ -213,8 +214,8 @@ public sealed class PipelineTests : IDisposable
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
-        Assert.Throws<OperationCanceledException>(
-            () => ZarPipeline.Extract(zar, Path.Combine(root, "dest"), null, null, cts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            ZarPipeline.Extract(zar, Path.Combine(root, "dest"), null, null, cts.Token));
         Assert.False(Directory.Exists(Path.Combine(root, "dest")));
     }
 
@@ -222,8 +223,8 @@ public sealed class PipelineTests : IDisposable
     public void Extract_Missing_ThrowsFileNotFound()
     {
         var root = NewTempDir("pipe_missing");
-        Assert.Throws<FileNotFoundException>(
-            () => ZarPipeline.Extract(Path.Combine(root, "nope.zar"), Path.Combine(root, "dest")));
+        Assert.Throws<FileNotFoundException>(() =>
+            ZarPipeline.Extract(Path.Combine(root, "nope.zar"), Path.Combine(root, "dest")));
     }
 
     [Fact]
@@ -234,8 +235,7 @@ public sealed class PipelineTests : IDisposable
         File.WriteAllBytes(zar, PatternBytes(1024, 3));
         // Garbage fails the footer-gated open (a ZarArchiveOpenException,
         // which is an InvalidOperationException for the -12 mapping).
-        Assert.Throws<ZarArchiveOpenException>(
-            () => ZarPipeline.Extract(zar, Path.Combine(root, "dest")));
+        Assert.Throws<ZarArchiveOpenException>(() => ZarPipeline.Extract(zar, Path.Combine(root, "dest")));
     }
 
     // ------------------------------------------------------------------
@@ -539,16 +539,17 @@ public sealed class PipelineTests : IDisposable
         var auto = ProcessableFiles.Find(root, ZarProcessMode.Auto);
         Assert.Equal(
             (string[])["a.zip", "b.rar", "c.7z", "d.tar", "e.gz", "f.iso", "sub"],
-            auto.Select(p => Path.GetFileName(p)!).ToArray());
+            auto.Select(p => Path.GetFileName(p)).ToArray());
 
         var archives = ProcessableFiles.Find(root, ZarProcessMode.ExtractArchive);
-        Assert.Equal((string[])["a.zip", "b.rar", "c.7z", "d.tar", "e.gz"], archives.Select(p => Path.GetFileName(p)!).ToArray());
+        Assert.Equal((string[])["a.zip", "b.rar", "c.7z", "d.tar", "e.gz"],
+            archives.Select(p => Path.GetFileName(p)).ToArray());
 
         var iso = ProcessableFiles.Find(root, ZarProcessMode.ExtractIso);
-        Assert.Equal((string[])["f.iso"], iso.Select(p => Path.GetFileName(p)!).ToArray());
+        Assert.Equal((string[])["f.iso"], iso.Select(p => Path.GetFileName(p)).ToArray());
 
         var dirs = ProcessableFiles.Find(root, ZarProcessMode.Compress);
-        Assert.Equal((string[])["sub"], dirs.Select(p => Path.GetFileName(p)!).ToArray());
+        Assert.Equal((string[])["sub"], dirs.Select(p => Path.GetFileName(p)).ToArray());
     }
 
     [Theory]

@@ -295,7 +295,7 @@ internal static class ZstdHuffmanEncoder
     // "== 166" comment upstream notwithstanding).
     private const int RankPositionTableSize = 192;
     private const int RankPositionMaxCountLog = 32;
-    private const int RankPositionLogBucketsBegin = (RankPositionTableSize - 1) - RankPositionMaxCountLog - 1;
+    private const int RankPositionLogBucketsBegin = RankPositionTableSize - 1 - RankPositionMaxCountLog - 1;
     private const int RankPositionDistinctCountCutoff = RankPositionLogBucketsBegin + 7;
     private const int QuickSortInsertionThreshold = 8;
 
@@ -939,7 +939,7 @@ internal static class ZstdHuffmanEncoder
         // Stream layout is fixed before the reuse decision (the valid-table
         // override does not depend on preferRepeat).
         var singleStream = srcLength < SingleStreamThreshold
-            || (repeat == ZstdHufRepeat.Valid && srcLength < 1024);
+                           || (repeat == ZstdHufRepeat.Valid && srcLength < 1024);
 
         // Small inputs with a valid table go straight to the old table.
         if (preferRepeat && repeat == ZstdHufRepeat.Valid && prevTable is not null)
@@ -959,7 +959,7 @@ internal static class ZstdHuffmanEncoder
         {
             var sample = new uint[SymbolValueMax + 1];
             var largestTotal = LargestInRange(src, srcOffset, 4096, sample)
-                + LargestInRange(src, end - 4096, 4096, sample);
+                               + LargestInRange(src, end - 4096, 4096, sample);
             if (largestTotal <= ((2 * 4096) >> 7) + 4)
             {
                 return 0;
@@ -1033,7 +1033,8 @@ internal static class ZstdHuffmanEncoder
 
         repeat = ZstdHufRepeat.None;
         nextTable = table;
-        var cSize = CompressStreams(dst, dstOffset + hSize, dstCapacity - hSize, src, srcOffset, srcLength, table, singleStream);
+        var cSize = CompressStreams(dst, dstOffset + hSize, dstCapacity - hSize, src, srcOffset, srcLength, table,
+            singleStream);
         if (cSize == 0)
         {
             nextTable = null;

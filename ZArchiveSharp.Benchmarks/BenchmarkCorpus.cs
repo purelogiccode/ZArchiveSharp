@@ -50,13 +50,13 @@ internal static class BenchmarkCorpus
     }
 
     /// <summary>2 KiB of phrase-cycle text (dict-benchmark small-file corpus).</summary>
-    public static byte[] SmallText2k()
+    public static byte[] SmallText2K()
     {
         return CycleText(2048);
     }
 
     /// <summary>8 KiB of phrase-cycle text (dict-benchmark small-file corpus).</summary>
-    public static byte[] SmallText8k()
+    public static byte[] SmallText8K()
     {
         return CycleText(8192);
     }

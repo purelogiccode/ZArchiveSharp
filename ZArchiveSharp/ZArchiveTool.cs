@@ -1,6 +1,6 @@
 namespace ZArchiveSharp;
 
-using ZArchiveSharp.Pipeline;
+using Pipeline;
 
 /// <summary>
 /// Directory pack / archive extract tool. Pure-C# port of
@@ -51,6 +51,7 @@ public static class ZArchiveTool
     private sealed class ActionProgress(Action<string> action) : IProgress<ZarProgress>
     {
         private string _last = string.Empty;
+        private readonly Action<string> _action = action;
 
         public void Report(ZarProgress value)
         {
@@ -58,7 +59,7 @@ public static class ZArchiveTool
                 !string.Equals(value.CurrentFile, _last, StringComparison.Ordinal))
             {
                 _last = value.CurrentFile;
-                action(value.CurrentFile);
+                _action(value.CurrentFile);
             }
         }
     }

@@ -132,9 +132,12 @@ public sealed class ZstdDictionary
             var huffman = ZstdHuffman.BuildTable(weights, numSymbols, tableLog);
             pos += huffmanConsumed;
 
-            pos = ReadTable(buf, pos, ZstdDecompressor.MaxOff, MaxOffLog, isOffset: true, isMatchLength: false, out var ofTable);
-            pos = ReadTable(buf, pos, ZstdDecompressor.MaxMl, MaxMlLog, isOffset: false, isMatchLength: true, out var mlTable);
-            pos = ReadTable(buf, pos, ZstdDecompressor.MaxLl, MaxLlLog, isOffset: false, isMatchLength: false, out var llTable);
+            pos = ReadTable(buf, pos, ZstdDecompressor.MaxOff, MaxOffLog, isOffset: true, isMatchLength: false,
+                out var ofTable);
+            pos = ReadTable(buf, pos, ZstdDecompressor.MaxMl, MaxMlLog, isOffset: false, isMatchLength: true,
+                out var mlTable);
+            pos = ReadTable(buf, pos, ZstdDecompressor.MaxLl, MaxLlLog, isOffset: false, isMatchLength: false,
+                out var llTable);
 
             if (pos + 12 > buf.Length)
             {
@@ -166,7 +169,8 @@ public sealed class ZstdDictionary
             return new ZstdDictionary(
                 content, unchecked((int)dictId), true, llTable, ofTable, mlTable, huffman, rep);
         }
-        catch (ZstdException ex) when (!ex.Message.StartsWith(ZstdErrorMessages.DictionaryCorrupted, StringComparison.Ordinal))
+        catch (ZstdException ex) when (!ex.Message.StartsWith(ZstdErrorMessages.DictionaryCorrupted,
+                                           StringComparison.Ordinal))
         {
             throw new ZstdException($"{ZstdErrorMessages.DictionaryCorrupted}: {ex.Message}", ex);
         }

@@ -2,8 +2,8 @@ namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
 /// Thrown when an archive entry cannot be created while packing
-/// (<c>zarchive.exe</c> exit <c>-14</c>: <c>Failed to create archive file
-/// %s</c>).
+/// (<c>zarchive.exe</c> exit <c>-14</c>: <code>Failed to create archive file
+/// %s</code>).
 /// </summary>
 public sealed class ZarEntryCreateException : InvalidOperationException
 {

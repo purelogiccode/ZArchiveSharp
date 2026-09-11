@@ -22,8 +22,6 @@ namespace ZArchiveSharp.Zstd;
 internal sealed class ZstdFrameState
 {
     private readonly byte[] _frame;
-    private readonly ZstdCompressionParameters _prm;
-    private readonly int _level;
 
     private uint[]? _fastHash;
     private uint[]? _dfastLong;
@@ -35,7 +33,6 @@ internal sealed class ZstdFrameState
     private uint[]? _optHash;
     private uint[]? _optBt;
     private uint[]? _optHash3;
-    private readonly ZstdEntropyState _entropy = new();
     private ZstdEntropyState? _stagedEntropy;
 
     /// <summary>Creates frame state over a private copy of the input.</summary>
@@ -45,15 +42,15 @@ internal sealed class ZstdFrameState
         ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 22);
         _frame = frame;
-        _level = level;
-        _prm = prm;
+        Level = level;
+        Prm = prm;
     }
 
     /// <summary>Compression level (1..22).</summary>
-    public int Level => _level;
+    public int Level { get; }
 
     /// <summary>Frame-level (total-size, adjusted) parameter row.</summary>
-    public ZstdCompressionParameters Prm => _prm;
+    public ZstdCompressionParameters Prm { get; }
 
     /// <summary>
     /// Table-update cursor (<c>ms->nextToUpdate</c>), absolute frame offset.
@@ -87,7 +84,7 @@ internal sealed class ZstdFrameState
             return 0;
         }
 
-        return _prm.Strategy switch
+        return Prm.Strategy switch
         {
             ZstdStrategy.Fast => ZstdFast.FindMatches(this, blockStart, blockEnd, store, repeatOffsets),
             ZstdStrategy.DoubleFast => ZstdDoubleFast.FindMatches(this, blockStart, blockEnd, store, repeatOffsets),
@@ -95,37 +92,37 @@ internal sealed class ZstdFrameState
                 ZstdLazyEngine.FindMatches(this, blockStart, blockEnd, store, repeatOffsets),
             ZstdStrategy.BtOpt or ZstdStrategy.BtUltra or ZstdStrategy.BtUltra2 =>
                 ZstdOpt.FindMatches(this, blockStart, blockEnd, store, repeatOffsets),
-            _ => throw new NotSupportedException($"No stateful port for strategy {_prm.Strategy}."),
+            _ => throw new NotSupportedException($"No stateful port for strategy {Prm.Strategy}."),
         };
     }
 
     /// <summary>Persistent fast hash table (<c>1 &lt;&lt; hashLog</c>, zeroed).</summary>
     internal uint[] FastHashTable()
     {
-        return _fastHash ??= new uint[1 << _prm.HashLog];
+        return _fastHash ??= new uint[1 << Prm.HashLog];
     }
 
     /// <summary>Persistent double-fast tables (long: <c>hashLog</c>, small: <c>chainLog</c>).</summary>
     internal (uint[] Long, uint[] Small) DoubleFastTables()
     {
-        _dfastLong ??= new uint[1 << _prm.HashLog];
-        _dfastSmall ??= new uint[1 << _prm.ChainLog];
+        _dfastLong ??= new uint[1 << Prm.HashLog];
+        _dfastSmall ??= new uint[1 << Prm.ChainLog];
         return (_dfastLong, _dfastSmall);
     }
 
     /// <summary>Persistent lazy hash + chain tables (hash-chain and BT searches).</summary>
     internal (uint[] Hash, uint[] Chain) LazyChainTables()
     {
-        _lazyHash ??= new uint[1 << _prm.HashLog];
-        _lazyChain ??= new uint[1 << _prm.ChainLog];
+        _lazyHash ??= new uint[1 << Prm.HashLog];
+        _lazyChain ??= new uint[1 << Prm.ChainLog];
         return (_lazyHash, _lazyChain);
     }
 
     /// <summary>Persistent lazy hash + tag tables (row search).</summary>
     internal (uint[] Hash, byte[] Tag) LazyRowTables()
     {
-        _lazyHash ??= new uint[1 << _prm.HashLog];
-        _lazyTag ??= new byte[1 << _prm.HashLog];
+        _lazyHash ??= new uint[1 << Prm.HashLog];
+        _lazyTag ??= new byte[1 << Prm.HashLog];
         return (_lazyHash, _lazyTag);
     }
 
@@ -133,7 +130,7 @@ internal sealed class ZstdFrameState
     /// Frame-persistent block entropy tables (M3:
     /// <c>prevCBlock-&gt;entropy</c>). Starts with every reuse mode at none.
     /// </summary>
-    internal ZstdEntropyState Entropy => _entropy;
+    internal ZstdEntropyState Entropy { get; } = new();
 
     /// <summary>
     /// Stages the next entropy state built for the current block (M3:
@@ -154,7 +151,7 @@ internal sealed class ZstdFrameState
     {
         if (_stagedEntropy is not null)
         {
-            _entropy.CopyFrom(_stagedEntropy);
+            Entropy.CopyFrom(_stagedEntropy);
             _stagedEntropy = null;
         }
 
@@ -173,9 +170,9 @@ internal sealed class ZstdFrameState
 
     private void DowngradeOffcode()
     {
-        if (_entropy.OfRepeat == ZstdFseRepeat.Valid)
+        if (Entropy.OfRepeat == ZstdFseRepeat.Valid)
         {
-            _entropy.OfRepeat = ZstdFseRepeat.Check;
+            Entropy.OfRepeat = ZstdFseRepeat.Check;
         }
     }
 
@@ -195,11 +192,11 @@ internal sealed class ZstdFrameState
     /// </summary>
     internal (uint[] Hash, uint[] Bt, uint[] Hash3) OptTables()
     {
-        _optHash ??= new uint[1 << _prm.HashLog];
-        _optBt ??= new uint[1 << _prm.ChainLog];
+        _optHash ??= new uint[1 << Prm.HashLog];
+        _optBt ??= new uint[1 << Prm.ChainLog];
         if (_optHash3 is null)
         {
-            var hashLog3 = ZstdOpt.HashLog3For(_prm);
+            var hashLog3 = ZstdOpt.HashLog3For(Prm);
             _optHash3 = hashLog3 > 0 ? new uint[1 << hashLog3] : [];
         }
 

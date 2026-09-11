@@ -1,6 +1,6 @@
 namespace ZArchiveSharp.Seekable;
 
-using ZArchiveSharp.Zstd;
+using Zstd;
 
 /// <summary>
 /// Seek table of a seekable zstd archive: the frame boundaries that let a
@@ -39,10 +39,10 @@ public sealed class SeekTable
     public int FrameCount => _cStarts.Length - 1;
 
     /// <summary>Total compressed bytes (end of the last frame).</summary>
-    public ulong TotalComp => _cStarts[_cStarts.Length - 1];
+    public ulong TotalComp => _cStarts[^1];
 
     /// <summary>Total decompressed bytes (end of the last frame).</summary>
-    public ulong TotalDecomp => _dStarts[_dStarts.Length - 1];
+    public ulong TotalDecomp => _dStarts[^1];
 
     /// <summary>
     /// Builds a table from per-frame <c>(compressed, decompressed)</c> sizes,
@@ -102,7 +102,7 @@ public sealed class SeekTable
         }
 
         ParseIntegrity(integrity, out var numFrames, out var sizePerFrame);
-        return ((long)numFrames * sizePerFrame + SkippableHeaderSize + IntegritySize, numFrames, sizePerFrame);
+        return (((long)numFrames * sizePerFrame) + SkippableHeaderSize + IntegritySize, numFrames, sizePerFrame);
     }
 
     /// <summary>
@@ -112,7 +112,10 @@ public sealed class SeekTable
     /// loading the frames.
     /// </summary>
     /// <param name="integrity">The file's last <c>IntegritySize</c> bytes.</param>
-    internal static long FootTableSize(ReadOnlySpan<byte> integrity) => FootLayout(integrity).TableSize;
+    internal static long FootTableSize(ReadOnlySpan<byte> integrity)
+    {
+        return FootLayout(integrity).TableSize;
+    }
 
     /// <summary>
     /// Parses an embedded <c>Foot</c> from the tail of a seekable stream,
@@ -171,7 +174,7 @@ public sealed class SeekTable
         }
 
         ParseIntegrity(tableBytes.Slice(SkippableHeaderSize, IntegritySize), out var numFrames, out var sizePerFrame);
-        var tableSize = (long)numFrames * sizePerFrame + SkippableHeaderSize + IntegritySize;
+        var tableSize = ((long)numFrames * sizePerFrame) + SkippableHeaderSize + IntegritySize;
         if ((long)ReadLe32(tableBytes, 4) + SkippableHeaderSize != tableSize)
         {
             throw new ZstdException("Corrupt seek table (size mismatch).");
@@ -189,20 +192,20 @@ public sealed class SeekTable
     /// <summary>Serializes in <c>Foot</c> format (integrity last).</summary>
     public byte[] WriteFoot()
     {
-        var buf = new byte[SkippableHeaderSize + IntegritySize + FrameCount * EntrySize];
+        var buf = new byte[SkippableHeaderSize + IntegritySize + (FrameCount * EntrySize)];
         WriteLe32(buf, 0, SkippableMagic);
-        WriteLe32(buf, 4, (uint)(FrameCount * EntrySize + IntegritySize));
+        WriteLe32(buf, 4, (uint)((FrameCount * EntrySize) + IntegritySize));
         WriteEntries(buf, SkippableHeaderSize);
-        WriteIntegrity(buf, SkippableHeaderSize + FrameCount * EntrySize);
+        WriteIntegrity(buf, SkippableHeaderSize + (FrameCount * EntrySize));
         return buf;
     }
 
     /// <summary>Serializes in <c>Head</c> format (integrity first).</summary>
     public byte[] WriteHead()
     {
-        var buf = new byte[SkippableHeaderSize + IntegritySize + FrameCount * EntrySize];
+        var buf = new byte[SkippableHeaderSize + IntegritySize + (FrameCount * EntrySize)];
         WriteLe32(buf, 0, SkippableMagic);
-        WriteLe32(buf, 4, (uint)(FrameCount * EntrySize + IntegritySize));
+        WriteLe32(buf, 4, (uint)((FrameCount * EntrySize) + IntegritySize));
         WriteIntegrity(buf, SkippableHeaderSize);
         WriteEntries(buf, SkippableHeaderSize + IntegritySize);
         return buf;
@@ -279,14 +282,20 @@ public sealed class SeekTable
     /// (<c>frame_index_comp</c>). Offsets past the end clamp to the last
     /// frame, like the oracle.
     /// </summary>
-    public int FrameIndexAtComp(ulong offset) => FrameIndexAt(_cStarts, offset);
+    public int FrameIndexAtComp(ulong offset)
+    {
+        return FrameIndexAt(_cStarts, offset);
+    }
 
     /// <summary>
     /// Index of the frame containing decompressed <paramref name="offset"/>
     /// (<c>frame_index_decomp</c>). Offsets past the end clamp to the last
     /// frame, like the oracle.
     /// </summary>
-    public int FrameIndexAtDecomp(ulong offset) => FrameIndexAt(_dStarts, offset);
+    public int FrameIndexAtDecomp(ulong offset)
+    {
+        return FrameIndexAt(_dStarts, offset);
+    }
 
     private int FrameIndexAt(ulong[] starts, ulong offset)
     {
@@ -390,13 +399,15 @@ public sealed class SeekTable
     {
         for (var i = 0; i < FrameCount; i++)
         {
-            WriteLe32(buf, offset + i * EntrySize, (uint)(_cStarts[i + 1] - _cStarts[i]));
-            WriteLe32(buf, offset + i * EntrySize + 4, (uint)(_dStarts[i + 1] - _dStarts[i]));
+            WriteLe32(buf, offset + (i * EntrySize), (uint)(_cStarts[i + 1] - _cStarts[i]));
+            WriteLe32(buf, offset + (i * EntrySize) + 4, (uint)(_dStarts[i + 1] - _dStarts[i]));
         }
     }
 
-    private static uint ReadLe32(ReadOnlySpan<byte> buf, int offset) =>
-        (uint)(buf[offset] | (buf[offset + 1] << 8) | (buf[offset + 2] << 16) | (buf[offset + 3] << 24));
+    private static uint ReadLe32(ReadOnlySpan<byte> buf, int offset)
+    {
+        return (uint)(buf[offset] | (buf[offset + 1] << 8) | (buf[offset + 2] << 16) | (buf[offset + 3] << 24));
+    }
 
     private static void WriteLe32(byte[] buf, int offset, uint value)
     {

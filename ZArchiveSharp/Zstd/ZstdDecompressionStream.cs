@@ -269,7 +269,7 @@ public sealed class ZstdDecompressionStream : Stream
     {
         if (!EnsureBuffered(4))
         {
-            if (_inEnd - _inStart > 0)
+            if (_inEnd > _inStart)
             {
                 throw new ZstdException("Truncated zstd frame magic.");
             }
@@ -345,7 +345,12 @@ public sealed class ZstdDecompressionStream : Stream
 
         if (dictFlag != 0)
         {
-            var idSize = dictFlag == 1 ? 1 : dictFlag == 2 ? 2 : 4;
+            var idSize = dictFlag switch
+            {
+                1 => 1,
+                2 => 2,
+                _ => 4
+            };
             if (!EnsureBuffered((pos - _inStart) + idSize))
             {
                 throw new ZstdException("Truncated zstd frame header.");
@@ -475,8 +480,8 @@ public sealed class ZstdDecompressionStream : Stream
         }
 
         var header = (uint)(_inBuf[_inStart]
-            | (_inBuf[_inStart + 1] << 8)
-            | (_inBuf[_inStart + 2] << 16));
+                            | (_inBuf[_inStart + 1] << 8)
+                            | (_inBuf[_inStart + 2] << 16));
         var lastBlock = (header & 1) != 0;
         var blockType = (int)((header >> 1) & 3);
         var blockSize = (int)(header >> 3);

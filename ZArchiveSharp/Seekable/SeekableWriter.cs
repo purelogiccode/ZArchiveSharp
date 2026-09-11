@@ -1,6 +1,6 @@
 namespace ZArchiveSharp.Seekable;
 
-using ZArchiveSharp.Zstd;
+using Zstd;
 
 /// <summary>
 /// Seekable zstd writer: splits input into independently compressed frames
@@ -44,7 +44,9 @@ public sealed class SeekableWriter
     private byte[] _pending = [];
     private int _pendingLen;
     private long _consumed;
+
     private bool _finished;
+
     // Pump scratch sized to the oracle CLI read granularity.
     private readonly byte[] _streamPump = new byte[InputChunkSize];
 
@@ -96,7 +98,7 @@ public sealed class SeekableWriter
             while (pos < data.Length)
             {
                 var take = (int)Math.Min(
-                    InputChunkSize - _consumed % InputChunkSize, data.Length - pos);
+                    InputChunkSize - (_consumed % InputChunkSize), data.Length - pos);
                 AppendPending(data.Slice(pos, take));
                 pos += take;
                 _consumed += take;
@@ -161,9 +163,11 @@ public sealed class SeekableWriter
         return (data, table!);
     }
 
-    private int MeasurePending() =>
-        ZstdCompressor.EncodeStreamingFrame(
+    private int MeasurePending()
+    {
+        return ZstdCompressor.EncodeStreamingFrame(
             new ReadOnlySpan<byte>(_pending, 0, _pendingLen), _level, _checksum).Length;
+    }
 
     private void EmitPending(int contentLength)
     {

@@ -41,28 +41,34 @@ public sealed class SeekableCliTests : IDisposable
 
     private static byte[] CycleBytes(int size)
     {
-        const string alphabet = "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
+        const string alphabet =
+            "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
         var data = new byte[size];
         for (int i = 0; i < size; i++)
         {
-            data[i] = (byte)alphabet[(i * 31 + i / 7) % alphabet.Length];
+            data[i] = (byte)alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
 
         return data;
     }
 
-    private Task<int> RunSeekableAsync(SeekableCli.SeekableJob job, MemoryStream stdin, MemoryStream stdout, CancellationToken ct = default)
+    private Task<int> RunSeekableAsync(SeekableCli.SeekableJob job, MemoryStream stdin, MemoryStream stdout,
+        CancellationToken ct = default)
     {
         _log.Clear();
         _errors.Clear();
         return SeekableCli.RunAsync(job, stdin, stdout, _log.Add, _errors.Add, ct);
     }
 
-    private static bool Parsed(string[] args, out SeekableCli.SeekableJob? job, out string? error) =>
-        SeekableCli.TryParse(args, out job, out error);
+    private static bool Parsed(string[] args, out SeekableCli.SeekableJob? job, out string? error)
+    {
+        return SeekableCli.TryParse(args, out job, out error);
+    }
 
     private static SeekableCli.SeekableJob CompressJob(
-        string? input = null, string? output = null, int frameSize = 16 * 1024, bool quiet = true) => new()
+        string? input = null, string? output = null, int frameSize = 16 * 1024, bool quiet = true)
+    {
+        return new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Compress,
             InputPath = input,
@@ -70,6 +76,7 @@ public sealed class SeekableCliTests : IDisposable
             FrameSize = frameSize,
             Quiet = quiet,
         };
+    }
 
     // ------------------------------------------------------------------
     // Arg parsing: verbs and aliases
@@ -180,10 +187,18 @@ public sealed class SeekableCliTests : IDisposable
     [Fact]
     public void Parse_MissingValues_Reject()
     {
-        foreach (var flag in new[] { "-l", "-s", "--frame-size-policy", "--seek-table-file", "--from", "--to", "--from-frame", "--to-frame", "--num-frames", "--seek-table-format" })
+        foreach (var flag in new[]
+                 {
+                     "-l", "-s", "--frame-size-policy", "--seek-table-file", "--from", "--to", "--from-frame",
+                     "--to-frame", "--num-frames", "--seek-table-format"
+                 })
         {
-            string verb = flag is "--num-frames" or "--seek-table-format" ? "list"
-                : flag is "--from" or "--to" ? "decompress" : "compress";
+            string verb = flag switch
+            {
+                "--num-frames" or "--seek-table-format" => "list",
+                "--from" or "--to" => "decompress",
+                _ => "compress"
+            };
             Assert.False(Parsed([verb, flag], out _, out _));
         }
     }
@@ -395,7 +410,7 @@ public sealed class SeekableCliTests : IDisposable
     public async Task RoundTrip_Streams()
     {
         var data = CycleBytes(50_000);
-        using var packed = new MemoryStream();
+        await using var packed = new MemoryStream();
         Assert.Equal(0, await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Compress,
@@ -406,7 +421,7 @@ public sealed class SeekableCliTests : IDisposable
         Assert.True(packed.Length > 0);
 
         packed.Position = 0;
-        using var back = new MemoryStream();
+        await using var back = new MemoryStream();
         Assert.Equal(0, await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Decompress,

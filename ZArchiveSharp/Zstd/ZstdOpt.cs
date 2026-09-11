@@ -120,7 +120,7 @@ internal static class ZstdOpt
         return (int)raw - 1;
     }
 
-    private static uint Read32LE(ReadOnlySpan<byte> src, int pos)
+    private static uint Read32Le(ReadOnlySpan<byte> src, int pos)
     {
         uint value = 0;
         for (var i = 0; i < 4 && pos + i < src.Length; i++)
@@ -196,7 +196,8 @@ internal static class ZstdOpt
         }
 
         var nextToUpdate = 0;
-        return OptGeneric(source, 0, n, store, repeatOffsets, table, optLevel, stats, NewTables(table), ref nextToUpdate);
+        return OptGeneric(source, 0, n, store, repeatOffsets, table, optLevel, stats, NewTables(table),
+            ref nextToUpdate);
     }
 
     /// <summary>
@@ -230,19 +231,21 @@ internal static class ZstdOpt
 
         if (table.Strategy == ZstdStrategy.BtUltra2
             && stats.LitLengthSum == 0 && blockStart == 0
-            && blockEnd - blockStart > PredefThreshold)
+            && blockEnd > PredefThreshold)
         {
             // First-block two-pass seeding (ZSTD_initStats_ultra): the
             // throwaway pass runs over temp tables (discarded, like the
             // native window-shift invalidation) sharing the frame statistics;
             // the real pass below refills the still-empty persistent tables.
-            var tmpStore = new ZstdSequenceStore(blockEnd - blockStart);
+            var tmpStore = new ZstdSequenceStore(blockEnd);
             var tmpRep = (uint[])repeatOffsets.Clone();
             var tmpNext = 0;
-            OptGeneric(state.Frame, blockStart, blockEnd, tmpStore, tmpRep, table, optLevel, stats, NewTables(table), ref tmpNext);
+            OptGeneric(state.Frame, blockStart, blockEnd, tmpStore, tmpRep, table, optLevel, stats, NewTables(table),
+                ref tmpNext);
         }
 
-        return OptGeneric(state.Frame, blockStart, blockEnd, store, repeatOffsets, table, optLevel, stats, tables, ref state.NextToUpdate);
+        return OptGeneric(state.Frame, blockStart, blockEnd, store, repeatOffsets, table, optLevel, stats, tables,
+            ref state.NextToUpdate);
     }
 
     private static int OptLevelFor(ZstdStrategy strategy)
@@ -251,7 +254,8 @@ internal static class ZstdOpt
         {
             ZstdStrategy.BtOpt => 0,
             ZstdStrategy.BtUltra or ZstdStrategy.BtUltra2 => 2,
-            _ => throw new ArgumentOutOfRangeException(nameof(strategy), $"Strategy {strategy} is not optimal-parsing."),
+            _ => throw new ArgumentOutOfRangeException(nameof(strategy),
+                $"Strategy {strategy} is not optimal-parsing."),
         };
     }
 
@@ -425,8 +429,8 @@ internal static class ZstdOpt
 
         var llCode = ZstdBlockEncoder.LLcode(litLength);
         return ((uint)ZstdBlockEncoder.LlExtraBits(llCode) * BitcostMultiplier)
-            + o.LitLengthSumBasePrice
-            - Weight(o.LitLengthFreq[llCode], optLevel);
+               + o.LitLengthSumBasePrice
+               - Weight(o.LitLengthFreq[llCode], optLevel);
     }
 
     private static uint GetMatchPrice(uint offBase, uint matchLength, OptStats o, int optLevel)
@@ -442,7 +446,7 @@ internal static class ZstdOpt
         unchecked
         {
             var price = (offCode * BitcostMultiplier)
-                + (o.OffCodeSumBasePrice - Weight(o.OffCodeFreq[offCode], optLevel));
+                        + (o.OffCodeSumBasePrice - Weight(o.OffCodeFreq[offCode], optLevel));
             if (optLevel < 2 && offCode >= 20)
             {
                 price += (offCode - 19u) * 2u * BitcostMultiplier;
@@ -450,7 +454,7 @@ internal static class ZstdOpt
 
             var mlCode = ZstdBlockEncoder.MLcode(mlBase);
             price += ((uint)ZstdBlockEncoder.MlExtraBits(mlCode) * BitcostMultiplier)
-                + (o.MatchLengthSumBasePrice - Weight(o.MatchLengthFreq[mlCode], optLevel));
+                     + (o.MatchLengthSumBasePrice - Weight(o.MatchLengthFreq[mlCode], optLevel));
             price += BitcostMultiplier / 5;
             return price;
         }
@@ -482,13 +486,13 @@ internal static class ZstdOpt
 
     private static uint Hash3(ReadOnlySpan<byte> src, int pos, int hBits)
     {
-        var u = Read32LE(src, pos);
+        var u = Read32Le(src, pos);
         return ((u << 8) * Prime3Bytes) >> (32 - hBits);
     }
 
     private static uint ReadMinMatch(ReadOnlySpan<byte> src, int pos, int minMatch)
     {
-        var v = Read32LE(src, pos);
+        var v = Read32Le(src, pos);
         return minMatch == 3 ? v << 8 : v;
     }
 
@@ -644,12 +648,14 @@ internal static class ZstdOpt
             var lastR = 3 + ll0;
             for (var repCode = ll0; repCode < lastR; repCode++)
             {
-                var repOffset = repCode == 3 ? rep0 - 1 : repCode switch
-                {
-                    0 => rep0,
-                    1 => rep1,
-                    _ => rep2,
-                };
+                var repOffset = repCode == 3
+                    ? rep0 - 1
+                    : repCode switch
+                    {
+                        0 => rep0,
+                        1 => rep1,
+                        _ => rep2,
+                    };
                 var repLen = 0;
                 if (repOffset > 0 && unchecked(repOffset - 1) < (uint)curr)
                 {
@@ -910,8 +916,8 @@ internal static class ZstdOpt
                 {
                     var litlen = opt[cur - 1].Litlen + 1;
                     var price = opt[cur - 1].Price
-                        + (int)RawLiteralsCost(src, inr - 1, 1, stats, optLevel)
-                        + LitIncPrice(litlen, stats, optLevel);
+                                + (int)RawLiteralsCost(src, inr - 1, 1, stats, optLevel)
+                                + LitIncPrice(litlen, stats, optLevel);
                     if (price <= opt[cur].Price)
                     {
                         var prevMatch = opt[cur];
@@ -923,14 +929,14 @@ internal static class ZstdOpt
                             && LitIncPrice(1, stats, optLevel) < 0
                             && inr < blockEnd)
                         {
-                            var with1literal = prevMatch.Price
-                                + (int)RawLiteralsCost(src, inr, 1, stats, optLevel)
-                                + LitIncPrice(1, stats, optLevel);
+                            var with1Literal = prevMatch.Price
+                                               + (int)RawLiteralsCost(src, inr, 1, stats, optLevel)
+                                               + LitIncPrice(1, stats, optLevel);
                             var withMoreLiterals = price
-                                + (int)RawLiteralsCost(src, inr, 1, stats, optLevel)
-                                + LitIncPrice(litlen + 1, stats, optLevel);
-                            if (with1literal < withMoreLiterals
-                                && with1literal < opt[cur + 1].Price)
+                                                   + (int)RawLiteralsCost(src, inr, 1, stats, optLevel)
+                                                   + LitIncPrice(litlen + 1, stats, optLevel);
+                            if (with1Literal < withMoreLiterals
+                                && with1Literal < opt[cur + 1].Price)
                             {
                                 var prev = cur - (int)prevMatch.Mlen;
                                 var newReps = ZstdSeq.NewRep(
@@ -941,7 +947,7 @@ internal static class ZstdOpt
                                 opt[cur + 1].Rep1 = newReps[1];
                                 opt[cur + 1].Rep2 = newReps[2];
                                 opt[cur + 1].Litlen = 1;
-                                opt[cur + 1].Price = with1literal;
+                                opt[cur + 1].Price = with1Literal;
                                 if (lastPos < cur + 1)
                                 {
                                     lastPos = cur + 1;
@@ -1049,7 +1055,7 @@ internal static class ZstdOpt
                     lastStretch.Mlen, lastStretch.Off, lastStretch.Litlen);
             }
 
-        NextSeries:;
+            NextSeries: ;
         }
 
         store.SetTrailingLiterals(src.Slice(anchor, blockEnd - anchor));

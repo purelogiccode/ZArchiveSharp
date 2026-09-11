@@ -30,7 +30,8 @@ public sealed class ParityVsNativeL6Tests
             "period2" => 6,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        var rng = new Random(unchecked((int)(0x5162026u + (uint)kindIndex * 0x9E3779B9u + (uint)n * 31u + (uint)seed * 131u)));
+        var rng = new Random(unchecked((int)(0x5162026u + ((uint)kindIndex * 0x9E3779B9u) + ((uint)n * 31u) +
+                                             ((uint)seed * 131u))));
         var buf = new byte[n];
         switch (kind)
         {
@@ -54,7 +55,7 @@ public sealed class ParityVsNativeL6Tests
             case "pattern":
                 for (var i = 0; i < n; i++)
                 {
-                    buf[i] = (byte)((i * 31 + 7) % 256);
+                    buf[i] = (byte)(((i * 31) + 7) % 256);
                 }
 
                 break;

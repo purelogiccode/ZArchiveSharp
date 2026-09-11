@@ -1,6 +1,6 @@
 namespace ZArchiveSharp.Seekable;
 
-using ZArchiveSharp.Zstd;
+using Zstd;
 
 /// <summary>
 /// Seekable zstd reader: parses the seek table (embedded <c>Foot</c> or an
@@ -85,7 +85,10 @@ public sealed class SeekableReader
     public int FrameCount => Table.FrameCount;
 
     /// <summary>Decompresses the whole payload.</summary>
-    public byte[] DecompressAll() => DecompressRange(0, DecompressedLength);
+    public byte[] DecompressAll()
+    {
+        return DecompressRange(0, DecompressedLength);
+    }
 
     /// <summary>
     /// Decompresses <paramref name="length"/> bytes from decompressed
@@ -175,7 +178,7 @@ public sealed class SeekableReader
         }
 
         var start = Table.FrameStartComp(index);
-        var slice = new ReadOnlySpan<byte>(_data!, (int)start, (int)size);
+        var slice = new ReadOnlySpan<byte>(_data, (int)start, (int)size);
         return ZstdCompressor.DecompressFrame(slice, (int)dSize);
     }
 }

@@ -211,8 +211,8 @@ internal static class ZstdBinaryTree
 
         // Reach end of unsorted candidates list.
         while (matchIndex > unsortLimit
-            && bt[2 * (matchIndex & btMask) + 1] == UnsortedMark
-            && nbCandidates > 1)
+               && bt[(2 * (matchIndex & btMask)) + 1] == UnsortedMark
+               && nbCandidates > 1)
         {
             var nextSlot = 2 * (matchIndex & btMask);
             bt[nextSlot + 1] = previousCandidate >= 0 ? (uint)previousCandidate + 1 : 0;
@@ -223,7 +223,7 @@ internal static class ZstdBinaryTree
 
         // Nullify last candidate if still unsorted.
         if (matchIndex > unsortLimit
-            && bt[2 * (matchIndex & btMask) + 1] == UnsortedMark)
+            && bt[(2 * (matchIndex & btMask)) + 1] == UnsortedMark)
         {
             var nextSlot = 2 * (matchIndex & btMask);
             bt[nextSlot] = bt[nextSlot + 1] = 0;
@@ -233,7 +233,7 @@ internal static class ZstdBinaryTree
         matchIndex = previousCandidate;
         while (matchIndex >= 0)
         {
-            var nextSlot = 2 * (matchIndex & btMask) + 1;
+            var nextSlot = (2 * (matchIndex & btMask)) + 1;
             var nextCandidateIdx = SlotPos(bt[nextSlot]);
             InsertDubt1(src, end, matchIndex, nbCandidates, unsortLimit, windowLog, bt, btMask);
             matchIndex = nextCandidateIdx;

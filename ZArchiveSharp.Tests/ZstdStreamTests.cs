@@ -186,7 +186,7 @@ public sealed class ZstdStreamTests
     public void Stream_Empty_RoundTrips()
     {
         using var dest = new MemoryStream();
-        using (var enc = new ZstdCompressionStream(dest, leaveOpen: true))
+        using (new ZstdCompressionStream(dest, leaveOpen: true))
         {
         }
 
@@ -330,7 +330,7 @@ public sealed class ZstdStreamTests
     public async Task Stream_Async_RoundTrip()
     {
         var input = Hetero(100000);
-        using var dest = new MemoryStream();
+        await using var dest = new MemoryStream();
         await using (var enc = new ZstdCompressionStream(dest, 6, true, leaveOpen: true))
         {
             await enc.WriteAsync(input.AsMemory(0, 40000));
@@ -338,9 +338,9 @@ public sealed class ZstdStreamTests
             await enc.FlushAsync();
         }
 
-        using var src = new MemoryStream(dest.ToArray(), writable: false);
+        await using var src = new MemoryStream(dest.ToArray(), writable: false);
         await using var dec = new ZstdDecompressionStream(src);
-        using var outMs = new MemoryStream();
+        await using var outMs = new MemoryStream();
         await dec.CopyToAsync(outMs);
         Assert.Equal(input, outMs.ToArray());
     }
@@ -349,12 +349,12 @@ public sealed class ZstdStreamTests
     public async Task Stream_ReadAsync_Canceled_Throws()
     {
         var frame = CompressViaStream(Text(100), 1, false, 100);
-        using var src = new MemoryStream(frame, writable: false);
-        using var dec = new ZstdDecompressionStream(src);
+        await using var src = new MemoryStream(frame, writable: false);
+        await using var dec = new ZstdDecompressionStream(src);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
-        await Assert.ThrowsAsync<OperationCanceledException>(
-            () => dec.ReadAsync(new Memory<byte>(new byte[16]), cts.Token).AsTask());
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            dec.ReadAsync(new Memory<byte>(new byte[16]), cts.Token).AsTask());
     }
 
     [Fact]
@@ -363,7 +363,7 @@ public sealed class ZstdStreamTests
         var input = Hetero(70000);
         using var dest = new MemoryStream();
         using (var enc = new ZstdCompressionStream(
-            dest, new ZstdCompressionOptions { Level = 12, ChecksumFlag = true }, leaveOpen: true))
+                   dest, new ZstdCompressionOptions { Level = 12, ChecksumFlag = true }, leaveOpen: true))
         {
             enc.Write(input);
         }
@@ -384,7 +384,7 @@ public sealed class ZstdStreamTests
         dest.WriteByte(0);
 
         using var src = new MemoryStream(new byte[] { 0x28, 0xB5, 0x2F, 0xFD }, writable: false);
-        using (var dec = new ZstdDecompressionStream(src, leaveOpen: true))
+        using (new ZstdDecompressionStream(src, leaveOpen: true))
         {
         }
 
@@ -403,7 +403,7 @@ public sealed class ZstdStreamTests
         Assert.Throws<ObjectDisposedException>(() => dest.WriteByte(0));
 
         var src = new MemoryStream(CompressViaStream(Text(100), 1, false, 100), writable: false);
-        using (var dec = new ZstdDecompressionStream(src, leaveOpen: false))
+        using (new ZstdDecompressionStream(src, leaveOpen: false))
         {
         }
 
@@ -414,7 +414,8 @@ public sealed class ZstdStreamTests
     public void CompressionStream_InvalidUse_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new ZstdCompressionStream(null!));
-        Assert.Throws<ArgumentNullException>(() => new ZstdCompressionStream(new MemoryStream(), (ZstdCompressionOptions)null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ZstdCompressionStream(new MemoryStream(), (ZstdCompressionOptions)null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdCompressionStream(new MemoryStream(), 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdCompressionStream(new MemoryStream(), 23));
         Assert.Throws<ArgumentException>(() =>
@@ -435,15 +436,15 @@ public sealed class ZstdStreamTests
         Assert.Throws<NotSupportedException>(() => _ = enc2.Position);
         Assert.Throws<NotSupportedException>(() => enc2.Position = 0);
         Assert.False(enc2.CanRead);
-        Assert.True(enc2.CanSeek == false);
+        Assert.False(enc2.CanSeek);
     }
 
     [Fact]
     public void DecompressionStream_InvalidUse_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new ZstdDecompressionStream(null!));
-        Assert.Throws<ArgumentNullException>(
-            () => new ZstdDecompressionStream(new MemoryStream(), (ZstdDecoderOptions)null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            new ZstdDecompressionStream(new MemoryStream(), (ZstdDecoderOptions)null!));
 
         using var dec = new ZstdDecompressionStream(new MemoryStream());
         Assert.Throws<NotSupportedException>(() => dec.Write(new byte[1], 0, 1));

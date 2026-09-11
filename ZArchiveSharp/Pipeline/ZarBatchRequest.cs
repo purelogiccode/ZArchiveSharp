@@ -12,10 +12,13 @@ public sealed record ZarBatchRequest(
     int MaxWorkers = 4)
 {
     /// <summary>Expands to <see cref="ZarPipelineOptions"/>.</summary>
-    public ZarPipelineOptions ToPipelineOptions() => new()
+    public ZarPipelineOptions ToPipelineOptions()
     {
-        MaxDegreeOfParallelism = MaxWorkers,
-        CollisionPolicy = Policy,
-        DeleteSourceOnSuccess = !KeepOriginals,
-    };
+        return new ZarPipelineOptions
+        {
+            MaxDegreeOfParallelism = MaxWorkers,
+            CollisionPolicy = Policy,
+            DeleteSourceOnSuccess = !KeepOriginals,
+        };
+    }
 }

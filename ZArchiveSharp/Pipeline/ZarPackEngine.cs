@@ -54,7 +54,7 @@ public static class ZarPackEngine
             var dir = Path.GetDirectoryName(path) ?? "";
             var stem = Path.GetFileNameWithoutExtension(path);
             var suffix = Path.GetExtension(path);
-            for (var n = 1; ; n++)
+            for (var n = 1;; n++)
             {
                 var candidate = Path.Combine(dir, $"{stem}_{n}{suffix}");
                 if (!File.Exists(candidate) && !Directory.Exists(candidate))
@@ -94,9 +94,6 @@ public static class ZarPackEngine
         var clock = Stopwatch.StartNew();
         long filesCompleted = 0;
         long bytesCompleted = 0;
-        void Report(string current) => progress?.Report(new ZarProgress(
-            ZarOperation.Pack, displayPath, zarPath, current,
-            filesCompleted, filesTotal, bytesCompleted, bytesTotal));
 
         try
         {
@@ -164,6 +161,15 @@ public static class ZarPackEngine
 
             throw;
         }
+
+        return;
+
+        void Report(string current)
+        {
+            progress?.Report(new ZarProgress(
+                ZarOperation.Pack, displayPath, zarPath, current,
+                filesCompleted, filesTotal, bytesCompleted, bytesTotal));
+        }
     }
 
     /// <summary>Opens an entry for reading, mapping I/O faults to the native <c>-15</c> fault.</summary>
@@ -180,7 +186,12 @@ public static class ZarPackEngine
         }
     }
 
-    private sealed record ExtractPlanEntry(string SrcPath, string RelativePath, bool IsDirectory, ulong Size, string LogLine);
+    private sealed record ExtractPlanEntry(
+        string SrcPath,
+        string RelativePath,
+        bool IsDirectory,
+        ulong Size,
+        string LogLine);
 
     /// <summary>
     /// Extracts <paramref name="zarPath"/> into <paramref name="destDir"/>
@@ -216,7 +227,7 @@ public static class ZarPackEngine
         }
 
         using var reader = ZArchiveReader.TryOpen(zarPath) ??
-            throw new ZarArchiveOpenException("Failed to open ZArchive.");
+                           throw new ZarArchiveOpenException("Failed to open ZArchive.");
 
         return ExtractOpen(reader, zarPath, destDir, options, progress, cancellationToken, log);
     }
@@ -273,9 +284,6 @@ public static class ZarPackEngine
         var clock = Stopwatch.StartNew();
         long filesCompleted = 0;
         long bytesCompleted = 0;
-        void Report(string current) => progress?.Report(new ZarProgress(
-            ZarOperation.Extract, displayPath, destDir, current,
-            filesCompleted, filesTotal, bytesCompleted, bytesTotal));
 
         Report(string.Empty);
         var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
@@ -333,6 +341,13 @@ public static class ZarPackEngine
 
         Report(string.Empty);
         return files;
+
+        void Report(string current)
+        {
+            progress?.Report(new ZarProgress(
+                ZarOperation.Extract, displayPath, destDir, current,
+                filesCompleted, filesTotal, bytesCompleted, bytesTotal));
+        }
     }
 
     private static void CollectEntries(

@@ -223,7 +223,7 @@ public sealed class ZstdDictTests
 
         // With a checksum, wrong-content history fails loudly.
         var checksummed = new ZstdCompressor(
-            new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
+                new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
             .CompressBlock(input);
         Assert.Throws<ZstdException>(() => ZstdDecompressor.Decompress(checksummed, other));
 
@@ -305,7 +305,7 @@ public sealed class ZstdDictTests
         Assert.Equal(input, ZstdDecompressor.Decompress(streamFrame, dict));
 
         var singleFrame = new ZstdCompressor(
-            new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
+                new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
             .CompressBlock(input);
         Assert.Equal(input, DecompressViaDictStream(singleFrame, dict));
     }
@@ -339,7 +339,7 @@ public sealed class ZstdDictTests
     {
         var dict = TextRawDict();
         var input = CycleText(4096);
-        using var dest = new MemoryStream();
+        await using var dest = new MemoryStream();
         var options = new ZstdCompressionOptions { Level = 6, Dictionary = dict };
         await using (var enc = new ZstdCompressionStream(dest, options, leaveOpen: true))
         {
@@ -489,7 +489,7 @@ public sealed class ZstdDictTests
         }
 
         var frame = new ZstdCompressor(
-            new ZstdCompressionOptions { Level = level, ChecksumFlag = true, Dictionary = dict })
+                new ZstdCompressionOptions { Level = level, ChecksumFlag = true, Dictionary = dict })
             .CompressBlock(input);
         Assert.Equal(input, ZstdDecompressor.Decompress(frame, dict));
     }
@@ -505,7 +505,7 @@ public sealed class ZstdDictTests
         }
 
         // Truncating only content stays valid (stock: content is the rest).
-        var shorter = ZstdDictionary.FromBytes(full[..(full.Length - 1)]);
+        var shorter = ZstdDictionary.FromBytes(full[..^1]);
         Assert.True(shorter.IsFormatted);
         Assert.Equal(15, shorter.ContentSize);
     }
@@ -513,7 +513,6 @@ public sealed class ZstdDictTests
     [Fact]
     public void SyntheticDict_BadRep_Throws()
     {
-        var full = SyntheticFormattedDict();
         var badZero = SyntheticFormattedDict();
         badZero[16] = 0x00; // rep0 = 0
         Assert.Contains("Invalid zstd dictionary",
@@ -575,15 +574,15 @@ public sealed class ZstdDictTests
     }
 
     private const string StockDecodeScript = """
-        import sys, compression.zstd
-        frame = open(sys.argv[1], 'rb').read()
-        raw = open(sys.argv[2], 'rb').read()
-        if sys.argv[3] == 'raw':
-            zd = compression.zstd.ZstdDict(raw, is_raw=True).as_prefix
-        else:
-            zd = compression.zstd.ZstdDict(raw)
-        sys.stdout.buffer.write(compression.zstd.decompress(frame, zstd_dict=zd))
-        """;
+                                             import sys, compression.zstd
+                                             frame = open(sys.argv[1], 'rb').read()
+                                             raw = open(sys.argv[2], 'rb').read()
+                                             if sys.argv[3] == 'raw':
+                                                 zd = compression.zstd.ZstdDict(raw, is_raw=True).as_prefix
+                                             else:
+                                                 zd = compression.zstd.ZstdDict(raw)
+                                             sys.stdout.buffer.write(compression.zstd.decompress(frame, zstd_dict=zd))
+                                             """;
 
     private static byte[] DecodeWithStockPython(string python, byte[] frame, byte[] dictBytes, string mode)
     {
@@ -643,7 +642,7 @@ public sealed class ZstdDictTests
         var dict = ZstdDictionary.FromRawPrefix(dictContent);
         var input = CycleText(2048);
         var frame = new ZstdCompressor(
-            new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
+                new ZstdCompressionOptions { Level = 6, ChecksumFlag = true, Dictionary = dict })
             .CompressBlock(input);
         Assert.Equal(input, DecodeWithStockPython(python, frame, dictContent, "raw"));
     }
@@ -682,7 +681,7 @@ public sealed class ZstdDictTests
         var dict = ZstdDictionary.FromBytes(dictBytes);
         var input = File.ReadAllBytes(Path.Combine(dir, $"dict-stock-{name}.bin"));
         var frame = new ZstdCompressor(
-            new ZstdCompressionOptions { Level = level, ChecksumFlag = true, Dictionary = dict })
+                new ZstdCompressionOptions { Level = level, ChecksumFlag = true, Dictionary = dict })
             .CompressBlock(input);
         Assert.Equal(input, DecodeWithStockPython(python, frame, dictBytes, "formatted"));
     }
@@ -702,7 +701,7 @@ public sealed class ZstdDictTests
         // randomness, round-tripped single-shot and via streams.
         for (var iter = 0; iter < 25; iter++)
         {
-            var rng = new Random(unchecked((int)(0x5EED2026u + (uint)iter * 0x9E3779B9u + (uint)level * 131u)));
+            var rng = new Random(unchecked((int)(0x5EED2026u + ((uint)iter * 0x9E3779B9u) + ((uint)level * 131u))));
             var dictBytes = new byte[rng.Next(64, 1500)];
             rng.NextBytes(dictBytes);
             var dict = ZstdDictionary.FromRawPrefix(dictBytes, dictId: (uint)rng.Next(1, 70000));

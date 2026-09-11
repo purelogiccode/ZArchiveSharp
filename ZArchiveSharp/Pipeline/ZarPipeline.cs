@@ -1,3 +1,9 @@
+#if NET9_0_OR_GREATER
+using ProgressGate = System.Threading.Lock;
+#else
+using ProgressGate = object;
+#endif
+
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
@@ -74,8 +80,10 @@ public static class ZarPipeline
         ZarPipelineOptions? options = null,
         IProgress<ZarProgress>? progress = null,
         CancellationToken cancellationToken = default,
-        Action<string>? log = null) =>
-        ZarPackEngine.ExtractEntries(zarPath, destDir, zarPath, options, progress, cancellationToken, log);
+        Action<string>? log = null)
+    {
+        return ZarPackEngine.ExtractEntries(zarPath, destDir, zarPath, options, progress, cancellationToken, log);
+    }
 
     /// <summary>
     /// Packs several directories in parallel (worker count
@@ -112,12 +120,12 @@ public static class ZarPipeline
 
         var snapshot = options;
         var completed = 0;
-        var progressLock = new object();
+        var progressLock = new ProgressGate();
         var results = new ZarItemResult?[items.Count];
         try
         {
-            System.Threading.Tasks.Parallel.For(0, items.Count,
-                new System.Threading.Tasks.ParallelOptions
+            Parallel.For(0, items.Count,
+                new ParallelOptions
                 {
                     MaxDegreeOfParallelism = snapshot.ClampedWorkers(items.Count),
                     CancellationToken = cancellationToken,
@@ -133,7 +141,8 @@ public static class ZarPipeline
         }
 
         return results.Select((r, i) => r ??
-            new ZarItemResult(items[i], null, ZarItemStatus.Cancelled, "Cancelled before start.")).ToList();
+                                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled,
+                                            "Cancelled before start.")).ToList();
     }
 
     /// <summary>
@@ -158,18 +167,19 @@ public static class ZarPipeline
 
         var snapshot = options;
         var completed = 0;
-        var progressLock = new object();
+        var progressLock = new ProgressGate();
         var results = new ZarItemResult?[items.Count];
         try
         {
-            System.Threading.Tasks.Parallel.For(0, items.Count,
-                new System.Threading.Tasks.ParallelOptions
+            Parallel.For(0, items.Count,
+                new ParallelOptions
                 {
                     MaxDegreeOfParallelism = snapshot.ClampedWorkers(items.Count),
                     CancellationToken = cancellationToken,
                 },
-                i => results[i] = ExtractOne(items[i], items.Count == 1 ? destDir
-                    : Path.Combine(destDir, DefaultExtractName(items[i])),
+                i => results[i] = ExtractOne(items[i], items.Count == 1
+                        ? destDir
+                        : Path.Combine(destDir, DefaultExtractName(items[i])),
                     snapshot, items.Count, progress, progressLock,
                     () => Volatile.Read(ref completed),
                     afterItem: () => Interlocked.Increment(ref completed),
@@ -181,7 +191,8 @@ public static class ZarPipeline
         }
 
         return results.Select((r, i) => r ??
-            new ZarItemResult(items[i], null, ZarItemStatus.Cancelled, "Cancelled before start.")).ToList();
+                                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled,
+                                            "Cancelled before start.")).ToList();
     }
 
     /// <summary>
@@ -211,7 +222,7 @@ public static class ZarPipeline
 
     private static ZarItemResult PackOne(
         string source, ZarPipelineOptions options, string? destDir, int total,
-        IProgress<ZarProgress>? progress, object progressLock, Func<int> completed,
+        IProgress<ZarProgress>? progress, ProgressGate progressLock, Func<int> completed,
         Action afterItem, CancellationToken cancellationToken)
     {
         var dest = destDir != null ? Path.Combine(destDir, DefaultZarName(source)) : DefaultZarPath(source);
@@ -246,7 +257,7 @@ public static class ZarPipeline
 
     private static ZarItemResult ExtractOne(
         string zar, string dest, ZarPipelineOptions options, int total,
-        IProgress<ZarProgress>? progress, object progressLock, Func<int> completed,
+        IProgress<ZarProgress>? progress, ProgressGate progressLock, Func<int> completed,
         Action afterItem, CancellationToken cancellationToken)
     {
         try
@@ -270,12 +281,16 @@ public static class ZarPipeline
     }
 
     /// <summary>Faults an item may carry without aborting the batch (I/O, structure, bad paths).</summary>
-    private static bool IsBatchFault(Exception ex) =>
-        ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException;
+    private static bool IsBatchFault(Exception ex)
+    {
+        return ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException;
+    }
 
     private static IProgress<ZarProgress>? Rebasing(
-        IProgress<ZarProgress>? progress, int total, object gate, Func<int> completed) =>
-        progress == null ? null : new RebasingProgress(progress, gate, total, completed);
+        IProgress<ZarProgress>? progress, int total, ProgressGate gate, Func<int> completed)
+    {
+        return progress == null ? null : new RebasingProgress(progress, gate, total, completed);
+    }
 
     internal static string DefaultZarName(string sourceDirectory)
     {
@@ -287,28 +302,39 @@ public static class ZarPipeline
     internal static string DefaultZarPath(string sourceDirectory)
     {
         var full = Path.GetFullPath(sourceDirectory);
-        var dir = Path.GetDirectoryName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ?? "";
+        var dir = Path.GetDirectoryName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ??
+                  "";
         return Path.Combine(dir, DefaultZarName(sourceDirectory));
     }
 
-    internal static string DefaultExtractName(string zarPath) =>
-        Path.GetFileNameWithoutExtension(zarPath) + "_extracted";
+    internal static string DefaultExtractName(string zarPath)
+    {
+        return Path.GetFileNameWithoutExtension(zarPath) + "_extracted";
+    }
 
     private sealed class RebasingProgress(
-        IProgress<ZarProgress> inner, object gate, int total, Func<int> completed) : IProgress<ZarProgress>
+        IProgress<ZarProgress> inner,
+        ProgressGate gate,
+        int total,
+        Func<int> completed) : IProgress<ZarProgress>
     {
+        private readonly Func<int> _completed = completed;
+        private readonly int _total = total;
+        private readonly ProgressGate _gate = gate;
+        private readonly IProgress<ZarProgress> _inner = inner;
+
         public void Report(ZarProgress value)
         {
             // Re-base the item ratio into its 1/total share of the batch.
             var filesTotal = Math.Max(1, value.FilesTotal);
             var rebased = value with
             {
-                FilesCompleted = (completed() * filesTotal) + value.FilesCompleted,
-                FilesTotal = filesTotal * total,
+                FilesCompleted = (_completed() * filesTotal) + value.FilesCompleted,
+                FilesTotal = filesTotal * _total,
             };
-            lock (gate)
+            lock (_gate)
             {
-                inner.Report(rebased);
+                _inner.Report(rebased);
             }
         }
     }

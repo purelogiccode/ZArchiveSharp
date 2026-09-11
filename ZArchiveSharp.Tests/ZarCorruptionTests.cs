@@ -91,7 +91,7 @@ public sealed class ZarCorruptionTests : IDisposable
         Assert.True(
             captured is ZarArchiveOpenException or InvalidOperationException or IOException
                 or UnauthorizedAccessException or ZstdException,
-            $"undocumented {captured!.GetType().Name} at {label}: {captured.Message}");
+            $"undocumented {captured.GetType().Name} at {label}: {captured.Message}");
     }
 
     [Fact]

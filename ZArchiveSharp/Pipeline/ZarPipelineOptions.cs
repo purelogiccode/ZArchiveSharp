@@ -70,9 +70,14 @@ public sealed class ZarPipelineOptions
     /// </summary>
     public IReadOnlyList<string>? NameOrder { get; set; }
 
-    internal IZarBlockCompressor ResolveCompressor() =>
-        Compressor ?? new ZstdCompressor(new ZstdCompressionOptions { Level = Level, ChecksumFlag = Checksum, Dictionary = Dictionary });
+    internal IZarBlockCompressor ResolveCompressor()
+    {
+        return Compressor ?? new ZstdCompressor(new ZstdCompressionOptions
+            { Level = Level, ChecksumFlag = Checksum, Dictionary = Dictionary });
+    }
 
-    internal int ClampedWorkers(int items) =>
-        Math.Min(Math.Max(1, MaxDegreeOfParallelism), Math.Max(1, items));
+    internal int ClampedWorkers(int items)
+    {
+        return Math.Min(Math.Max(1, MaxDegreeOfParallelism), Math.Max(1, items));
+    }
 }

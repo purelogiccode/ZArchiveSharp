@@ -90,7 +90,7 @@ public sealed class SevenZipTests : IDisposable
         var work = NewTempDir("seven_scan");
         var fake = Path.Combine(work, OperatingSystem.IsWindows() ? "7z.exe" : "7z");
         File.WriteAllBytes(fake, [0x7F]);
-        Assert.Equal(fake, SevenZip.FindTool("C:\\nonexistent\\7z.exe", [work], probeWellKnownLocations: false));
+        Assert.Equal(fake, SevenZip.FindTool(@"C:\nonexistent\7z.exe", [work], probeWellKnownLocations: false));
     }
 
     [Fact]

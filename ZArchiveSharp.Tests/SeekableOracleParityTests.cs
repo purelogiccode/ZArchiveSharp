@@ -26,7 +26,8 @@ public sealed class SeekableOracleParityTests
             "hetero" => 5,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
-        var rng = new Random(unchecked((int)(0x5332026u + (uint)kindIndex * 0x9E3779B9u + (uint)n * 31u + (uint)seed * 131u)));
+        var rng = new Random(unchecked((int)(0x5332026u + ((uint)kindIndex * 0x9E3779B9u) + ((uint)n * 31u) +
+                                             ((uint)seed * 131u))));
         var buf = new byte[n];
         switch (kind)
         {
@@ -78,7 +79,7 @@ public sealed class SeekableOracleParityTests
                 var code = MakeInput("code", n, seed);
                 var binary = MakeInput("binary", n, seed);
                 Array.Copy(code, buf, n);
-                var secondStart = 131072 + 65536;
+                const int secondStart = 131072 + 65536;
                 var secondEnd = Math.Min(n, 131072 + 131072);
                 if (secondEnd > secondStart)
                 {
@@ -121,7 +122,8 @@ public sealed class SeekableOracleParityTests
 
     private static byte[] OursFoot(byte[] input, int level, int frameSize, bool checksum)
     {
-        var writer = new SeekableWriter(new SeekableOptions { Level = level, FrameSize = frameSize, Checksum = checksum });
+        var writer = new SeekableWriter(new SeekableOptions
+            { Level = level, FrameSize = frameSize, Checksum = checksum });
         writer.Write(input);
         return writer.Finish();
     }
@@ -162,7 +164,7 @@ public sealed class SeekableOracleParityTests
     [MemberData(nameof(FootCases))]
     public void Foot_ByteIdenticalToOracle(string kind, int size, int level, int frameSize, bool checksum)
     {
-        var exe = SeekOracle.ExePath;
+        var exe = SeekOracle.SeekOracleBuilder.ExePath;
         if (exe is null)
         {
             return;
@@ -197,7 +199,7 @@ public sealed class SeekableOracleParityTests
     [InlineData("zeros", 1000, 1, 100, true)]
     public void Head_ByteIdenticalToOracle(string kind, int size, int level, int frameSize, bool checksum)
     {
-        var exe = SeekOracle.ExePath;
+        var exe = SeekOracle.SeekOracleBuilder.ExePath;
         if (exe is null)
         {
             return;
@@ -216,7 +218,8 @@ public sealed class SeekableOracleParityTests
             var expectedData = File.ReadAllBytes(Path.Combine(dir, "oracle.zst"));
             var expectedTable = File.ReadAllBytes(Path.Combine(dir, "oracle.tbl"));
 
-            var writer = new SeekableWriter(new SeekableOptions { Level = level, FrameSize = frameSize, Checksum = checksum });
+            var writer = new SeekableWriter(new SeekableOptions
+                { Level = level, FrameSize = frameSize, Checksum = checksum });
             writer.Write(input);
             var (data, table) = writer.FinishHead();
             Assert.Equal(expectedData, data);
@@ -235,7 +238,7 @@ public sealed class SeekableOracleParityTests
     [InlineData("random", 150000, 1, 32768, true)]
     public void CompressedPolicy_ByteIdenticalToOracle(string kind, int size, int level, int frameSize, bool checksum)
     {
-        var exe = SeekOracle.ExePath;
+        var exe = SeekOracle.SeekOracleBuilder.ExePath;
         if (exe is null)
         {
             return;
@@ -272,7 +275,7 @@ public sealed class SeekableOracleParityTests
     [InlineData("text", 300000, 19, 100000, true)]
     public void DecodeInterop_BothWays(string kind, int size, int level, int frameSize, bool checksum)
     {
-        var exe = SeekOracle.ExePath;
+        var exe = SeekOracle.SeekOracleBuilder.ExePath;
         if (exe is null)
         {
             return;
@@ -307,7 +310,7 @@ public sealed class SeekableOracleParityTests
             Assert.Equal(input, File.ReadAllBytes(Path.Combine(dir, "back.bin")));
             RunOracle(exe, "dec", Path.Combine(dir, "ours.zst"), Path.Combine(dir, "part.bin"),
                 "--from", (size / 4).ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "--to", (size / 4 + size / 2).ToString(System.Globalization.CultureInfo.InvariantCulture));
+                "--to", ((size / 4) + (size / 2)).ToString(System.Globalization.CultureInfo.InvariantCulture));
             Assert.Equal(
                 input.AsSpan(size / 4, size / 2).ToArray(),
                 File.ReadAllBytes(Path.Combine(dir, "part.bin")));
@@ -396,7 +399,7 @@ public sealed class SeekableOracleParityTests
     [Fact]
     public void OracleConstants_MatchModel()
     {
-        var exe = SeekOracle.ExePath;
+        var exe = SeekOracle.SeekOracleBuilder.ExePath;
         if (exe is null)
         {
             return;

@@ -5,11 +5,6 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// Benchmarks container pack (<see cref="ZArchiveWriter"/>) and extract
-/// (<see cref="ZArchiveReader"/>) over four 64 KiB files into a memory stream,
-/// isolating library cost from disk I/O.
-/// </summary>
 public class ZarArchiveBenchmarks
 {
     private string[] _names = null!;

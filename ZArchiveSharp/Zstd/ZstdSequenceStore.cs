@@ -226,9 +226,6 @@ public sealed class ZstdSequenceStore
     private byte[] _literals;
     private bool _trailingSet;
 
-    private int _longLengthType;
-    private int _longLengthPos;
-
     /// <summary>Creates a store pre-sized for a source of <paramref name="maxSourceSize"/> bytes.</summary>
     public ZstdSequenceStore(int maxSourceSize = 65536)
     {
@@ -312,13 +309,13 @@ public sealed class ZstdSequenceStore
 
         uint litLength = _litLengths[index];
         var matchLength = (uint)(_mlBases[index] + ZstdSeq.MinMatch);
-        if (index == _longLengthPos)
+        if (index == LongLengthPos)
         {
-            if (_longLengthType == LongLengthLiteral)
+            if (LongLengthType == LongLengthLiteral)
             {
                 litLength += LongLengthAdd;
             }
-            else if (_longLengthType == LongLengthMatch)
+            else if (LongLengthType == LongLengthMatch)
             {
                 matchLength += LongLengthAdd;
             }
@@ -334,8 +331,8 @@ public sealed class ZstdSequenceStore
         LiteralLength = 0;
         TrailingLength = 0;
         _trailingSet = false;
-        _longLengthType = LongLengthNone;
-        _longLengthPos = 0;
+        LongLengthType = LongLengthNone;
+        LongLengthPos = 0;
     }
 
     /// <summary>
@@ -343,10 +340,10 @@ public sealed class ZstdSequenceStore
     /// 2 match). Needed for the splitter's repcode resolution
     /// (<c>longLitLenIdx</c> in <c>ZSTD_seqStore_resolveOffCodes</c>).
     /// </summary>
-    internal int LongLengthType => _longLengthType;
+    internal int LongLengthType { get; private set; }
 
     /// <summary>Chunk-relative long-length position (<c>longLengthPos</c>).</summary>
-    internal int LongLengthPos => _longLengthPos;
+    internal int LongLengthPos { get; private set; }
 
     /// <summary>
     /// Overwrites the offset base of sequence <paramref name="index"/>
@@ -377,10 +374,7 @@ public sealed class ZstdSequenceStore
     {
         ArgumentOutOfRangeException.ThrowIfNegative(startSeq);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(endSeq, Count);
-        if (endSeq < startSeq)
-        {
-            throw new ArgumentOutOfRangeException(nameof(endSeq));
-        }
+        ArgumentOutOfRangeException.ThrowIfLessThan(endSeq, startSeq);
 
         var chunk = new ZstdSequenceStore(Math.Max(1, endSeq - startSeq));
         var litPos = 0;
@@ -418,13 +412,13 @@ public sealed class ZstdSequenceStore
         // Mirrors ZSTD_storeSeqOnly, including U16 truncation + long-length rule.
         if (litLength > 0xFFFF)
         {
-            if (_longLengthType != LongLengthNone)
+            if (LongLengthType != LongLengthNone)
             {
                 throw new ZstdException("Only a single long length is allowed per block.");
             }
 
-            _longLengthType = LongLengthLiteral;
-            _longLengthPos = Count;
+            LongLengthType = LongLengthLiteral;
+            LongLengthPos = Count;
         }
 
         _litLengths[Count] = (ushort)litLength;
@@ -433,13 +427,13 @@ public sealed class ZstdSequenceStore
         var mlBase = (long)matchLength - ZstdSeq.MinMatch;
         if (mlBase > 0xFFFF)
         {
-            if (_longLengthType != LongLengthNone)
+            if (LongLengthType != LongLengthNone)
             {
                 throw new ZstdException("Only a single long length is allowed per block.");
             }
 
-            _longLengthType = LongLengthMatch;
-            _longLengthPos = Count;
+            LongLengthType = LongLengthMatch;
+            LongLengthPos = Count;
         }
 
         _mlBases[Count] = (ushort)mlBase;

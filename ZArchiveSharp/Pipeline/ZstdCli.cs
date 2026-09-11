@@ -4,8 +4,8 @@ namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
 /// Callable form of the <c>zar zstd</c> contract (single zstd files, not
-/// archives): <c>zar zstd -c|-d [-l N] [--dict f] [--check/--no-check] [in]
-/// [out]</c>, defaulting to stdin/stdout when paths are omitted.
+/// archives): <code>zar zstd -c|-d [-l N] [--dict f] [--check/--no-check] [in]
+/// [out]</code>, defaulting to stdin/stdout when paths are omitted.
 /// Cancellation propagates <see cref="OperationCanceledException"/> like
 /// <see cref="ZarchiveCli"/>; every other failure maps onto the existing
 /// <see cref="ZarchiveCli"/> exit-code table (no new codes: compress failures
@@ -176,7 +176,7 @@ public static class ZstdCli
                     job = parsed;
                     return true;
                 default:
-                    if (args[i].StartsWith("-", StringComparison.Ordinal))
+                    if (args[i].StartsWith('-'))
                     {
                         error = $"Unknown option: {args[i]}.";
                         return false;

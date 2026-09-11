@@ -6,18 +6,13 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// Benchmarks <see cref="ZstdCompressor.DecompressFrame"/> over frames
-/// pre-compressed in <c>GlobalSetup</c>, covering text, hetero and multi-block
-/// payloads at levels 1/6/19.
-/// </summary>
 public class ZstdDecompressBenchmarks
 {
     private byte[] _l1Text = null!;
     private byte[] _l6Text = null!;
     private byte[] _l19Text = null!;
     private byte[] _l6Hetero = null!;
-    private byte[] _l6Text200k = null!;
+    private byte[] _l6Text200K = null!;
 
     /// <summary>
     /// Pre-compresses the decode fixtures once per benchmark process.
@@ -25,12 +20,13 @@ public class ZstdDecompressBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        var text8k = BenchmarkCorpus.CycleText(8192);
-        _l1Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(1)).CompressBlock(text8k);
-        _l6Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6)).CompressBlock(text8k);
-        _l19Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(19)).CompressBlock(text8k);
+        var text8K = BenchmarkCorpus.CycleText(8192);
+        _l1Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(1)).CompressBlock(text8K);
+        _l6Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6)).CompressBlock(text8K);
+        _l19Text = new ZstdCompressor(ZstdCompressionOptions.FromLevel(19)).CompressBlock(text8K);
         _l6Hetero = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6)).CompressBlock(BenchmarkCorpus.Hetero64());
-        _l6Text200k = new ZstdCompressor(ZstdCompressionOptions.FromLevel(6)).CompressBlock(BenchmarkCorpus.CycleText(200000));
+        _l6Text200K =
+            new ZstdCompressor(ZstdCompressionOptions.FromLevel(6)).CompressBlock(BenchmarkCorpus.CycleText(200000));
     }
 
     /// <summary>Decodes the level-1 text frame.</summary>
@@ -70,6 +66,6 @@ public class ZstdDecompressBenchmarks
     [Benchmark]
     public byte[] L6_Text200k()
     {
-        return ZstdCompressor.DecompressFrame(_l6Text200k, maxSize: 200000);
+        return ZstdCompressor.DecompressFrame(_l6Text200K, maxSize: 200000);
     }
 }

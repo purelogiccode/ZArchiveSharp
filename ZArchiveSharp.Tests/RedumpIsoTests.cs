@@ -28,8 +28,10 @@ public sealed class RedumpIsoTests
 
     private const int CliTimeoutMs = 120000;
 
-    internal static byte[] Payload() =>
-        Encoding.Latin1.GetBytes(string.Concat(Enumerable.Repeat("The quick brown fox meets the Xbox. ", 40)));
+    internal static byte[] Payload()
+    {
+        return Encoding.Latin1.GetBytes(string.Concat(Enumerable.Repeat("The quick brown fox meets the Xbox. ", 40)));
+    }
 
     internal static string NewTempDir(string prefix)
     {
@@ -58,7 +60,8 @@ public sealed class RedumpIsoTests
                     foreach (var tfm in new[] { "net10.0", "net9.0", "net8.0" })
                     {
                         var bin = Path.Combine(dir.FullName, "ZArchiveSharp.Cli", "bin", cfg, tfm);
-                        var apphost = Path.Combine(bin, OperatingSystem.IsWindows() ? "ZArchiveSharp.Cli.exe" : "ZArchiveSharp.Cli");
+                        var apphost = Path.Combine(bin,
+                            OperatingSystem.IsWindows() ? "ZArchiveSharp.Cli.exe" : "ZArchiveSharp.Cli");
                         if (File.Exists(apphost))
                         {
                             return apphost;
@@ -91,14 +94,19 @@ public sealed class RedumpIsoTests
             $"CLI failed (exit {exit}): {CliCommand(cli, args)}\nstdout: {stdout}\nstderr: {stderr}");
     }
 
-    internal static string CliCommand(string cli, string[] args) =>
-        (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : "") + Quote(args);
+    internal static string CliCommand(string cli, string[] args)
+    {
+        return (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : "") + Quote(args);
+    }
 
-    internal static string Quote(string[] values) =>
-        string.Join(" ", values.Select(v => "\"" + v + "\""));
+    internal static string Quote(string[] values)
+    {
+        return string.Join(" ", values.Select(v => "\"" + v + "\""));
+    }
 
     /// <summary>Runs the CLI without asserting; false when the host cannot start it.</summary>
-    internal static (bool Started, int Exit, string Stdout, string Stderr) TryRunCli(string cli, string work, string[] args)
+    internal static (bool Started, int Exit, string Stdout, string Stderr) TryRunCli(string cli, string work,
+        string[] args)
     {
         string fileName = cli;
         string arguments = Quote(args);
@@ -176,7 +184,8 @@ public sealed class RedumpIsoTests
                 return true; // Cannot probe; let the real test decide.
             }
 
-            var (started, exit, _, stderr) = TryRunCli(cli, probeDir, new[] { "--iso", probe, Path.Combine(probeDir, "probe.zar") });
+            var (started, exit, _, stderr) = TryRunCli(cli, probeDir,
+                new[] { "--iso", probe, Path.Combine(probeDir, "probe.zar") });
             if (!started)
             {
                 return true; // Host cannot run the CLI; existing guards handle it.
@@ -214,7 +223,7 @@ public sealed class RedumpIsoTests
         fs.Seek(baseOffset + 0x10000 + 20, SeekOrigin.Begin);
         bw.Write(rootSector);
         bw.Write(2048u);
-        fs.Seek(baseOffset + rootSector * 2048, SeekOrigin.Begin);
+        fs.Seek(baseOffset + (rootSector * 2048), SeekOrigin.Begin);
         bw.Write((ushort)0); // left: none (nonzero sector/size below proves non-empty table)
         bw.Write((ushort)0); // right: none
         bw.Write(fileSector);
@@ -222,7 +231,7 @@ public sealed class RedumpIsoTests
         bw.Write((byte)0); // attrs: file
         bw.Write((byte)name.Length);
         bw.Write(name);
-        fs.Seek(baseOffset + fileSector * 2048, SeekOrigin.Begin);
+        fs.Seek(baseOffset + (fileSector * 2048), SeekOrigin.Begin);
         bw.Write(payload);
         bw.Flush();
     }

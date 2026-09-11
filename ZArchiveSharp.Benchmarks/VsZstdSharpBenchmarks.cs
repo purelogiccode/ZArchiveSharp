@@ -7,15 +7,6 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// Optional third-party baseline: the same 64 KiB payloads through
-/// <c>ZstdSharp.Port</c> (a C# zstd port using <c>unsafe</c>) next to ZArchiveSharp.
-/// Decode rows run both libraries over the <em>same</em> ZArchiveSharp-produced
-/// bytes (byte-identical to stock libzstd frames), so they compare directly.
-/// Oracle only, never shipped: needs the extra package restore (pinned to the
-/// cached 0.8.8 so it works offline) and is excluded from default runs — use
-/// <c>--filter *VsZstdSharp*</c> explicitly.
-/// </summary>
 public class VsZstdSharpBenchmarks
 {
     private ZstdCompressor _zarL1 = null!;
@@ -23,8 +14,8 @@ public class VsZstdSharpBenchmarks
     private Compressor _sharpL1 = null!;
     private Compressor _sharpL6 = null!;
     private Decompressor _sharpDecompressor = null!;
-    private byte[] _hetero64k = null!;
-    private byte[] _text64k = null!;
+    private byte[] _hetero64K = null!;
+    private byte[] _text64K = null!;
     private byte[] _zarL6Hetero = null!;
 
     /// <summary>
@@ -39,9 +30,9 @@ public class VsZstdSharpBenchmarks
         _sharpL1 = new Compressor(1);
         _sharpL6 = new Compressor(6);
         _sharpDecompressor = new Decompressor();
-        _hetero64k = BenchmarkCorpus.Hetero64();
-        _text64k = BenchmarkCorpus.CycleText(65536);
-        _zarL6Hetero = _zarL6.CompressBlock(_hetero64k);
+        _hetero64K = BenchmarkCorpus.Hetero64();
+        _text64K = BenchmarkCorpus.CycleText(65536);
+        _zarL6Hetero = _zarL6.CompressBlock(_hetero64K);
     }
 
     /// <summary>Releases the third-party compressors, if they hold native state.</summary>
@@ -69,7 +60,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark(Baseline = true)]
     public byte[] Zar_L6_Hetero64k()
     {
-        return _zarL6.CompressBlock(_hetero64k);
+        return _zarL6.CompressBlock(_hetero64K);
     }
 
     /// <summary>ZstdSharp level 6 over the same hetero bytes.</summary>
@@ -77,7 +68,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark]
     public int Sharp_L6_Hetero64k()
     {
-        return _sharpL6.Wrap(_hetero64k).Length;
+        return _sharpL6.Wrap(_hetero64K).Length;
     }
 
     /// <summary>ZArchiveSharp level 1 over the hetero 64 KiB block.</summary>
@@ -85,7 +76,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark]
     public byte[] Zar_L1_Hetero64k()
     {
-        return _zarL1.CompressBlock(_hetero64k);
+        return _zarL1.CompressBlock(_hetero64K);
     }
 
     /// <summary>ZstdSharp level 1 over the same hetero bytes.</summary>
@@ -93,7 +84,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark]
     public int Sharp_L1_Hetero64k()
     {
-        return _sharpL1.Wrap(_hetero64k).Length;
+        return _sharpL1.Wrap(_hetero64K).Length;
     }
 
     /// <summary>ZArchiveSharp level 6 over 64 KiB of text.</summary>
@@ -101,7 +92,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark]
     public byte[] Zar_L6_Text64k()
     {
-        return _zarL6.CompressBlock(_text64k);
+        return _zarL6.CompressBlock(_text64K);
     }
 
     /// <summary>ZstdSharp level 6 over the same text bytes.</summary>
@@ -109,7 +100,7 @@ public class VsZstdSharpBenchmarks
     [Benchmark]
     public int Sharp_L6_Text64k()
     {
-        return _sharpL6.Wrap(_text64k).Length;
+        return _sharpL6.Wrap(_text64K).Length;
     }
 
     /// <summary>ZArchiveSharp decodes its own level-6 hetero frame.</summary>

@@ -188,21 +188,24 @@ public static class SeekableCli
             return false;
         }
 
-        if (!ulong.TryParse(value.AsSpan(0, digits), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out ulong number))
+        if (!ulong.TryParse(value.AsSpan(0, digits), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out ulong number))
         {
             error = $"Invalid size '{value}': number too large.";
             return false;
         }
 
         string unit = string.Concat(value.AsSpan(digits).ToString().Where(c => !char.IsWhiteSpace(c)));
-        ulong factor = unit.Length == 0 ? 1UL : unit.ToUpperInvariant() switch
-        {
-            "B" => 1UL,
-            "K" or "KIB" => 1024UL,
-            "M" or "MIB" => 1024UL * 1024UL,
-            "G" or "GIB" => 1024UL * 1024UL * 1024UL,
-            _ => 0UL,
-        };
+        ulong factor = unit.Length == 0
+            ? 1UL
+            : unit.ToUpperInvariant() switch
+            {
+                "B" => 1UL,
+                "K" or "KIB" => 1024UL,
+                "M" or "MIB" => 1024UL * 1024UL,
+                "G" or "GIB" => 1024UL * 1024UL * 1024UL,
+                _ => 0UL,
+            };
 
         if (factor == 0)
         {
@@ -403,7 +406,8 @@ public static class SeekableCli
                 case "--seek-table-file":
                     if (command == SeekableCommand.List)
                     {
-                        error = $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list takes --seek-table-format).";
+                        error =
+                            $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list takes --seek-table-format).";
                         return false;
                     }
 
@@ -477,7 +481,8 @@ public static class SeekableCli
                         return false;
                     }
 
-                    if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out uint fromFrame))
+                    if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture,
+                            out uint fromFrame))
                     {
                         error = $"Invalid frame index '{args[i]}': expected a non-negative integer.";
                         return false;
@@ -504,7 +509,8 @@ public static class SeekableCli
                     {
                         parsed.ToLastFrame = true;
                     }
-                    else if (uint.TryParse(toFrameRaw, System.Globalization.CultureInfo.InvariantCulture, out uint toFrame))
+                    else if (uint.TryParse(toFrameRaw, System.Globalization.CultureInfo.InvariantCulture,
+                                 out uint toFrame))
                     {
                         parsed.ToFrame = toFrame;
                     }
@@ -529,7 +535,8 @@ public static class SeekableCli
                         return false;
                     }
 
-                    if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out uint numFrames) ||
+                    if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture,
+                            out uint numFrames) ||
                         numFrames == 0)
                     {
                         error = $"Invalid frame count '{args[i]}': frame number must be greater than 0.";
@@ -576,7 +583,8 @@ public static class SeekableCli
                 case "-f" or "--force":
                     if (command == SeekableCommand.List)
                     {
-                        error = $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list writes no files).";
+                        error =
+                            $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list writes no files).";
                         return false;
                     }
 
@@ -585,7 +593,8 @@ public static class SeekableCli
                 case "-c" or "--stdout":
                     if (command == SeekableCommand.List)
                     {
-                        error = $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list always writes to stdout).";
+                        error =
+                            $"Option {args[i]} is only supported with 'seekable compress' or 'seekable decompress' (list always writes to stdout).";
                         return false;
                     }
 
@@ -599,7 +608,7 @@ public static class SeekableCli
                     job = parsed;
                     return true;
                 default:
-                    if (args[i].StartsWith("-", StringComparison.Ordinal))
+                    if (args[i].StartsWith('-'))
                     {
                         error = $"Unknown option: {args[i]}.";
                         return false;
@@ -740,8 +749,10 @@ public static class SeekableCli
 
         return job.Command switch
         {
-            SeekableCommand.Compress => await CompressAsync(job, stdin, stdout, log, error, cancellationToken).ConfigureAwait(false),
-            SeekableCommand.Decompress => await DecompressAsync(job, stdin, stdout, log, error, cancellationToken).ConfigureAwait(false),
+            SeekableCommand.Compress => await CompressAsync(job, stdin, stdout, log, error, cancellationToken)
+                .ConfigureAwait(false),
+            SeekableCommand.Decompress => await DecompressAsync(job, stdin, stdout, log, error, cancellationToken)
+                .ConfigureAwait(false),
             SeekableCommand.List => await ListAsync(job, log, error, cancellationToken).ConfigureAwait(false),
             _ => throw new ArgumentOutOfRangeException(nameof(job)),
         };
@@ -755,7 +766,7 @@ public static class SeekableCli
         {
             string tableSuffix = job.SeekTablePath is null ? string.Empty : $" +table {job.SeekTablePath}";
             log?.Invoke($"Seekable compress {job.InputPath ?? "stdin"} -> {job.OutputPath ?? "stdout"} " +
-                $"(level {job.Level}, {job.FrameSize} {job.Policy.ToString().ToLowerInvariant()} frames{(job.Checksum ? " +checksum" : string.Empty)}{tableSuffix})");
+                        $"(level {job.Level}, {job.FrameSize} {job.Policy.ToString().ToLowerInvariant()} frames{(job.Checksum ? " +checksum" : string.Empty)}{tableSuffix})");
         }
 
         Stream? input = stdin;
@@ -791,7 +802,8 @@ public static class SeekableCli
 
             if (job.SeekTablePath is not null)
             {
-                tableOutput = TryCreateOutput(job, job.SeekTablePath, compress: true, created, error, out int tableCode);
+                tableOutput = TryCreateOutput(job, job.SeekTablePath, compress: true, created, error,
+                    out int tableCode);
                 if (tableOutput is null)
                 {
                     return tableCode;
@@ -850,21 +862,24 @@ public static class SeekableCli
             }
             catch (OperationCanceledException)
             {
-                await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)]).ConfigureAwait(false);
+                await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)])
+                    .ConfigureAwait(false);
                 DeleteCreated(created);
                 throw;
             }
             catch (Exception ex) when (ex is ZstdException or IOException or UnauthorizedAccessException)
             {
                 error($"Error: compression failed: {ex.Message}");
-                await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)]).ConfigureAwait(false);
+                await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)])
+                    .ConfigureAwait(false);
                 DeleteCreated(created);
                 return ZarchiveCli.PackFailed;
             }
         }
         finally
         {
-            await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)]).ConfigureAwait(false);
+            await DisposeOwnedAsync([(input, ownInput), (output, ownOutput), (tableOutput, ownTable)])
+                .ConfigureAwait(false);
         }
     }
 
@@ -873,50 +888,43 @@ public static class SeekableCli
         Action<string>? log, Action<string> error, CancellationToken ct)
     {
         byte[] frames;
-        try
+        if (job.InputPath is not null)
         {
-            if (job.InputPath is not null)
+            try
             {
-                try
-                {
-                    frames = await File.ReadAllBytesAsync(job.InputPath, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
-                {
-                    error($"Error: input file not found: {job.InputPath}");
-                    return ZarchiveCli.NotFound;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    error($"Error: cannot read input file: {job.InputPath}");
-                    return ZarchiveCli.ExtractionFailed;
-                }
+                frames = await File.ReadAllBytesAsync(job.InputPath, ct).ConfigureAwait(false);
             }
-            else
+            catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
             {
-                // The Foot table lives at the end of the file, so stdin must
-                // be buffered before the table can be parsed.
-                using var buffered = new MemoryStream();
-                try
-                {
-                    await stdin.CopyToAsync(buffered, 65536, ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-                {
-                    error($"Error: cannot read stdin: {ex.Message}");
-                    return ZarchiveCli.ExtractionFailed;
-                }
-
-                frames = buffered.ToArray();
+                error($"Error: input file not found: {job.InputPath}");
+                return ZarchiveCli.NotFound;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error($"Error: cannot read input file: {job.InputPath}");
+                return ZarchiveCli.ExtractionFailed;
             }
         }
-        catch (OperationCanceledException)
+        else
         {
-            throw;
+            // The Foot table lives at the end of the file, so stdin must
+            // be buffered before the table can be parsed.
+            await using var buffered = new MemoryStream();
+            try
+            {
+                await stdin.CopyToAsync(buffered, 65536, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                error($"Error: cannot read stdin: {ex.Message}");
+                return ZarchiveCli.ExtractionFailed;
+            }
+
+            frames = buffered.ToArray();
         }
 
         SeekTable table;
@@ -1158,16 +1166,20 @@ public static class SeekableCli
         if (!job.Detail && !job.FromFrame.HasValue && !bounded)
         {
             double ratio = table.TotalComp == 0 ? 0 : table.TotalDecomp / (double)table.TotalComp;
-            log?.Invoke($"{"Frames",-15} {"Compressed",-15} {"Uncompressed",-15} {"Max Frame Size",-15} {"Ratio",-10} {"Filename",-15}");
-            log?.Invoke($"{table.FrameCount,-15} {table.TotalComp,-15} {table.TotalDecomp,-15} {table.MaxFrameSizeDecomp(),-15} {ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture),-10} {job.InputPath,-15}");
+            log?.Invoke(
+                $"{"Frames",-15} {"Compressed",-15} {"Uncompressed",-15} {"Max Frame Size",-15} {"Ratio",-10} {"Filename",-15}");
+            log?.Invoke(
+                $"{table.FrameCount,-15} {table.TotalComp,-15} {table.TotalDecomp,-15} {table.MaxFrameSizeDecomp(),-15} {ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture),-10} {job.InputPath,-15}");
             return ZarchiveCli.Ok;
         }
 
-        log?.Invoke($"{"Frame Index",-15} {"Compressed",-15} {"Uncompressed",-15} {"Compressed Offset",-20} {"Uncompressed Offset",-20}");
+        log?.Invoke(
+            $"{"Frame Index",-15} {"Compressed",-15} {"Uncompressed",-15} {"Compressed Offset",-20} {"Uncompressed Offset",-20}");
         for (int n = start; n <= end; n++)
         {
             ct.ThrowIfCancellationRequested();
-            log?.Invoke($"{n,-15} {table.FrameSizeComp(n),-15} {table.FrameSizeDecomp(n),-15} {table.FrameStartComp(n),-20} {table.FrameStartDecomp(n),-20}");
+            log?.Invoke(
+                $"{n,-15} {table.FrameSizeComp(n),-15} {table.FrameSizeDecomp(n),-15} {table.FrameStartComp(n),-20} {table.FrameStartDecomp(n),-20}");
         }
 
         return ZarchiveCli.Ok;

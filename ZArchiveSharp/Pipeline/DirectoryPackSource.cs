@@ -7,28 +7,27 @@ namespace ZArchiveSharp.Pipeline;
 /// </summary>
 public sealed class DirectoryPackSource : IZarPackSource
 {
-    private readonly string _sourceDirectory;
     private readonly bool _deterministicOrder;
 
     /// <summary>Creates a source over <paramref name="sourceDirectory"/>.</summary>
     public DirectoryPackSource(string sourceDirectory, bool deterministicOrder = true)
     {
-        _sourceDirectory = sourceDirectory;
+        DisplayPath = sourceDirectory;
         _deterministicOrder = deterministicOrder;
     }
 
     /// <inheritdoc/>
-    public string DisplayPath => _sourceDirectory;
+    public string DisplayPath { get; }
 
     /// <inheritdoc/>
     public IReadOnlyList<ZarPackEntry> Collect(CancellationToken cancellationToken = default)
     {
-        if (!Directory.Exists(_sourceDirectory))
+        if (!Directory.Exists(DisplayPath))
         {
-            throw new DirectoryNotFoundException($"Input directory not found: {_sourceDirectory}");
+            throw new DirectoryNotFoundException($"Input directory not found: {DisplayPath}");
         }
 
-        var enumerated = Directory.EnumerateFileSystemEntries(_sourceDirectory, "*", SearchOption.AllDirectories);
+        var enumerated = Directory.EnumerateFileSystemEntries(DisplayPath, "*", SearchOption.AllDirectories);
         var paths = _deterministicOrder
             ? enumerated.OrderBy(p => p, StringComparer.Ordinal).ToList()
             : enumerated.ToList();
@@ -37,7 +36,7 @@ public sealed class DirectoryPackSource : IZarPackSource
         foreach (var path in paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var relative = Path.GetRelativePath(_sourceDirectory, path).Replace('\\', '/');
+            var relative = Path.GetRelativePath(DisplayPath, path).Replace('\\', '/');
             if (Directory.Exists(path))
             {
                 entries.Add(new ZarPackEntry { RelativePath = relative, IsDirectory = true });

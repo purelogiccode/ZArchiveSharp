@@ -6,8 +6,8 @@ namespace ZArchiveSharp.Pipeline;
 /// input extracts, outputs default to <c>&lt;stem&gt;.zar</c> /
 /// <c>&lt;stem&gt;_extracted</c> next to the input, existing pack outputs are
 /// refused, and incomplete pack outputs are deleted. Process exit codes are
-/// the same negative values <c>main()</c> returns (<c>-1 -3 -4 -10 -11 -12
-/// -13 -14 -15 -16</c>; <c>-2</c>/<c>-5..-9</c> are unused upstream too), so
+/// the same negative values <c>main()</c> returns (<code>-1 -3 -4 -10 -11 -12
+/// -13 -14 -15 -16</code>; <c>-2</c>/<c>-5..-9</c> are unused upstream too), so
 /// automation matching on them keeps working.
 /// </summary>
 /// <remarks>
@@ -173,7 +173,7 @@ public static class ZarchiveCli
 
         try
         {
-            var files = ZarPipeline.Extract(inputPath, outputDirectory, options, progress, cancellationToken, log);
+            ZarPipeline.Extract(inputPath, outputDirectory, options, progress, cancellationToken, log);
             return Ok;
         }
         catch (FileNotFoundException)
@@ -257,34 +257,39 @@ public static class ZarchiveCli
         }
     }
 
-    private static ZarPipelineOptions ShallowCopy(ZarPipelineOptions options) => new()
+    private static ZarPipelineOptions ShallowCopy(ZarPipelineOptions options)
     {
-        Level = options.Level,
-        Checksum = options.Checksum,
-        Dictionary = options.Dictionary,
-        Compressor = options.Compressor,
-        DeterministicOrder = options.DeterministicOrder,
-        CollisionPolicy = options.CollisionPolicy,
-        MaxDegreeOfParallelism = options.MaxDegreeOfParallelism,
-        DeleteSourceOnSuccess = options.DeleteSourceOnSuccess,
-        Pause = options.Pause,
-    };
+        return new ZarPipelineOptions
+        {
+            Level = options.Level,
+            Checksum = options.Checksum,
+            Dictionary = options.Dictionary,
+            Compressor = options.Compressor,
+            DeterministicOrder = options.DeterministicOrder,
+            CollisionPolicy = options.CollisionPolicy,
+            MaxDegreeOfParallelism = options.MaxDegreeOfParallelism,
+            DeleteSourceOnSuccess = options.DeleteSourceOnSuccess,
+            Pause = options.Pause,
+        };
+    }
 
     /// <summary>Forwards per-file progress as <c>Adding &lt;path&gt;</c> log lines (the <c>main.cpp</c> pack chatter).</summary>
     private sealed class LoggingProgress(IProgress<ZarProgress>? inner, Action<string> log) : IProgress<ZarProgress>
     {
         private string _last = string.Empty;
+        private readonly IProgress<ZarProgress>? _inner = inner;
+        private readonly Action<string> _log = log;
 
         public void Report(ZarProgress value)
         {
-            inner?.Report(value);
+            _inner?.Report(value);
             if (value.CurrentFile.Length != 0 && !string.Equals(value.CurrentFile, _last, StringComparison.Ordinal))
             {
                 _last = value.CurrentFile;
                 // Native prints pathEntry.string(): OS separators on each
                 // platform. Archive paths stay '/' internally; only the
                 // display line converts (a no-op on Linux/macOS).
-                log($"Adding {value.CurrentFile.Replace('/', Path.DirectorySeparatorChar)}");
+                _log($"Adding {value.CurrentFile.Replace('/', Path.DirectorySeparatorChar)}");
             }
         }
     }

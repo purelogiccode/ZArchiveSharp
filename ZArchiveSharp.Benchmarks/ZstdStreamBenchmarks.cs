@@ -6,20 +6,11 @@ namespace ZArchiveSharp.Benchmarks;
 [MemoryDiagnoser]
 [MinIterationCount(5)]
 [MaxIterationCount(20)]
-/// <summary>
-/// Streaming throughput through <see cref="ZstdCompressionStream"/> (chunked
-/// writes) and <see cref="ZstdDecompressionStream"/> (chunked reads) over
-/// 1 MiB text/hetero payloads at L1/L6 with 4 KiB vs 64 KiB pump chunks, plus
-/// a 10 MiB L1/L6 text control. Proves the pump chunk size is free: per-call
-/// stream overhead must be noise next to codec cost on megabyte payloads.
-/// Output streams are pre-sized from setup-measured frame sizes (deterministic
-/// corpus) so <c>MemoryStream</c> growth never pollutes the timings.
-/// </summary>
 public class ZstdStreamBenchmarks
 {
-    private byte[] _text1m = null!;
-    private byte[] _hetero1m = null!;
-    private byte[] _text10m = null!;
+    private byte[] _text1M = null!;
+    private byte[] _hetero1M = null!;
+    private byte[] _text10M = null!;
     private byte[] _sink = null!;
     private readonly Dictionary<(int Payload, int Level), byte[]> _frames = new();
     private readonly Dictionary<(int Payload, int Level), int> _frameSizes = new();
@@ -39,11 +30,11 @@ public class ZstdStreamBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _text1m = BenchmarkCorpus.CycleText(1024 * 1024);
-        _hetero1m = Tile(BenchmarkCorpus.Hetero64(), 1024 * 1024);
-        _text10m = BenchmarkCorpus.CycleText(10 * 1024 * 1024);
+        _text1M = BenchmarkCorpus.CycleText(1024 * 1024);
+        _hetero1M = Tile(BenchmarkCorpus.Hetero64(), 1024 * 1024);
+        _text10M = BenchmarkCorpus.CycleText(10 * 1024 * 1024);
         _sink = new byte[65536];
-        byte[][] payloads = [_text1m, _hetero1m, _text10m];
+        byte[][] payloads = [_text1M, _hetero1M, _text10M];
         foreach (var level in new[] { 1, 6 })
         {
             var compressor = new ZstdCompressor(ZstdCompressionOptions.FromLevel(level));
@@ -55,7 +46,8 @@ public class ZstdStreamBenchmarks
             }
         }
 
-        Console.WriteLine($"[fixtures] text1m L1={_frameSizes[(0, 1)]} L6={_frameSizes[(0, 6)]} hetero1m L1={_frameSizes[(1, 1)]} L6={_frameSizes[(1, 6)]} text10m L1={_frameSizes[(2, 1)]} L6={_frameSizes[(2, 6)]}");
+        Console.WriteLine(
+            $"[fixtures] text1m L1={_frameSizes[(0, 1)]} L6={_frameSizes[(0, 6)]} hetero1m L1={_frameSizes[(1, 1)]} L6={_frameSizes[(1, 6)]} text10m L1={_frameSizes[(2, 1)]} L6={_frameSizes[(2, 6)]}");
     }
 
     private static byte[] Tile(byte[] pattern, int n)
@@ -102,7 +94,7 @@ public class ZstdStreamBenchmarks
     [Benchmark]
     public long Compress_Text1M()
     {
-        return PumpCompress(_text1m, 0);
+        return PumpCompress(_text1M, 0);
     }
 
     /// <summary>Streams 1 MiB of tiled-hetero data through the compression stream.</summary>
@@ -110,7 +102,7 @@ public class ZstdStreamBenchmarks
     [Benchmark]
     public long Compress_Hetero1M()
     {
-        return PumpCompress(_hetero1m, 1);
+        return PumpCompress(_hetero1M, 1);
     }
 
     /// <summary>Streams 10 MiB of text through the compression stream (control).</summary>
@@ -118,7 +110,7 @@ public class ZstdStreamBenchmarks
     [Benchmark]
     public long Compress_Text10M()
     {
-        return PumpCompress(_text10m, 2);
+        return PumpCompress(_text10M, 2);
     }
 
     /// <summary>Reads the 1 MiB text frame back through the decompression stream.</summary>

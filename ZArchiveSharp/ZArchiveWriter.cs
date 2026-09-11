@@ -67,7 +67,9 @@ public sealed class ZArchiveWriter : IDisposable
 
     private Footer _footer;
     private readonly byte[] _currentWriteBuffer = new byte[ZArchiveCommon.CompressedBlockSize];
+
     private int _bufferedBytes;
+
     // Dedicated pump scratch: AppendData(Stream) must NOT reuse
     // _currentWriteBuffer, whose live tail would alias the chunk being
     // appended when the staging buffer is partially full.

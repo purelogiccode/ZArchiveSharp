@@ -92,12 +92,12 @@ public sealed class PipelineCliTests : IDisposable
         var root = NewTempDir("cli_refuse");
         var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
         File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
-        File.WriteAllBytes(Path.Combine(root, "game.zar"), [9, 9, 9]);
+        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8);
 
         var sink = new LogSink();
         Assert.Equal(ZarchiveCli.Refused, ZarchiveCli.Run([src], log: sink.Log));
         Assert.Contains(sink.Lines, l => l.Contains("already exists", StringComparison.Ordinal));
-        Assert.Equal([9, 9, 9], File.ReadAllBytes(Path.Combine(root, "game.zar")));
+        Assert.Equal("\t\t\t"u8.ToArray(), File.ReadAllBytes(Path.Combine(root, "game.zar")));
     }
 
     [Fact]
@@ -109,12 +109,12 @@ public sealed class PipelineCliTests : IDisposable
         var root = NewTempDir("cli_policy");
         var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
         File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
-        File.WriteAllBytes(Path.Combine(root, "game.zar"), [9, 9, 9]);
+        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8);
 
         var sink = new LogSink();
         var options = new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Overwrite };
         Assert.Equal(ZarchiveCli.Refused, ZarchiveCli.Run([src], options, log: sink.Log));
-        Assert.Equal([9, 9, 9], File.ReadAllBytes(Path.Combine(root, "game.zar")));
+        Assert.Equal("\t\t\t"u8.ToArray(), File.ReadAllBytes(Path.Combine(root, "game.zar")));
     }
 
     [Fact]
@@ -198,7 +198,8 @@ public sealed class PipelineCliTests : IDisposable
         using var cts = new CancellationTokenSource();
         cts.Cancel();
         // A cancelled pack surfaces the cancellation (not a masked exit code).
-        Assert.Throws<OperationCanceledException>(() => ZarchiveCli.Run([src, zar], log: sink.Log, cancellationToken: cts.Token));
+        Assert.Throws<OperationCanceledException>(() =>
+            ZarchiveCli.Run([src, zar], log: sink.Log, cancellationToken: cts.Token));
         Assert.False(File.Exists(zar));
     }
 
@@ -246,7 +247,7 @@ public sealed class PipelineCliTests : IDisposable
 
         // main.cpp prints srcPath/name per entry (leading "/" at the top
         // level), directories included, in preorder — kept byte-identical.
-        var entryLines = sink.Lines.Where(l => l.StartsWith("/", StringComparison.Ordinal) || l.Contains('/')).ToList();
+        var entryLines = sink.Lines.Where(l => l.StartsWith('/') || l.Contains('/')).ToList();
         Assert.Equal(["/a.txt", "/sub", "sub/b.bin"], entryLines);
     }
 
@@ -276,7 +277,7 @@ public sealed class PipelineCliTests : IDisposable
         const string alphabet = "the quick brown fox jumps over the lazy dog 0123456789\n";
         for (int i = 0; i < text.Length; i++)
         {
-            text[i] = alphabet[(i * 31 + i / 7) % alphabet.Length];
+            text[i] = alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
 
         File.WriteAllText(Path.Combine(src, "big.txt"), new string(text));
@@ -317,8 +318,16 @@ public sealed class PipelineCliTests : IDisposable
         var payload = new byte[] { 1, 2, 3 };
         var entries = new List<ZarPackEntry>
         {
-            new() { RelativePath = "dup.txt", IsDirectory = false, Length = payload.Length, OpenRead = () => new MemoryStream(payload, writable: false) },
-            new() { RelativePath = "dup.txt", IsDirectory = false, Length = payload.Length, OpenRead = () => new MemoryStream(payload, writable: false) },
+            new()
+            {
+                RelativePath = "dup.txt", IsDirectory = false, Length = payload.Length,
+                OpenRead = () => new MemoryStream(payload, writable: false)
+            },
+            new()
+            {
+                RelativePath = "dup.txt", IsDirectory = false, Length = payload.Length,
+                OpenRead = () => new MemoryStream(payload, writable: false)
+            },
         };
 
         var ex = Assert.Throws<ZarEntryCreateException>(() =>
@@ -367,8 +376,7 @@ public sealed class PipelineCliTests : IDisposable
     [Fact]
     public void Runner_MissingBinary_ThrowsFileNotFound()
     {
-        Assert.Throws<FileNotFoundException>(
-            () => ProcessRunner.Run("definitely-not-a-tool-xyz-123"));
+        Assert.Throws<FileNotFoundException>(() => ProcessRunner.Run("definitely-not-a-tool-xyz-123"));
     }
 
     [Fact]
@@ -378,8 +386,8 @@ public sealed class PipelineCliTests : IDisposable
         cts.Cancel();
         try
         {
-            Assert.Throws<OperationCanceledException>(
-                () => ProcessRunner.Run("dotnet", "--version", cancellationToken: cts.Token));
+            Assert.Throws<OperationCanceledException>(() =>
+                ProcessRunner.Run("dotnet", "--version", cancellationToken: cts.Token));
         }
         catch (FileNotFoundException)
         {
@@ -410,6 +418,10 @@ public sealed class PipelineCliTests : IDisposable
 
     private sealed class SmokeProgress(Action<double> action) : IProgress<double>
     {
-        public void Report(double value) => action(value);
+        private readonly Action<double> _action = action;
+        public void Report(double value)
+        {
+            _action(value);
+        }
     }
 }

@@ -48,19 +48,27 @@ public sealed class StreamApiTests
     // with frame/block boundaries by construction.
     private sealed class ChunkedStream(byte[] data, int maxChunk) : MemoryStream(data, writable: false)
     {
-        public override int Read(byte[] buffer, int offset, int count) =>
-            base.Read(buffer, offset, Math.Min(count, maxChunk));
+        private readonly int _maxChunk = maxChunk;
 
-        public override int Read(Span<byte> buffer) =>
-            base.Read(buffer[..Math.Min(buffer.Length, maxChunk)]);
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return base.Read(buffer, offset, Math.Min(count, _maxChunk));
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            return base.Read(buffer[..Math.Min(buffer.Length, _maxChunk)]);
+        }
     }
 
     private sealed class NonSeekableStream(Stream inner) : Stream
     {
+        private readonly Stream _inner = inner;
         public override bool CanRead => true;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
         public override long Length => throw new NotSupportedException();
+
         public override long Position
         {
             get => throw new NotSupportedException();
@@ -71,10 +79,25 @@ public sealed class StreamApiTests
         {
         }
 
-        public override int Read(byte[] buffer, int offset, int count) => inner.Read(buffer, offset, count);
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            return _inner.Read(buffer, offset, count);
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class WriteOnlyStream : MemoryStream
@@ -313,9 +336,9 @@ public sealed class StreamApiTests
 
         // Valid table but stream shorter than TotalComp.
         var table = new SeekableReader(file).Table;
-        using (var short_ = new MemoryStream(file[..^5000], writable: false))
+        using (var @short = new MemoryStream(file[..^5000], writable: false))
         {
-            Assert.Throws<ZstdException>(() => new SeekableReader(short_, table));
+            Assert.Throws<ZstdException>(() => new SeekableReader(@short, table));
         }
     }
 }
