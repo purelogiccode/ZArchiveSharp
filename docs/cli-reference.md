@@ -148,10 +148,11 @@ zar --iso <game.iso> [output.zar]
 
 Converts an Xbox ISO (XISO) file to a `.zar` archive. Requires the XISOSharp dependency.
 
-The CLI builds with or without the sibling `CSharp_XISOSharp` checkout: without
-it, `zar --iso` fails fast on stderr (exit `-1`) with rebuild instructions and
-`--help` marks the flag unavailable; everything else works. A published tool
-without XISO support is a valid shape — clone the sibling for the full build.
+The CLI consumes XISOSharp as a NuGet package, so `zar --iso` works out of a
+clean clone. Building with `-p:XisoSharpAvailable=false` produces a tool
+without XISO support: `zar --iso` fails fast on stderr (exit `-1`) with
+rebuild instructions and `--help` marks the flag unavailable; everything else
+works.
 
 Redump ISOs (full disc dumps starting with the video partition) are
 auto-detected by exact file size: the CLI resolves the wave-dependent game

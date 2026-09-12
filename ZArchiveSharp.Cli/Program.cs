@@ -517,7 +517,7 @@ public static class Program
 
 #if !HAS_XISO
         error = "unavailable: this build of zar was compiled without XISOSharp support. " +
-                "Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support.";
+                "Rebuild with XISOSharp enabled (it is omitted only with -p:XisoSharpAvailable=false).";
         return false;
 #else
         // Redump ISOs start with the video partition: the XISO game partition
@@ -569,7 +569,7 @@ public static class Program
         Console.Error.WriteLine(
             "Error: --iso is unavailable: this build of zar was compiled without XISOSharp support.");
         Console.Error.WriteLine(
-            "Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support.");
+            "Rebuild with XISOSharp enabled (it is omitted only with -p:XisoSharpAvailable=false).");
         return ZarchiveCli.BadUsage;
 #else
         string output = zarPath ?? DeriveZarPath(isoPath);

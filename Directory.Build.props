@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <!-- Our projects always compute their own MinVer version, even when built
-         as a ProjectReference descendant of another repo (ZArchiveSharp.Cli passes
-         MinVerSkip=true to the cross-repo XISOSharp reference, which would
-         otherwise flow transitively back into ZArchiveSharp and skip OUR version
-         too, falling back to 1.0.0). Localizing the property lets this
-         explicit false win over the incoming global; XISOSharp (which does
-         not localize it) still honors the skip. -->
+         as a ProjectReference descendant of another repo (a cross-repo
+         ProjectReference passing MinVerSkip=true would otherwise flow
+         transitively into ZArchiveSharp and skip OUR version too, falling
+         back to 1.0.0). Localizing the property lets this explicit false win
+         over the incoming global. The CLI now consumes XISOSharp as a NuGet
+         package (no cross-repo build in this session), so this is purely
+         defensive today. -->
     <MinVerSkip>false</MinVerSkip>
   </PropertyGroup>
 

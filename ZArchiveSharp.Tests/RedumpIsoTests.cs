@@ -61,7 +61,7 @@ public sealed class RedumpIsoTests
                     {
                         var bin = Path.Combine(dir.FullName, "ZArchiveSharp.Cli", "bin", cfg, tfm);
                         var apphost = Path.Combine(bin,
-                            OperatingSystem.IsWindows() ? "ZArchiveSharp.Cli.exe" : "ZArchiveSharp.Cli");
+                            OperatingSystem.IsWindows() ? "ZArchiveSharp.exe" : "ZArchiveSharp");
                         if (File.Exists(apphost))
                         {
                             return apphost;

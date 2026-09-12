@@ -37,15 +37,26 @@
         <EnableStrictModeForPackageValidation>true</EnableStrictModeForPackageValidation>
     </PropertyGroup>
 
+    <!-- The apphost (native launcher) is renamed to ZArchiveSharp<ext> by
+         RenameCliAppHost while the managed assembly keeps its
+         ZArchiveSharp.Cli.dll name: this project references the ZArchiveSharp
+         library below, which already owns ZArchiveSharp.dll in the output
+         folder, so renaming the assembly to ZArchiveSharp would collide with
+         the library (verified: MSB3243 conflict and the wrong assembly on
+         disk). The apphost embeds the managed dll name, so only the launcher's
+         file name changes. -->
     <PropertyGroup>
-        <!-- Cross-repo source dependency: path to the
-             sibling XISOSharp checkout. Evaluated with Exists so a clean clone
-             without the sibling still builds (CLI without iso support; the
-             library, tests and benchmarks never need XISOSharp). Override with
-             -p:XisoSharpAvailable=false to simulate that shape locally. -->
-        <XisoSharpProject>..\..\CSharp_XISOSharp\XISOSharp\XISOSharp.csproj</XisoSharpProject>
-        <XisoSharpAvailable Condition="'$(XisoSharpAvailable)' == '' and Exists('$(XisoSharpProject)')">true</XisoSharpAvailable>
-        <XisoSharpAvailable Condition="'$(XisoSharpAvailable)' == ''">false</XisoSharpAvailable>
+        <CliExecutableName>ZArchiveSharp</CliExecutableName>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <!-- XISOSharp is consumed as a NuGet package
+              (https://www.nuget.org/packages/XISOSharp), so no sibling checkout
+              is required and Visual Studio solution restores always succeed.
+              Override with -p:XisoSharpAvailable=false to build the no-XISO
+              shape locally (CLI without iso support; the library, tests and
+              benchmarks never need XISOSharp). -->
+        <XisoSharpAvailable Condition="'$(XisoSharpAvailable)' == ''">true</XisoSharpAvailable>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(XisoSharpAvailable)' == 'true'">
@@ -54,39 +65,86 @@
 
     <ItemGroup>
         <ProjectReference Include="..\ZArchiveSharp\ZArchiveSharp.csproj" />
-        <!-- When the sibling is absent the reference is skipped and Program.cs
-              compiles its no-XISO shape (the iso flag fails at runtime with rebuild
-              instructions; see HAS_XISO there). When present, one guard:
-              MinVerSkip=true: MinVer 8 caches one version per MSBuild session
-              keyed by options only (no repo path), so letting the sibling
-              repo's MinVer run in our session nondeterministically stamps
-              ZArchiveSharp.Cli.dll and the tool package with XISOSharp's version
-              (observed: 1.0.1-alpha.0.99 instead of ours) and vice versa.
-              Skipping it keeps our session's version hermetic; XISOSharp's own
-              repo builds are unaffected. Mirror fix wanted on XISOSharp's
-              reference back to ZArchiveSharp for the same reason.
-              Known residual wart (pre-existing): under SOLUTION builds,
-              out-of-solution references fall back to the default (Debug)
-              configuration, so a solution-built Release tool links a
-              Debug-built XISOSharp.dll (verified via DebuggableAttribute
-              flags). Project builds and plain dotnet pack build it Release.
-              Neither SetConfiguration metadata nor a Configuration pin in
-              AdditionalProperties overrides the solution fallback (both
-              verified ineffective); only replacing the source reference with
-               a NuGet dependency fixes it. CI packs the library and the CLI
-               tool per project (clean clone, no sibling present), so the
-               shipped tool is Release-built and unaffected.
-              Pack-shape rule: pack the CLI WITH its build (plain dotnet pack
-              on the csproj); packing with the no-build flag after a solution
-              build fails (MSB3030) because the Publish step resolves the
-              Release-path dependency the solution build never produced. -->
-        <ProjectReference Include="$(XisoSharpProject)" AdditionalProperties="MinVerSkip=true"
+        <!-- The NuGet package is Release-built and does not run MinVer in this
+              session, so both cross-repo reference warts are gone: no version
+              stamping cross-contamination (no MinVerSkip guard needed) and
+              solution builds no longer link a Debug-built XISOSharp.dll.
+              Packing with the no-build flag after a solution build also works
+              again: the dependency resolves from the NuGet cache, not a
+              Release build output path. -->
+        <PackageReference Include="XISOSharp" Version="1.0.2"
                           Condition="'$(XisoSharpAvailable)' == 'true'" />
     </ItemGroup>
 
-    <Target Name="WarnMissingXisoSharp" BeforeTargets="BeforeBuild" Condition="'$(XisoSharpAvailable)' != 'true'">
+    <Target Name="WarnXisoSharpDisabled" BeforeTargets="BeforeBuild" Condition="'$(XisoSharpAvailable)' != 'true'">
         <Warning
-            Text="XISOSharp sibling not found at '$(XisoSharpProject)': building zar WITHOUT --iso support. Clone https://github.com/purelogiccode/XISOSharp.git as a sibling 'CSharp_XISOSharp' directory and rebuild for XISO support." />
+            Text="XISOSharp disabled (-p:XisoSharpAvailable=false): building zar WITHOUT --iso support." />
+    </Target>
+
+    <!-- _ComputeNETCoreBuildOutputFiles links the apphost into the output as
+         $(AssemblyName)<ext>; re-link it under the CLI name so both build and
+         publish output carry ZArchiveSharp<ext>. Skipped while packing so the
+         platform-agnostic tool package keeps the SDK's standard shape (it
+         filters the apphost by its canonical name; the tool entry point is the
+         managed dll either way). -->
+    <Target Name="RenameCliAppHost"
+            AfterTargets="_ComputeNETCoreBuildOutputFiles"
+            Condition="'$(_IsPacking)' != 'true' and '$(UseAppHost)' == 'true' and '$(AppHostIntermediatePath)' != ''">
+        <ItemGroup>
+            <None Remove="$(AppHostIntermediatePath)" />
+            <None Include="$(AppHostIntermediatePath)">
+                <Link>$(CliExecutableName)$(_NativeExecutableExtension)</Link>
+                <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+                <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+            </None>
+        </ItemGroup>
+    </Target>
+
+    <!-- Single-file publish bundles the host itself, so the bundle IS the
+          launcher and must carry the CLI name. The SDK looks the host up by
+          file name (AppHostName = PublishedSingleFileName, hardcoded to
+          $(AssemblyName)<ext> in _ComputeFilesToBundle) among the files to
+          bundle; with the apphost relinked to ZArchiveSharp<ext> no item
+          matches and GenerateBundle fails with "Must specify the host
+          binary" (MSB4018). Rename the bundle to the CLI name and retarget
+          any bundled item still named $(AssemblyName)<ext> (the self-contained
+          single-file host) so the lookup succeeds and the bundle is emitted
+          as ZArchiveSharp<ext> directly — no stale canonical exe to delete. -->
+    <Target Name="RenameSingleFileBundleToCliName"
+            AfterTargets="_ComputeFilesToBundle"
+            Condition="'$(PublishSingleFile)' == 'true' and '$(_IsPacking)' != 'true'">
+        <PropertyGroup>
+            <PublishedSingleFileName>$(CliExecutableName)$(_NativeExecutableExtension)</PublishedSingleFileName>
+            <PublishedSingleFilePath>$(PublishDir)$(PublishedSingleFileName)</PublishedSingleFilePath>
+        </PropertyGroup>
+        <ItemGroup>
+            <_FilesToBundle Condition="'%(_FilesToBundle.RelativePath)' == '$(AssemblyName)$(_NativeExecutableExtension)'">
+                <RelativePath>$(CliExecutableName)$(_NativeExecutableExtension)</RelativePath>
+            </_FilesToBundle>
+        </ItemGroup>
+    </Target>
+
+    <!-- dotnet run starts $(TargetDir)$(AssemblyName)<ext> unless RunCommand says
+         otherwise; point it at the renamed apphost when it is present (a
+         pack-only build still leaves the canonical apphost in place). Hooked to
+         both Run (msbuild -t:Run) and ComputeRunArguments (dotnet run's
+         RunCommand query). -->
+    <Target Name="PointCliRunAtRenamedAppHost"
+            BeforeTargets="Run;ComputeRunArguments"
+            Condition="'$(_IsPacking)' != 'true' and '$(UseAppHost)' == 'true'">
+        <PropertyGroup Condition="Exists('$(TargetDir)$(CliExecutableName)$(_NativeExecutableExtension)')">
+            <RunCommand>$(TargetDir)$(CliExecutableName)$(_NativeExecutableExtension)</RunCommand>
+        </PropertyGroup>
+    </Target>
+
+    <!-- The SDK's publish cleanup hardcodes $(AssemblyName)<ext> as a current
+         publish output, so a ZArchiveSharp.Cli<ext> left in an existing publish
+         directory survives the rename. Drop it once the renamed apphost is
+         actually there. -->
+    <Target Name="DeleteStaleCliAppHostFromPublishDir"
+            AfterTargets="Publish"
+            Condition="'$(_IsPacking)' != 'true' and '$(UseAppHost)' == 'true' and Exists('$(PublishDir)$(CliExecutableName)$(_NativeExecutableExtension)')">
+        <Delete Files="$(PublishDir)$(AssemblyName)$(_NativeExecutableExtension)" TreatErrorsAsWarnings="true" />
     </Target>
 
     <ItemGroup>
@@ -96,7 +154,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Meziantou.Analyzer" Version="3.0.248">
+        <PackageReference Include="Meziantou.Analyzer" Version="3.0.250">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
