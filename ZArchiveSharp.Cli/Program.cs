@@ -67,6 +67,8 @@ public static class Program
         var stdoutFlag = false;
         var zstdCompressFlag = false;
         bool? checksumOverride = null;
+        string? checksumOption = null;
+        string? levelOption = null;
         var helpRequested = false;
         string? modeRaw = null;
         bool? keepOriginalsOverride = null;
@@ -79,26 +81,39 @@ public static class Program
             switch (args[i])
             {
                 case "--iso" or "-i":
-                    if (i + 1 < args.Length) isoPath = args[++i];
+                    if (!TryTakeValue(args, ref i, args[i], "an ISO file", out var isoValue))
+                    {
+                        return ZarchiveCli.BadUsage;
+                    }
+
+                    isoPath = isoValue;
                     break;
                 case "--batch" or "-b":
                     batch = true;
                     break;
                 case "--output" or "-o":
-                    if (i + 1 < args.Length)
+                    if (!TryTakeValue(args, ref i, args[i], "a path", out var outputValue))
                     {
-                        outputPath = args[++i];
-                        outputExplicit = true;
+                        return ZarchiveCli.BadUsage;
                     }
 
+                    outputPath = outputValue;
+                    outputExplicit = true;
                     break;
                 case "--jobs" or "-j":
-                    if (i + 1 < args.Length && int.TryParse(args[++i],
-                            System.Globalization.CultureInfo.InvariantCulture, out var j))
+                    if (!TryTakeValue(args, ref i, args[i], "a positive integer", out var jobsRaw))
                     {
-                        jobs = j;
+                        return ZarchiveCli.BadUsage;
                     }
 
+                    if (!int.TryParse(jobsRaw, System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture, out var j) || j < 1)
+                    {
+                        CliLog.Err($"Error: invalid --jobs '{jobsRaw}' (expected a positive integer).");
+                        return ZarchiveCli.BadUsage;
+                    }
+
+                    jobs = j;
                     break;
                 case "--policy" or "-p":
                     if (i + 1 >= args.Length)
@@ -112,13 +127,21 @@ public static class Program
                     policyExplicit = true;
                     break;
                 case "--level" or "-l":
-                    if (i + 1 < args.Length && int.TryParse(args[++i],
-                            System.Globalization.CultureInfo.InvariantCulture, out var lv))
+                    if (!TryTakeValue(args, ref i, args[i], "1-22", out var levelRaw))
                     {
-                        level = lv;
-                        levelExplicit = true;
+                        return ZarchiveCli.BadUsage;
                     }
 
+                    if (!int.TryParse(levelRaw, System.Globalization.NumberStyles.Integer,
+                            System.Globalization.CultureInfo.InvariantCulture, out var lv) || lv < 1 || lv > 22)
+                    {
+                        CliLog.Err($"Error: invalid --level '{levelRaw}' (expected 1-22).");
+                        return ZarchiveCli.BadUsage;
+                    }
+
+                    level = lv;
+                    levelExplicit = true;
+                    levelOption = args[i];
                     break;
                 case "--dict":
                     if (i + 1 >= args.Length)
@@ -148,9 +171,11 @@ public static class Program
                     break;
                 case "--check":
                     checksumOverride = true;
+                    checksumOption = args[i];
                     break;
                 case "--no-check":
                     checksumOverride = false;
+                    checksumOption = args[i];
                     break;
                 case "--quiet" or "-q":
                     quiet = true;
@@ -193,6 +218,15 @@ public static class Program
                     positional.Add(args[i]);
                     break;
             }
+        }
+
+        // --iso converts one ISO; --batch takes an input directory. Combining
+        // them would silently ignore the batch flag (and any batch-only
+        // flags), so fail loud instead.
+        if (isoPath is not null && batch)
+        {
+            CliLog.Err("Error: --iso cannot be combined with --batch (--batch takes an input directory).");
+            return ZarchiveCli.BadUsage;
         }
 
         // Positional contract (zarchive.exe parity + -o/--iso extensions):
@@ -301,7 +335,7 @@ public static class Program
                 sub.Add("--help");
             }
 
-            return RunZstd(sub.ToArray(), level, dictPath, checksumOverride ?? false, quiet, stdoutFlag);
+            return RunZstd(sub.ToArray(), level, dictPath, checksumOverride, quiet, stdoutFlag);
         }
 
         // Seekable zstd files (zeekstd framing). A path literally named
@@ -319,7 +353,8 @@ public static class Program
                 sub.Add("--help");
             }
 
-            return RunSeekable(sub.ToArray(), level, levelExplicit, dictPath, checksumOverride, quiet, stdoutFlag);
+            return RunSeekable(sub.ToArray(), level, levelExplicit, levelOption, dictPath, checksumOverride,
+                checksumOption, quiet, stdoutFlag);
         }
 
         if (helpRequested)
@@ -445,14 +480,44 @@ public static class Program
         return ZarchiveCli.BadUsage;
     }
 
+    /// <summary>
+    /// Reads the value of a value-taking global option. A missing value or a
+    /// following option (<c>zar --jobs --quiet in out</c>) is a usage error
+    /// instead of silently swallowing the next flag.
+    /// </summary>
+    private static bool TryTakeValue(string[] args, ref int index, string option, string expected, out string value)
+    {
+        if (index + 1 >= args.Length || args[index + 1].StartsWith('-'))
+        {
+            CliLog.Err($"Error: missing value for {option} (expected {expected}).");
+            value = string.Empty;
+            return false;
+        }
+
+        value = args[index + 1];
+        index++;
+        return true;
+    }
+
     private static int RunZstd(
-        string[] zstdArgs, int level, string? dictPath, bool checksum, bool quiet, bool stdoutFlag)
+        string[] zstdArgs, int level, string? dictPath, bool? checksumOverride, bool quiet, bool stdoutFlag)
     {
         if (!ZstdCli.TryParse(zstdArgs, out var job, out var parseError,
-                defaultLevel: level, defaultDictPath: dictPath, defaultChecksum: checksum,
+                defaultLevel: level, defaultDictPath: dictPath, defaultChecksum: checksumOverride ?? false,
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
             CliLog.Err($"Error: {parseError}");
+            CliLog.InfoToStderr(ZstdCli.UsageText);
+            return ZarchiveCli.BadUsage;
+        }
+
+        // --check/--no-check are consumed by the global parser, so the
+        // subcommand never sees them: apply the verb rule (checksums are a
+        // compression feature) here instead of silently ignoring --check on
+        // a decompression run.
+        if (checksumOverride == true && job is { Compress: false, ShowHelp: false })
+        {
+            CliLog.Err("Error: --check is only supported when compressing (-c).");
             CliLog.InfoToStderr(ZstdCli.UsageText);
             return ZarchiveCli.BadUsage;
         }
@@ -492,8 +557,8 @@ public static class Program
     }
 
     private static int RunSeekable(
-        string[] seekableArgs, int globalLevel, bool levelExplicit, string? dictPath,
-        bool? checksumOverride, bool quiet, bool stdoutFlag)
+        string[] seekableArgs, int globalLevel, bool levelExplicit, string? levelOption, string? dictPath,
+        bool? checksumOverride, string? checksumOption, bool quiet, bool stdoutFlag)
     {
         // Seekable frames carry no zstd dictionary (and the diff-engine
         // --patch-from has no library support), so an explicit --dict with
@@ -512,6 +577,38 @@ public static class Program
             CliLog.Err($"Error: {parseError}");
             CliLog.InfoToStderr(SeekableCli.UsageText);
             return ZarchiveCli.BadUsage;
+        }
+
+        // The global parser consumes --check/--level/--stdout before the
+        // subcommand sees them, skipping the per-verb rules SeekableCli
+        // applies to explicit tokens (checksums and level are compress-only;
+        // list always writes to stdout). Re-apply them here so those
+        // combinations fail loud instead of being silently ignored.
+        if (!job!.ShowHelp)
+        {
+            if (checksumOverride.HasValue && job.Command != SeekableCli.SeekableCommand.Compress)
+            {
+                CliLog.Err(
+                    $"Error: option {checksumOption ?? "--check"} is only supported with 'seekable compress'.");
+                CliLog.InfoToStderr(SeekableCli.UsageText);
+                return ZarchiveCli.BadUsage;
+            }
+
+            if (stdoutFlag && job.Command == SeekableCli.SeekableCommand.List)
+            {
+                CliLog.Err(
+                    "Error: option --stdout is only supported with 'seekable compress' or 'seekable decompress' (list always writes to stdout).");
+                CliLog.InfoToStderr(SeekableCli.UsageText);
+                return ZarchiveCli.BadUsage;
+            }
+
+            if (levelExplicit && job.Command != SeekableCli.SeekableCommand.Compress)
+            {
+                CliLog.Err(
+                    $"Error: option {levelOption ?? "--level"} is only supported with 'seekable compress'.");
+                CliLog.InfoToStderr(SeekableCli.UsageText);
+                return ZarchiveCli.BadUsage;
+            }
         }
 
         // Binary output to stdout: informational lines must go to stderr or
@@ -946,7 +1043,9 @@ public static class Program
 
     /// <summary>
     /// Runs the archive-container stage over <paramref name="archives"/>
-    /// <c>destDir/temp_&lt;stem&gt;</c>; the first <c>.iso</c> found keeps
+    /// <c>destDir/temp_&lt;stem&gt;_&lt;id&gt;</c> (same-stem archives run
+    /// concurrently, so a shared scratch path would let one worker delete the
+    /// other's extraction); the first <c>.iso</c> found keeps
     /// going down the pipeline as <c>&lt;stem&gt;.iso</c>, otherwise the
     /// whole tree becomes <c>&lt;stem&gt;/</c>. Under
     /// <see cref="ZarProcessMode.ExtractArchive"/> the item stops there;
@@ -977,7 +1076,7 @@ public static class Program
         ZstdDictionary? dictionary, string? sevenZipPath, IProgress<ZarProgress>? progress)
     {
         var stem = Path.GetFileNameWithoutExtension(archive);
-        var temp = Path.Combine(destDir, $"temp_{stem}");
+        var temp = Path.Combine(destDir, $"temp_{stem}_{Guid.NewGuid():N}");
         try
         {
             if (Directory.Exists(temp))
@@ -1008,14 +1107,13 @@ public static class Program
             var iso = SevenZip.PickIsoCandidate(extracted.Where(File.Exists));
             if (iso != null)
             {
-                var moved = ZarPackEngine.ResolveOutputPath(
-                    Path.Combine(destDir, stem + ".iso"), options.CollisionPolicy);
+                var moved = ZarPackEngine.MoveIntoPlace(iso, Path.Combine(destDir, stem + ".iso"),
+                    options.CollisionPolicy, isDirectory: false);
                 if (moved == null)
                 {
                     return new ZarItemResult(archive, null, ZarItemStatus.Skipped, "Output already exists.");
                 }
 
-                File.Move(iso, moved);
                 current = moved;
                 isIso = true;
             }
@@ -1026,14 +1124,13 @@ public static class Program
                     return new ZarItemResult(archive, null, ZarItemStatus.Failed, "Archive yielded no files.");
                 }
 
-                var moved = ZarPackEngine.ResolveOutputPath(
-                    Path.Combine(destDir, stem), options.CollisionPolicy);
+                var moved = ZarPackEngine.MoveIntoPlace(temp, Path.Combine(destDir, stem),
+                    options.CollisionPolicy, isDirectory: true);
                 if (moved == null)
                 {
                     return new ZarItemResult(archive, null, ZarItemStatus.Skipped, "Output already exists.");
                 }
 
-                Directory.Move(temp, moved);
                 temp = null;
                 current = moved;
                 isIso = false;

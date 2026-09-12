@@ -542,7 +542,8 @@ public sealed class ZArchiveReader : IDisposable
     /// <summary>
     /// Reads up to <c>buffer.Length</c> bytes from <paramref name="node"/>
     /// at <paramref name="offset"/> (clamped to the file size). Returns the
-    /// number of bytes read. Thread-safe.
+    /// number of bytes read; a block failure mid-read returns the partial
+    /// count (short read) instead of looking like EOF. Thread-safe.
     /// </summary>
     public ulong ReadFromFile(uint node, ulong offset, Span<byte> buffer)
     {
@@ -579,7 +580,11 @@ public sealed class ZArchiveReader : IDisposable
                 var block = GetCachedBlock(blockIndex);
                 if (block is null)
                 {
-                    return 0;
+                    // A failed block after some bytes were copied must not
+                    // look like EOF: report the partial read so callers see
+                    // a short read (and ReadFile turns it into an error)
+                    // instead of silently dropping the remainder.
+                    return (ulong)bufferPos;
                 }
 
                 block.Data.AsSpan((int)blockOffset, (int)step).CopyTo(buffer.Slice(bufferPos, (int)step));

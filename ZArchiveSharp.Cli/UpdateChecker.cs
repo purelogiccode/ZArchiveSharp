@@ -55,13 +55,15 @@ internal static class UpdateChecker
     }
 
     /// <summary>
-    /// Waits briefly for <paramref name="check"/> and, when a strictly newer
-    /// release exists, prints the notice, optionally prompting (interactive
-    /// only) to open the platform download or release page. Never throws.
+    /// Reports <paramref name="check"/> when it already completed and a
+    /// strictly newer release exists; a still-running check is skipped, so
+    /// command latency and exit are never blocked by the network. Optionally
+    /// prompts (interactive only) to open the platform download or release
+    /// page. Never throws.
     /// </summary>
     internal static void Notify(Task<ReleaseInfo?> check, bool quiet)
     {
-        if (quiet)
+        if (quiet || !check.IsCompleted)
         {
             return;
         }
@@ -69,11 +71,6 @@ internal static class UpdateChecker
         ReleaseInfo? release;
         try
         {
-            if (!check.Wait(TimeSpan.FromSeconds(2)))
-            {
-                return;
-            }
-
             release = check.Result;
         }
         catch (Exception notifyEx)

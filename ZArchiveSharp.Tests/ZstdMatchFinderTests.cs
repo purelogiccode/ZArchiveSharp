@@ -431,6 +431,12 @@ public sealed class ZstdMatchFinderTests
         // Repcode 3 without literals: rep[0]-1 wins, full rotate.
         ZstdSeq.UpdateRep(rep, ZstdSeq.Repcode3, 1);
         Assert.Equal(new uint[] { 98, 99, 10 }, rep);
+
+        // Repcode 3 without literals wraps rep[0] == 0 like native
+        // ZSTD_updateRep instead of throwing OverflowException.
+        uint[] wrapped = [0, 5, 7];
+        ZstdSeq.UpdateRep(wrapped, ZstdSeq.Repcode3, 1);
+        Assert.Equal(new uint[] { uint.MaxValue, 0, 5 }, wrapped);
     }
 
     [Fact]

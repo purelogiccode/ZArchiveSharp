@@ -192,6 +192,37 @@ public sealed class ZArchiveSharpTests
         Assert.Equal(0ul, reader.ReadFromFile(node, (ulong)data.Length, tail));
     }
 
+    [Fact]
+    public void Reader_FailedLaterBlock_ReturnsPartialCountNotEof()
+    {
+        // Block 0 is incompressible (stored raw, so its bytes sit verbatim in
+        // the archive); block 1 is compressible (stored as a zstd frame).
+        // Corrupting block 1's frame must not make a read that already copied
+        // block 0 look like EOF.
+        var blockSize = ZArchiveCommon.CompressedBlockSize;
+        var first = new byte[blockSize];
+        new Random(20260912).NextBytes(first);
+        var data = new byte[blockSize * 2];
+        first.CopyTo(data, 0);
+        Array.Fill(data, (byte)'A', blockSize, blockSize);
+
+        var zar = BuildArchive(w =>
+        {
+            Assert.True(w.StartNewFile("big.bin"));
+            w.AppendData(data);
+        });
+
+        var block0 = zar.AsSpan().IndexOf(first.AsSpan(0, 32));
+        Assert.True(block0 >= 0, "Could not locate the raw first block in the archive.");
+        zar[block0 + blockSize] ^= 0xFF; // corrupt the second block's frame magic
+
+        using var reader = ZArchiveReader.TryOpen(zar)!;
+        var node = reader.LookUp("big.bin");
+        Span<byte> buffer = new byte[data.Length];
+        Assert.Equal((ulong)blockSize, reader.ReadFromFile(node, 0, buffer));
+        Assert.Equal(first, buffer[..blockSize].ToArray());
+    }
+
     // ------------------------------------------------------------------
     // Format vectors
     // ------------------------------------------------------------------

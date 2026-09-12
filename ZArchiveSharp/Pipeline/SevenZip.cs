@@ -168,6 +168,10 @@ public static class SevenZip
     /// <summary>Builds the 7z argument line: <c>x "archive" -o"dest" -y -bsp1</c>.</summary>
     internal static string BuildArguments(string archivePath, string destDir)
     {
-        return $"x \"{archivePath}\" -o\"{destDir}\" -y -bsp1";
+        // A quoted path ending in a separator ("C:\out\") is parsed with an
+        // escaped closing quote by some 7z builds; roots ("C:\") keep theirs
+        // (TrimEndingDirectorySeparator leaves roots alone).
+        var output = Path.TrimEndingDirectorySeparator(destDir);
+        return $"x \"{archivePath}\" -o\"{output}\" -y -bsp1";
     }
 }

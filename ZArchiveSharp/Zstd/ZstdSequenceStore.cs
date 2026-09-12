@@ -112,8 +112,10 @@ public static class ZstdSeq
             var repCode = ToRepcode(offBase) - 1 + litLengthZero;
             if (repCode > 0)
             {
+                // Native ZSTD_updateRep wraps this subtraction (rep[0] == 0
+                // yields the invalid offset upstream later discards).
                 var currentOffset = repCode == RepNum
-                    ? checked(rep[0] - 1)
+                    ? unchecked(rep[0] - 1)
                     : rep[repCode];
                 rep[2] = repCode >= 2 ? rep[1] : rep[2];
                 rep[1] = rep[0];

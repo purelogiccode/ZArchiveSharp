@@ -57,6 +57,19 @@ public sealed class SevenZipTests : IDisposable
     }
 
     [Fact]
+    public void BuildArguments_TrailingSeparator_DoesNotEscapeClosingQuote()
+    {
+        // "...\temp_game\" would let the backslash escape the closing quote;
+        // the trailing separator is dropped (roots keep theirs).
+        Assert.Equal(
+            "x \"C:\\in\\game.zip\" -o\"C:\\out dir\\temp_game\" -y -bsp1",
+            SevenZip.BuildArguments(@"C:\in\game.zip", @"C:\out dir\temp_game\"));
+        Assert.Equal(
+            "x \"C:\\in\\game.zip\" -o\"C:\\\" -y -bsp1",
+            SevenZip.BuildArguments(@"C:\in\game.zip", @"C:\"));
+    }
+
+    [Fact]
     public void PickIsoCandidate_NoIso_ReturnsNull()
     {
         Assert.Null(SevenZip.PickIsoCandidate(["a.txt", "sub/b.bin"]));

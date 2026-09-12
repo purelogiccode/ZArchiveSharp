@@ -662,4 +662,50 @@ public sealed class ZstdStreamTests
         Assert.True(exited, "zstd timed out.\n" + stderr);
         Assert.True(proc.ExitCode == 0, $"zstd failed.\n{stderr}");
     }
+
+    private sealed class FailOnDemandStream : MemoryStream
+    {
+        public bool Fail { get; set; }
+
+        public bool Disposed { get; private set; }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            if (Fail)
+            {
+                throw new IOException("destination failed");
+            }
+
+            base.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            if (Fail)
+            {
+                throw new IOException("destination failed");
+            }
+
+            base.Write(buffer);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public void CompressionStream_FinalizeFailure_StillDisposesDestination()
+    {
+        // An encode/write failure during Dispose must not leak the
+        // destination (leaveOpen: false) or the pending buffer.
+        var destination = new FailOnDemandStream();
+        var encoder = new ZstdCompressionStream(destination, level: 3, checksum: false, leaveOpen: false);
+        encoder.Write(Text(4096)); // emits the frame header, kept in _pending afterwards
+        destination.Fail = true;
+        Assert.Throws<IOException>(() => encoder.Dispose());
+        Assert.True(destination.Disposed, "The destination was left open after a finalization failure.");
+    }
 }

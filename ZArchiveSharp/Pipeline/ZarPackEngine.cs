@@ -81,6 +81,10 @@ public static class ZarPackEngine
     /// </summary>
     private static (FileStream Stream, string Path) CreateOutput(string path, ZarCollisionPolicy policy)
     {
+        // Re-resolve from the requested path (not a failed candidate) so
+        // repeated races stay canonical (out.zar, out_1.zar, ...) instead of
+        // compounding suffixes (out_1_1.zar).
+        var requested = path;
         for (var attempt = 0;; attempt++)
         {
             try
@@ -90,7 +94,52 @@ public static class ZarPackEngine
             catch (IOException) when (attempt < 256 &&
                                       policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite)
             {
-                path = ResolveOutputPath(path, policy) ?? throw new IOException($"{OutputExistsMessage} {path}");
+                path = ResolveOutputPath(requested, policy) ?? throw new IOException($"{OutputExistsMessage} {path}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves <paramref name="source"/> (a file or directory) to
+    /// <paramref name="wantedPath"/> under <paramref name="policy"/>,
+    /// re-resolving on the resolve-to-move race that parallel batch items
+    /// (and other processes) can lose. Returns the path actually used, or
+    /// null to skip.
+    /// </summary>
+    public static string? MoveIntoPlace(
+        string source, string wantedPath, ZarCollisionPolicy policy, bool isDirectory)
+    {
+        // Re-resolve from the requested path (not a failed candidate) so
+        // repeated races stay canonical (.../game, game_1, game_2) instead of
+        // compounding suffixes (game_1_1).
+        var requested = wantedPath;
+        for (var attempt = 0;; attempt++)
+        {
+            var target = ResolveOutputPath(wantedPath, policy);
+            if (target == null)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (isDirectory)
+                {
+                    Directory.Move(source, target);
+                }
+                else
+                {
+                    File.Move(source, target);
+                }
+
+                return target;
+            }
+            catch (IOException) when (attempt < 256 &&
+                                      policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite)
+            {
+                // The free name was claimed by another worker between the
+                // resolve and the move: resolve again from the request.
+                wantedPath = requested;
             }
         }
     }

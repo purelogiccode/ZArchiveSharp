@@ -430,4 +430,59 @@ public sealed class ArchiveBatchTests
             }
         }
     }
+
+    [Fact]
+    public void Batch_Auto_SameStemArchives_AutoRename_AllSucceed()
+    {
+        // game.gz, game.tar and game.zip share stem "game" and run
+        // concurrently: each must extract into its own scratch directory and
+        // auto-rename its way to a distinct .zar.
+        var cli = RedumpIsoTests.FindCli();
+        if (cli is null || SevenZip.FindTool() is null)
+        {
+            return;
+        }
+
+        var work = RedumpIsoTests.NewTempDir("arcstem");
+        try
+        {
+            var inDir = Path.Combine(work, "in");
+            var stage = Path.Combine(work, "stage", "game");
+            Directory.CreateDirectory(stage);
+            File.WriteAllBytes(Path.Combine(stage, "payload.bin"), "same stem payload"u8.ToArray());
+            Directory.CreateDirectory(inDir);
+            System.Formats.Tar.TarFile.CreateFromDirectory(
+                stage, Path.Combine(inDir, "game.tar"), includeBaseDirectory: false);
+            ZipTree(stage, Path.Combine(inDir, "game.zip"));
+            using (var gz = File.Create(Path.Combine(inDir, "game.gz")))
+            using (var gzip = new GZipStream(gz, CompressionLevel.Fastest))
+            {
+                gzip.Write("gz payload"u8);
+            }
+
+            var outDir = Path.Combine(work, "out");
+            var (started, exit, stdout, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+                ["--batch", "-p", "auto-rename", inDir, outDir]);
+            if (!started)
+            {
+                return;
+            }
+
+            Assert.True(exit == 0, $"Batch failed (exit {exit}).\nstdout: {stdout}\nstderr: {stderr}");
+            Assert.True(File.Exists(Path.Combine(outDir, "game.zar")), "game.zar missing.");
+            Assert.True(File.Exists(Path.Combine(outDir, "game_1.zar")), "game_1.zar missing.");
+            Assert.True(File.Exists(Path.Combine(outDir, "game_2.zar")), "game_2.zar missing.");
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best effort: temp cleanup must not fail the test.
+            }
+        }
+    }
 }

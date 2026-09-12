@@ -180,14 +180,23 @@ public sealed class ZstdCompressionStream : Stream
     {
         if (disposing && !_disposed)
         {
-            FinalizeFrame();
-            _pending.Dispose();
-            if (!_leaveOpen)
+            // Finalization may throw (disk full, broken pipe): the pending
+            // buffer and the destination must still be released so a retry
+            // or an outer cleanup cannot leak them.
+            try
             {
-                _destination.Dispose();
+                FinalizeFrame();
             }
+            finally
+            {
+                _pending.Dispose();
+                if (!_leaveOpen)
+                {
+                    _destination.Dispose();
+                }
 
-            _disposed = true;
+                _disposed = true;
+            }
         }
 
         base.Dispose(disposing);
@@ -198,14 +207,20 @@ public sealed class ZstdCompressionStream : Stream
     {
         if (!_disposed)
         {
-            FinalizeFrame();
-            _pending.Dispose();
-            if (!_leaveOpen)
+            try
             {
-                await _destination.DisposeAsync().ConfigureAwait(false);
+                FinalizeFrame();
             }
+            finally
+            {
+                _pending.Dispose();
+                if (!_leaveOpen)
+                {
+                    await _destination.DisposeAsync().ConfigureAwait(false);
+                }
 
-            _disposed = true;
+                _disposed = true;
+            }
         }
 
         await base.DisposeAsync().ConfigureAwait(false);
