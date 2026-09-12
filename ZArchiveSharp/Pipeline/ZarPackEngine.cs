@@ -16,6 +16,13 @@ public static class ZarPackEngine
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
+    /// Message used when <see cref="ZarCollisionPolicy.Fail"/> refuses an
+    /// existing output. Batch callers match this prefix to tell collision
+    /// refusals (exit <c>-11</c>) from other pack faults (<c>-13</c>).
+    /// </summary>
+    public const string OutputExistsMessage = "The output file already exists:";
+
+    /// <summary>
     /// Resolves <paramref name="wantedPath"/> under <paramref name="policy"/>:
     /// returns the path to write, or null to skip when it already exists.
     /// </summary>
@@ -29,55 +36,80 @@ public static class ZarPackEngine
 
         return policy switch
         {
-            ZarCollisionPolicy.Fail =>
-                throw new IOException($"The output file already exists: {wantedPath}"),
+            ZarCollisionPolicy.Fail => throw new IOException($"{OutputExistsMessage} {wantedPath}"),
             ZarCollisionPolicy.Skip => null,
-            ZarCollisionPolicy.Overwrite => Overwrite(wantedPath),
-            ZarCollisionPolicy.AutoRename => FirstFreeSibling(wantedPath),
+            ZarCollisionPolicy.Overwrite => DeleteForOverwrite(wantedPath),
+            ZarCollisionPolicy.AutoRename => NextFreeSibling(wantedPath),
             _ => throw new ArgumentOutOfRangeException(nameof(policy)),
         };
+    }
 
-        static string Overwrite(string path)
+    private static string DeleteForOverwrite(string path)
+    {
+        if (File.Exists(path))
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-            else if (Directory.Exists(path))
-            {
-                Directory.Delete(path, recursive: true);
-            }
-
-            return path;
+            File.Delete(path);
+        }
+        else if (Directory.Exists(path))
+        {
+            Directory.Delete(path, recursive: true);
         }
 
-        static string FirstFreeSibling(string path)
+        return path;
+    }
+
+    private static string NextFreeSibling(string path)
+    {
+        var dir = Path.GetDirectoryName(path) ?? "";
+        var stem = Path.GetFileNameWithoutExtension(path);
+        var suffix = Path.GetExtension(path);
+        for (var n = 1;; n++)
         {
-            var dir = Path.GetDirectoryName(path) ?? "";
-            var stem = Path.GetFileNameWithoutExtension(path);
-            var suffix = Path.GetExtension(path);
-            for (var n = 1;; n++)
+            var candidate = Path.Combine(dir, $"{stem}_{n}{suffix}");
+            if (!File.Exists(candidate) && !Directory.Exists(candidate))
             {
-                var candidate = Path.Combine(dir, $"{stem}_{n}{suffix}");
-                if (!File.Exists(candidate) && !Directory.Exists(candidate))
-                {
-                    return candidate;
-                }
+                return candidate;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creates <paramref name="path"/> exclusively, re-resolving on the
+    /// resolve-to-create race that parallel batch items (and other processes)
+    /// can lose under <see cref="ZarCollisionPolicy.AutoRename"/> or
+    /// <see cref="ZarCollisionPolicy.Overwrite"/>.
+    /// </summary>
+    private static (FileStream Stream, string Path) CreateOutput(string path, ZarCollisionPolicy policy)
+    {
+        for (var attempt = 0;; attempt++)
+        {
+            try
+            {
+                return (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536), path);
+            }
+            catch (IOException) when (attempt < 256 &&
+                                      policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite)
+            {
+                path = ResolveOutputPath(path, policy) ?? throw new IOException($"{OutputExistsMessage} {path}");
             }
         }
     }
 
     /// <summary>
     /// Packs pre-collected <paramref name="entries"/> into
-    /// <paramref name="zarPath"/> (must already be collision-resolved).
+    /// <paramref name="zarPath"/> (must already be collision-resolved under
+    /// <paramref name="collisionPolicy"/>). Returns the path actually
+    /// written, which differs from <paramref name="zarPath"/> when an
+    /// <see cref="ZarCollisionPolicy.AutoRename"/> race re-resolves it.
     /// </summary>
-    public static void PackEntries(
+    public static string PackEntries(
         IReadOnlyList<ZarPackEntry> entries,
         string displayPath,
         string zarPath,
         ZarPipelineOptions? options = null,
         IProgress<ZarProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        ZarCollisionPolicy collisionPolicy = ZarCollisionPolicy.Fail)
     {
         options ??= new ZarPipelineOptions();
         cancellationToken.ThrowIfCancellationRequested();
@@ -97,65 +129,68 @@ public static class ZarPackEngine
         long filesCompleted = 0;
         long bytesCompleted = 0;
 
+        var (output, actualPath) = CreateOutput(zarPath, collisionPolicy);
         try
         {
-            using var output = new FileStream(zarPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536);
-            using var writer = new ZArchiveWriter(output, options.ResolveCompressor(), options.NameOrder,
-                options.BlockWorkers(), options.ResolveCompressorFactory());
-            var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
-
-            Report(string.Empty);
-            foreach (var entry in entries)
+            using (output)
+            using (var writer = new ZArchiveWriter(output, options.ResolveCompressor(), options.NameOrder,
+                       options.BlockWorkers(), options.ResolveCompressorFactory()))
             {
-                pause.WaitIfPaused(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                if (entry.IsDirectory)
-                {
-                    if (!writer.MakeDir(entry.RelativePath, recursive: false))
-                    {
-                        throw new InvalidOperationException($"Failed to create directory {entry.RelativePath}");
-                    }
+                var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
 
-                    continue;
-                }
-
-                if (entry.OpenRead == null)
-                {
-                    throw new ZarEntryCreateException($"Failed to create archive file {entry.RelativePath}");
-                }
-
-                if (!writer.StartNewFile(entry.RelativePath))
-                {
-                    throw new ZarEntryCreateException($"Failed to create archive file {entry.RelativePath}");
-                }
-
-                using var input = OpenEntryInput(entry);
-                int read;
-                while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                Report(string.Empty);
+                foreach (var entry in entries)
                 {
                     pause.WaitIfPaused(cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    writer.AppendData(buffer.AsSpan(0, read));
-                    bytesCompleted += read;
-                    if (clock.Elapsed >= ProgressInterval)
+                    if (entry.IsDirectory)
                     {
-                        Report(entry.RelativePath);
-                        clock.Restart();
+                        if (!writer.MakeDir(entry.RelativePath, recursive: false))
+                        {
+                            throw new InvalidOperationException($"Failed to create directory {entry.RelativePath}");
+                        }
+
+                        continue;
                     }
+
+                    if (entry.OpenRead == null)
+                    {
+                        throw new ZarEntryCreateException($"Failed to create archive file {entry.RelativePath}");
+                    }
+
+                    if (!writer.StartNewFile(entry.RelativePath))
+                    {
+                        throw new ZarEntryCreateException($"Failed to create archive file {entry.RelativePath}");
+                    }
+
+                    using var input = OpenEntryInput(entry);
+                    int read;
+                    while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        pause.WaitIfPaused(cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        writer.AppendData(buffer.AsSpan(0, read));
+                        bytesCompleted += read;
+                        if (clock.Elapsed >= ProgressInterval)
+                        {
+                            Report(entry.RelativePath);
+                            clock.Restart();
+                        }
+                    }
+
+                    filesCompleted++;
+                    Report(entry.RelativePath);
                 }
 
-                filesCompleted++;
-                Report(entry.RelativePath);
+                writer.Finalize();
+                Report(string.Empty);
             }
-
-            writer.Finalize();
-            Report(string.Empty);
         }
         catch
         {
             try
             {
-                File.Delete(zarPath);
+                File.Delete(actualPath);
             }
             catch
             {
@@ -165,12 +200,12 @@ public static class ZarPackEngine
             throw;
         }
 
-        return;
+        return actualPath;
 
         void Report(string current)
         {
             progress?.Report(new ZarProgress(
-                ZarOperation.Pack, displayPath, zarPath, current,
+                ZarOperation.Pack, displayPath, actualPath, current,
                 filesCompleted, filesTotal, bytesCompleted, bytesTotal));
         }
     }

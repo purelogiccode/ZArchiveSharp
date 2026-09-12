@@ -325,7 +325,8 @@ public sealed class ArchiveBatchTests
                 return;
             }
 
-            Assert.Equal(-13, exit);
+            // Collision-only batch failures report the documented -11.
+            Assert.Equal(-11, exit);
             Assert.Contains("game.zip", stderr, StringComparison.Ordinal);
             Assert.True(File.Exists(zip),
                 "The source archive was deleted even though the downstream .zar stage failed.");

@@ -60,18 +60,46 @@ public static class ProcessRunner
                 ex);
         }
 
-        string? lastLine = null;
+        string? lastErr = null;
+        var stderrDrained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data != null)
+            {
+                lastErr = e.Data;
+            }
+            else
+            {
+                stderrDrained.TrySetResult();
+            }
+        };
+        process.BeginErrorReadLine();
+
+        string? lastOut;
         try
         {
-            lastLine = Pump(process, progress, pause, cancellationToken);
-            process.WaitForExit();
+            lastOut = Pump(process, progress, pause, cancellationToken);
+            // Poll instead of WaitForExitAsync: the async wait can stay
+            // blocked until the redirected pipes hit EOF, so a child that
+            // closed stdout (Pump returned) but keeps running would never
+            // observe cancellation. Polling kills it here.
+            while (!process.WaitForExit(100))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
         }
         catch (OperationCanceledException)
         {
             TryKill(process);
+            process.WaitForExit(5000);
             throw;
         }
 
+        // BeginErrorReadLine is asynchronous: give the stderr pump a
+        // bounded moment to drain so a late-only failure line is not
+        // reported as "no output".
+        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5));
+        var lastLine = lastOut ?? lastErr;
         ThrowIfFailed(process.ExitCode, lastLine, fileName);
         return new ProcessResult(process.ExitCode, lastLine);
     }
@@ -82,16 +110,6 @@ public static class ProcessRunner
         // progress bars yield one line each. Stderr drains on events (every
         // known tool reports progress on stdout); its last line is kept for
         // failure messages, mirroring the merged stream's last_line.
-        string? lastErr = null;
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                lastErr = e.Data;
-            }
-        };
-        process.BeginErrorReadLine();
-
         var line = new System.Text.StringBuilder();
         string? lastOut = null;
         var clock = Stopwatch.StartNew();
@@ -135,7 +153,7 @@ public static class ProcessRunner
             }
         }
 
-        return lastOut ?? lastErr;
+        return lastOut;
     }
 
     /// <summary>

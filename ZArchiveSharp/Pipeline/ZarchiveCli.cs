@@ -191,6 +191,13 @@ public static class ZarchiveCli
             log?.Invoke("Extraction failed");
             return ExtractionFailed;
         }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Extract I/O faults are extraction failures (-12), not pack
+            // faults (-13): the outer catch maps everything else to -13.
+            log?.Invoke("Extraction failed");
+            return ExtractionFailed;
+        }
     }
 
     private static int PackDirectory(
@@ -270,6 +277,7 @@ public static class ZarchiveCli
             MaxDegreeOfParallelism = options.MaxDegreeOfParallelism,
             DeleteSourceOnSuccess = options.DeleteSourceOnSuccess,
             Pause = options.Pause,
+            NameOrder = options.NameOrder,
         };
     }
 

@@ -101,6 +101,115 @@ public sealed class PipelineCliTests : IDisposable
     }
 
     [Fact]
+    public void Cli_Pack_ShallowCopy_PreservesNameOrder()
+    {
+        // NameOrder must survive the option copy the CLI layer makes before
+        // handing options to the packer; dropping it silently changes the
+        // name table (and the archive bytes) versus the library default.
+        var root = NewTempDir("cli_nameorder");
+        var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "aaaa");
+        File.WriteAllText(Path.Combine(src, "b.txt"), "bbbb");
+        string[] order = ["b.txt", "a.txt"];
+
+        var expected = Path.Combine(root, "expected.zar");
+        ZarPipeline.Pack(src, expected, new ZarPipelineOptions { NameOrder = order });
+        var viaCli = Path.Combine(root, "via_cli.zar");
+        Assert.Equal(ZarchiveCli.Ok,
+            ZarchiveCli.Run([src, viaCli], new ZarPipelineOptions { NameOrder = order }));
+        Assert.Equal(File.ReadAllBytes(expected), File.ReadAllBytes(viaCli));
+    }
+
+    [Fact]
+    public void Cli_ExtractIoFailure_ReturnsExtractionFailed()
+    {
+        // An unopenable extract destination is an extraction failure (-12),
+        // not a pack failure (-13).
+        var root = NewTempDir("cli_extractio");
+        var zar = Path.Combine(root, "input.zar");
+        using (var fs = File.Create(zar))
+        using (var writer = new ZArchiveWriter(fs))
+        {
+            Assert.True(writer.StartNewFile("hello.txt"));
+            writer.AppendData("hi"u8);
+            writer.Finalize();
+        }
+
+        // Occupy the output file's path with a directory.
+        var dest = Path.Combine(root, "dest");
+        Directory.CreateDirectory(Path.Combine(dest, "hello.txt"));
+
+        var sink = new LogSink();
+        Assert.Equal(ZarchiveCli.ExtractionFailed, ZarchiveCli.Run([zar, dest], log: sink.Log));
+    }
+
+    [Fact]
+    public void Runner_HungChildAfterStdoutClose_CancellationKillsIt()
+    {
+        var python = FindPython();
+        if (python is null)
+        {
+            return; // no Python on this host: nothing to run.
+        }
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.ThrowsAny<OperationCanceledException>(() => ProcessRunner.Run(
+            python,
+            "-c \"import os,time; os.close(1); time.sleep(30)\"",
+            cancellationToken: cts.Token));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20),
+            $"cancellation took {clock.Elapsed}: the hung child was not killed.");
+    }
+
+    [Fact]
+    public void Runner_LateStderrFailure_ReportsLastLine()
+    {
+        var python = FindPython();
+        if (python is null)
+        {
+            return; // no Python on this host: nothing to run.
+        }
+
+        var ex = Assert.Throws<InvalidOperationException>(() => ProcessRunner.Run(
+            python,
+            "-c \"import os,sys,time; os.close(1); time.sleep(0.3); " +
+            "sys.stderr.write('late-stderr-boom'); sys.stderr.flush(); sys.exit(7)\""));
+        Assert.Contains("late-stderr-boom", ex.Message, StringComparison.Ordinal);
+    }
+
+    private static string? FindPython()
+    {
+        var path = Environment.GetEnvironmentVariable("PATH");
+        if (path is null)
+        {
+            return null;
+        }
+
+        var names = OperatingSystem.IsWindows()
+            ? new[] { "python.exe", "python3.exe" }
+            : new[] { "python3", "python" };
+        foreach (var name in names)
+        {
+            foreach (var dir in path.Split(Path.PathSeparator))
+            {
+                if (dir.Length == 0)
+                {
+                    continue;
+                }
+
+                var candidate = Path.Combine(dir, name);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    [Fact]
     public void Cli_PackForcesFailPolicyOption_StillRefusesExisting()
     {
         // ZarchiveCli is the refuse-overwrite contract: even an Overwrite

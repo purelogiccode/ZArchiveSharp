@@ -157,6 +157,25 @@ public sealed class ZstdDecoderTests
     }
 
     [Fact]
+    public void CompressorDecompressFrame_CapBoundsDecode()
+    {
+        // Streaming frame (no declared FCS) that would otherwise take the
+        // 512 MiB decoder default; the cap must be handed to the decoder
+        // rather than checked after a full decode.
+        var frame = ZstdCompressor.EncodeStreamingFrame(new byte[1 << 20], level: 3, checksum: false);
+        var ex = Assert.Throws<ZstdException>(() => ZstdCompressor.DecompressFrame(frame, 4096));
+        Assert.DoesNotContain("exceeds maximum", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("frame content size", ex.Message, StringComparison.Ordinal);
+
+        // A sufficient cap still round-trips, and a zero cap accepts only
+        // the empty frame.
+        Assert.Equal(1 << 20, ZstdCompressor.DecompressFrame(frame, 1 << 20).Length);
+        var empty = new ZstdCompressor().CompressBlock([]);
+        Assert.Empty(ZstdCompressor.DecompressFrame(empty, 0));
+        Assert.Throws<ZstdException>(() => ZstdCompressor.DecompressFrame(frame, 0));
+    }
+
+    [Fact]
     public void ZeroCapsAreRejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdDecoderOptions { MaxWindowSize = 0 });

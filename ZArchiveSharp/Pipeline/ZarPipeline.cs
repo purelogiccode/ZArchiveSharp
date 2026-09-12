@@ -36,16 +36,19 @@ public static class ZarPipeline
     {
         options ??= new ZarPipelineOptions();
         zarPath ??= DefaultZarPath(sourceDirectory);
+        // Validate and collect the source before resolving the output: an
+        // Overwrite policy must not delete the previous archive when the pack
+        // cannot even start (missing/unreadable source).
+        var source = new DirectoryPackSource(sourceDirectory, options.DeterministicOrder);
+        var entries = source.Collect(cancellationToken);
         var resolved = ZarPackEngine.ResolveOutputPath(zarPath, options.CollisionPolicy);
         if (resolved == null)
         {
             return null;
         }
 
-        var source = new DirectoryPackSource(sourceDirectory, options.DeterministicOrder);
-        var entries = source.Collect(cancellationToken);
-        ZarPackEngine.PackEntries(entries, sourceDirectory, resolved, options, progress, cancellationToken);
-        return resolved;
+        return ZarPackEngine.PackEntries(
+            entries, sourceDirectory, resolved, options, progress, cancellationToken, options.CollisionPolicy);
     }
 
     /// <summary>Packs an arbitrary <see cref="IZarPackSource"/> (directory tree, XISO walk, ...).</summary>
@@ -60,7 +63,8 @@ public static class ZarPipeline
         ArgumentNullException.ThrowIfNull(zarPath);
         options ??= new ZarPipelineOptions();
         var entries = source.Collect(cancellationToken);
-        ZarPackEngine.PackEntries(entries, source.DisplayPath, zarPath, options, progress, cancellationToken);
+        ZarPackEngine.PackEntries(
+            entries, source.DisplayPath, zarPath, options, progress, cancellationToken, options.CollisionPolicy);
     }
 
     /// <summary>
@@ -325,16 +329,28 @@ public static class ZarPipeline
 
         public void Report(ZarProgress value)
         {
-            // Re-base the item ratio into its 1/total share of the batch.
-            var filesTotal = Math.Max(1, value.FilesTotal);
-            var rebased = value with
-            {
-                FilesCompleted = (_completed() * filesTotal) + value.FilesCompleted,
-                FilesTotal = filesTotal * _total,
-            };
+            // Re-base both counters into the batch's 1/total share, with the
+            // completion snapshot taken under the same gate as the report so
+            // concurrent items cannot publish a stale (lower) completion.
+            // Scaling by the item's own totals keeps Ratio equal to
+            // (completed items + this item's fraction) / total even when
+            // items differ in size.
             lock (_gate)
             {
-                _inner.Report(rebased);
+                var completedNow = _completed();
+                var filesTotal = Math.Max(1, value.FilesTotal);
+                var bytesTotal = Math.Max(1, value.BytesTotal);
+                var rebasedFilesTotal = filesTotal * _total;
+                var rebasedBytesTotal = bytesTotal * _total;
+                _inner.Report(value with
+                {
+                    FilesCompleted = Math.Min(
+                        (completedNow * filesTotal) + Math.Max(0, value.FilesCompleted), rebasedFilesTotal),
+                    FilesTotal = rebasedFilesTotal,
+                    BytesCompleted = Math.Min(
+                        (completedNow * bytesTotal) + Math.Max(0, value.BytesCompleted), rebasedBytesTotal),
+                    BytesTotal = rebasedBytesTotal,
+                });
             }
         }
     }

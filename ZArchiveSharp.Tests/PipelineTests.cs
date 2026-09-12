@@ -129,6 +129,69 @@ public sealed class PipelineTests : IDisposable
     }
 
     [Fact]
+    public void PackBatch_Progress_RebasesBytesIntoItemShare()
+    {
+        var root = NewTempDir("pipe_batchprog");
+        var a = Directory.CreateDirectory(Path.Combine(root, "a")).FullName;
+        var b = Directory.CreateDirectory(Path.Combine(root, "b")).FullName;
+        File.WriteAllBytes(Path.Combine(a, "big.bin"), new byte[900_000]);
+        File.WriteAllBytes(Path.Combine(a, "small.bin"), new byte[100_000]);
+        File.WriteAllBytes(Path.Combine(b, "only.bin"), new byte[200_000]);
+
+        var collector = new Collector();
+        ZarPipeline.PackBatch([a, b], Path.Combine(root, "dest"),
+            new ZarPipelineOptions { MaxDegreeOfParallelism = 1 }, collector);
+
+        // The first item's byte counters must be re-based into its 1/2 share:
+        // item-local ratios (up to 0.9 here) would leak straight through.
+        var first = collector.Events
+            .Where(e => string.Equals(e.SourcePath, a, StringComparison.Ordinal) && e.BytesTotal > 0).ToList();
+        Assert.NotEmpty(first);
+        Assert.Contains(first, e => e.BytesCompleted > 0);
+        Assert.All(first, e => Assert.True(e.Ratio <= 0.5 + 1e-9, $"item ratio leaked: {e.Ratio}"));
+        Assert.Equal(1.0, collector.Events[^1].Ratio, 9);
+    }
+
+    [Fact]
+    public void Pack_Overwrite_MissingSource_KeepsExistingOutput()
+    {
+        var root = NewTempDir("pipe_overwrite");
+        var existing = Path.Combine(root, "out.zar");
+        File.WriteAllBytes(existing, "keep-me"u8.ToArray());
+
+        var options = new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Overwrite };
+        Assert.Throws<DirectoryNotFoundException>(() =>
+            ZarPipeline.Pack(Path.Combine(root, "missing"), existing, options));
+
+        // A source that cannot even be collected must not destroy the
+        // previous archive on the overwrite path.
+        Assert.Equal("keep-me"u8.ToArray(), File.ReadAllBytes(existing));
+    }
+
+    [Fact]
+    public void PackBatch_AutoRename_SameStemItems_AllSucceed()
+    {
+        var root = NewTempDir("pipe_autorename");
+        var dest = Path.Combine(root, "dest");
+        var sources = new List<string>();
+        for (var i = 0; i < 8; i++)
+        {
+            var dir = Directory.CreateDirectory(Path.Combine(root, $"s{i}", "x")).FullName;
+            File.WriteAllBytes(Path.Combine(dir, "f.bin"), new byte[100_000 + i]);
+            sources.Add(dir);
+        }
+
+        var results = ZarPipeline.PackBatch(sources, dest, new ZarPipelineOptions
+        {
+            CollisionPolicy = ZarCollisionPolicy.AutoRename,
+            MaxDegreeOfParallelism = 8,
+        });
+
+        Assert.All(results, r => Assert.Equal(ZarItemStatus.Completed, r.Status));
+        Assert.Equal(8, Directory.GetFiles(dest, "x*.zar").Length);
+    }
+
+    [Fact]
     public void Pack_MatchesTool_ByteIdentical()
     {
         var root = NewTempDir("pipe_tool");

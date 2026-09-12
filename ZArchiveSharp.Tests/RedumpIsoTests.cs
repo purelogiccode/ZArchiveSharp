@@ -308,6 +308,73 @@ public sealed class RedumpIsoTests
     }
 
     [Fact]
+    public void Redump_Iso_Check_WritesFrameChecksums()
+    {
+        var cli = FindCli();
+        if (cli is null || !CliSupportsIso(cli))
+        {
+            return;
+        }
+
+        var work = NewTempDir("redumpcheck");
+        try
+        {
+            var iso = Path.Combine(work, "game.redump.iso");
+            if (!TryCreateSparse(iso, RedumpLenType8))
+            {
+                return;
+            }
+
+            WriteMinimalXiso(iso, OffsetXgd3, "hello.txt", Payload());
+            var plain = Path.Combine(work, "plain.zar");
+            var checkedZar = Path.Combine(work, "checked.zar");
+            RunCli(cli, work, "--iso", iso, plain);
+            RunCli(cli, work, "--iso", iso, checkedZar, "--check");
+
+            var plainFrames = CountZstdFrames(plain);
+            var checkedFrames = CountZstdFrames(checkedZar);
+            Assert.True(plainFrames.Total > 0, "The ISO archive has no zstd frames to inspect.");
+            Assert.Equal(0, plainFrames.WithChecksum);
+            Assert.True(checkedFrames.Total > 0, "The --check archive has no zstd frames to inspect.");
+            Assert.Equal(checkedFrames.Total, checkedFrames.WithChecksum);
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best effort: temp cleanup must not fail the test.
+            }
+        }
+
+        return;
+
+        // Zstd frame descriptor bit 2 (0x04) is the content-checksum flag.
+        static (int Total, int WithChecksum) CountZstdFrames(string path)
+        {
+            var bytes = File.ReadAllBytes(path);
+            var total = 0;
+            var withChecksum = 0;
+            for (var i = 0; i + 6 <= bytes.Length; i++)
+            {
+                if (bytes[i] == 0x28 && bytes[i + 1] == 0xB5 && bytes[i + 2] == 0x2F && bytes[i + 3] == 0xFD)
+                {
+                    total++;
+                    if ((bytes[i + 4] & 0x04) != 0)
+                    {
+                        withChecksum++;
+                    }
+                }
+            }
+
+            return (total, withChecksum);
+        }
+    }
+
+    [Fact]
     public void Redump_Type5_WavePvd_ResolvesXgd2Offset()
     {
         var cli = FindCli();

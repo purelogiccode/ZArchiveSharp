@@ -208,6 +208,44 @@ public sealed class PolicyScopeTests
     }
 
     [Fact]
+    public void Batch_FailPolicy_Collision_ReturnsRefused()
+    {
+        var cli = RedumpIsoTests.FindCli();
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = RedumpIsoTests.NewTempDir("polbatchfail");
+        try
+        {
+            var inDir = Path.Combine(work, "in");
+            var src = Directory.CreateDirectory(Path.Combine(inDir, "game")).FullName;
+            File.WriteAllText(Path.Combine(src, "a.txt"), "policy scope");
+            var outDir = Path.Combine(work, "out");
+            Directory.CreateDirectory(outDir);
+            File.WriteAllBytes(Path.Combine(outDir, "game.zar"), "occupied"u8.ToArray());
+
+            var (started, exit, _, stderr) =
+                RedumpIsoTests.TryRunCli(cli, work, ["--batch", inDir, outDir]);
+            if (!started)
+            {
+                return;
+            }
+
+            // The documented batch collision refusal is -11, not the generic
+            // aggregate pack failure -13.
+            Assert.Equal(-11, exit);
+            Assert.Contains("already exists", stderr, StringComparison.Ordinal);
+            Assert.Equal("occupied"u8.ToArray(), File.ReadAllBytes(Path.Combine(outDir, "game.zar")));
+        }
+        finally
+        {
+            Cleanup(work);
+        }
+    }
+
+    [Fact]
     public void Batch_OverwritePolicy_ReplacesExisting()
     {
         var cli = RedumpIsoTests.FindCli();

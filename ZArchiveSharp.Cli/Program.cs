@@ -406,7 +406,7 @@ public static class Program
         // Mode 1: XISO → .zar
         if (isoPath != null)
         {
-            return PackIso(isoPath, outputPath, level, quiet, compressor, dictionary);
+            return PackIso(isoPath, outputPath, level, quiet, compressor, dictionary, checksum);
         }
 
         // Mode 2: Batch operations
@@ -645,7 +645,7 @@ public static class Program
     /// the failure threw).
     /// </summary>
     private static bool TryPackIso(string isoPath, string destZar, int level, bool quiet,
-        IZarBlockCompressor? compressor, ZstdDictionary? dictionary,
+        IZarBlockCompressor? compressor, ZstdDictionary? dictionary, bool checksum,
         IProgress<ZarProgress>? progress, out string? error, out Exception? errorException)
     {
         error = null;
@@ -670,9 +670,14 @@ public static class Program
         if (!quiet) CliLog.Out($"Converting XISO to ZAR: {isoPath} -> {destZar}");
 
         var comp = compressor;
-        if (comp == null && (level != 6 || dictionary != null))
+        if (comp == null && (level != 6 || dictionary != null || checksum))
         {
-            comp = new ZstdCompressor(new ZstdCompressionOptions { Level = level, Dictionary = dictionary });
+            comp = new ZstdCompressor(new ZstdCompressionOptions
+            {
+                Level = level,
+                Dictionary = dictionary,
+                ChecksumFlag = checksum,
+            });
         }
 
         try
@@ -699,7 +704,7 @@ public static class Program
     }
 
     private static int PackIso(string isoPath, string? zarPath, int level, bool quiet, IZarBlockCompressor? compressor,
-        ZstdDictionary? dictionary)
+        ZstdDictionary? dictionary, bool checksum)
     {
         if (!File.Exists(isoPath))
         {
@@ -731,7 +736,7 @@ public static class Program
             }
         });
 
-        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, progress,
+        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, checksum, progress,
                 out var error, out var errorException))
         {
             return 0;
@@ -836,7 +841,7 @@ public static class Program
 
             if (!quiet) CliLog.Out();
 
-            int ok = 0, fail = 0, skip = 0;
+            int ok = 0, fail = 0, skip = 0, collisionRefusals = 0;
             foreach (var r in results)
             {
                 if (r.Status == ZarItemStatus.Completed)
@@ -851,6 +856,11 @@ public static class Program
                 else
                 {
                     fail++;
+                    if (r.ErrorMessage?.StartsWith(ZarPackEngine.OutputExistsMessage, StringComparison.Ordinal) == true)
+                    {
+                        collisionRefusals++;
+                    }
+
                     CliLog.Err($"  Failed: {r.SourcePath} - {r.ErrorMessage}");
                 }
             }
@@ -862,7 +872,10 @@ public static class Program
                     : $"Batch complete: {ok} succeeded, {fail} failed, {skip} skipped.");
             }
 
-            return fail > 0 ? -13 : 0;
+            // A batch whose only failures are collision refusals reports the
+            // documented -11 (Refused); any other failure stays the aggregate
+            // pack failure, -13.
+            return fail > 0 ? (collisionRefusals == fail ? ZarchiveCli.Refused : -13) : 0;
         }
         catch (Exception ex)
         {
@@ -906,7 +919,7 @@ public static class Program
                 return new ZarItemResult(iso, dest, ZarItemStatus.Skipped, "Output already exists.");
             }
 
-            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, progress,
+            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, options.Checksum, progress,
                     out var error, out _))
             {
                 if (options.DeleteSourceOnSuccess)
@@ -1143,7 +1156,7 @@ public static class Program
         CliLog.Out("                        never stored; --no-compress ignores it)");
         CliLog.Out("  -c, --stdout          Stream to stdout (only with 'zar zstd'; inside");
         CliLog.Out("                        'zar zstd', -c means --compress instead)");
-        CliLog.Out("      --check           Write content checksums (pack/zstd)");
+        CliLog.Out("      --check           Write content checksums (pack/--iso/zstd)");
         CliLog.Out("      --no-check        Do not write checksums (default; last wins)");
         CliLog.Out("  -j, --jobs <N>        Parallel workers (default: 4)");
         CliLog.Out("  -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename");

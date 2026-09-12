@@ -186,17 +186,30 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     }
 
     /// <summary>Thin wrapper over the existing decoder ( Phase-0 harness convenience).</summary>
+    /// <remarks>
+    /// <paramref name="maxSize"/> bounds the decode itself: the decoder's
+    /// <see cref="ZstdDecoderOptions.MaxFrameContentSize"/> is set to it, so
+    /// oversized frames are rejected while decoding instead of after a full
+    /// (potentially huge) materialization.
+    /// </remarks>
     public static byte[] DecompressFrame(ReadOnlySpan<byte> src, int maxSize)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(maxSize);
         var copy = src.ToArray();
-        var full = ZstdDecompressor.Decompress(copy);
-        if (full.Length > maxSize)
+        if (maxSize == 0)
         {
-            throw new ZstdException("Decompressed size exceeds maximum.");
+            // Zero exactly: decode under the smallest positive cap and
+            // reject any content (an empty frame still passes).
+            var empty = ZstdDecompressor.Decompress(copy, new ZstdDecoderOptions { MaxFrameContentSize = 1 });
+            if (empty.Length != 0)
+            {
+                throw new ZstdException("Decompressed size exceeds maximum.");
+            }
+
+            return empty;
         }
 
-        return full;
+        return ZstdDecompressor.Decompress(copy, new ZstdDecoderOptions { MaxFrameContentSize = (ulong)maxSize });
     }
 
     // ------------------------------------------------------------------

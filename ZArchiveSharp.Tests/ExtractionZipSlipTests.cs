@@ -50,7 +50,7 @@ public sealed class ExtractionZipSlipTests : IDisposable
         return ms.ToArray();
     }
 
-    private string WriteArchive(string root, byte[] bytes)
+    private static string WriteArchive(string root, byte[] bytes)
     {
         var path = Path.Combine(root, "crafted.zar");
         File.WriteAllBytes(path, bytes);

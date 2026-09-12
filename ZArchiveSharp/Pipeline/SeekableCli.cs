@@ -1127,28 +1127,40 @@ public static class SeekableCli
             return ZarchiveCli.ExtractionFailed;
         }
 
-        var start = job.FromFrame.HasValue ? checked((int)job.FromFrame.Value) : 0;
+        int start;
         int end;
-        var bounded = job.ToFrame.HasValue || job.ToLastFrame || job.NumFrames.HasValue;
-        if (job.NumFrames.HasValue)
+        try
         {
-            var wide = (long)start + (job.NumFrames.Value - 1);
-            if (wide > int.MaxValue)
+            start = job.FromFrame.HasValue ? checked((int)job.FromFrame.Value) : 0;
+            if (job.NumFrames.HasValue)
             {
-                error("Error: frame range too large.");
-                return ZarchiveCli.ExtractionFailed;
-            }
+                var wide = (long)start + (job.NumFrames.Value - 1);
+                if (wide > int.MaxValue)
+                {
+                    error("Error: frame range too large.");
+                    return ZarchiveCli.ExtractionFailed;
+                }
 
-            end = (int)wide;
+                end = (int)wide;
+            }
+            else if (job.ToLastFrame || !job.ToFrame.HasValue)
+            {
+                end = table.FrameCount - 1;
+            }
+            else
+            {
+                end = checked((int)job.ToFrame!.Value);
+            }
         }
-        else if (job.ToLastFrame || !job.ToFrame.HasValue)
+        catch (OverflowException)
         {
-            end = table.FrameCount - 1;
+            // Same contract as the decompress path (uint parser values that
+            // do not fit an int must not surface as an unhandled crash).
+            error("Error: frame index too large.");
+            return ZarchiveCli.ExtractionFailed;
         }
-        else
-        {
-            end = checked((int)job.ToFrame!.Value);
-        }
+
+        var bounded = job.ToFrame.HasValue || job.ToLastFrame || job.NumFrames.HasValue;
 
         if (start > end)
         {

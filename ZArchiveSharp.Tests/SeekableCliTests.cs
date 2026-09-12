@@ -831,4 +831,20 @@ public sealed class SeekableCliTests : IDisposable
         }, new MemoryStream(), new MemoryStream());
         Assert.Equal(-1, usage);
     }
+
+    [Fact]
+    public async Task List_HugeFrameIndex_FailsWithoutCrash()
+    {
+        var dir = NewTempDir("seeklistoverflow");
+        var packed = await PackThreeFramesAsync(dir);
+
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        {
+            Command = SeekableCli.SeekableCommand.List,
+            InputPath = packed,
+            FromFrame = uint.MaxValue,
+        }, new MemoryStream(), new MemoryStream());
+        Assert.Equal(-12, code);
+        Assert.Contains(_errors, e => e.Contains("too large", StringComparison.OrdinalIgnoreCase));
+    }
 }
