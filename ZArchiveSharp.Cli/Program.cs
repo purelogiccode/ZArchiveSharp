@@ -23,6 +23,7 @@ public static class Program
         string? isoPath = null;
         string? inputPath = null;
         string? outputPath = null;
+        var outputExplicit = false;
         var jobs = 4;
         var policy = "fail";
         var policyExplicit = false;
@@ -52,7 +53,12 @@ public static class Program
                     batch = true;
                     break;
                 case "--output" or "-o":
-                    if (i + 1 < args.Length) outputPath = args[++i];
+                    if (i + 1 < args.Length)
+                    {
+                        outputPath = args[++i];
+                        outputExplicit = true;
+                    }
+
                     break;
                 case "--jobs" or "-j":
                     if (i + 1 < args.Length && int.TryParse(args[++i],
@@ -143,8 +149,64 @@ public static class Program
             }
         }
 
-        if (positional.Count > 0 && inputPath == null) inputPath = positional[0];
-        if (positional.Count > 1 && outputPath == null) outputPath = positional[1];
+        // Positional contract (zarchive.exe parity + -o/--iso extensions):
+        // oracle args are exactly `input [output]`. An explicit -o already
+        // occupies the output slot, so at most one positional (the input)
+        // remains; --iso takes no input positional (its input is the flag
+        // value), so at most one positional (the output) remains there.
+        // Anything beyond is a usage error, never a silent drop.
+        if (isoPath is not null)
+        {
+            if (outputExplicit)
+            {
+                if (positional.Count > 0)
+                {
+                    Console.WriteLine("Too many paths specified");
+                    return ZarchiveCli.BadUsage;
+                }
+            }
+            else
+            {
+                if (positional.Count > 1)
+                {
+                    Console.WriteLine("Too many paths specified");
+                    return ZarchiveCli.BadUsage;
+                }
+
+                if (positional.Count == 1)
+                {
+                    outputPath = positional[0];
+                }
+            }
+        }
+        else
+        {
+            if (outputExplicit)
+            {
+                if (positional.Count > 1)
+                {
+                    Console.WriteLine("Too many paths specified");
+                    return ZarchiveCli.BadUsage;
+                }
+
+                if (positional.Count > 0 && inputPath == null)
+                {
+                    inputPath = positional[0];
+                }
+            }
+            else
+            {
+                if (positional.Count > 0 && inputPath == null)
+                {
+                    inputPath = positional[0];
+                }
+
+                if (positional.Count > 1 && outputPath == null)
+                {
+                    outputPath = positional[1];
+                }
+            }
+        }
 
         // value for every path, then let each non-batch consumer below reject
         // an explicit non-fail policy rather than silently ignoring it.
@@ -206,12 +268,12 @@ public static class Program
             return 0;
         }
 
-        // zarchive.exe parity (main.cpp): the shared command args list is
+        // Final guard for the plain pack/extract/batch shape (no -o/--iso):
         // exactly `input_path [output_path]`; a third positional is a usage
-        // error, never a silently ignored extra. Subcommands above already
-        // consumed their own positionals, so this only guards the
-        // pack/extract/batch paths below (same message and stdout channel
-        // as the oracle and ZarchiveCli).
+        // error, never a silently ignored extra. The -o/--iso shapes above
+        // already enforce their tighter (≤1 / 0) limits. Subcommands above
+        // already consumed their own positionals.
+        // (same message and stdout channel as the oracle and ZarchiveCli).
         if (positional.Count > 2)
         {
             Console.WriteLine("Too many paths specified");

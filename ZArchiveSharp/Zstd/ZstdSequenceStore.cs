@@ -259,17 +259,51 @@ public sealed class ZstdSequenceStore
     internal static ZstdSequenceStore Rent(int maxSourceSize)
     {
         var need = Math.Max(1, maxSourceSize);
+        List<ZstdSequenceStore>? misses = null;
         lock (PoolGate)
         {
             while (Pool.Count != 0)
             {
                 var candidate = Pool.Pop();
-                // First fit wins; misses are dropped for the GC (sizes on a
-                // given path are uniform, so the pool converges in a block or
-                // two, like ArrayPool bucketing).
                 if (candidate._literals.Length >= need)
                 {
+                    // Restore the too-small misses so mixed block sizes do
+                    // not drain the pool (ArrayPool-style bucketing).
+                    if (misses is not null)
+                    {
+                        foreach (var miss in misses)
+                        {
+                            if (Pool.Count < PoolCapacity)
+                            {
+                                Pool.Push(miss);
+                            }
+                            else
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    candidate.Reset();
                     return candidate;
+                }
+
+                (misses ??= []).Add(candidate);
+            }
+
+            // No fit: keep the misses queued for their own size class.
+            if (misses is not null)
+            {
+                foreach (var miss in misses)
+                {
+                    if (Pool.Count < PoolCapacity)
+                    {
+                        Pool.Push(miss);
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
             }
         }

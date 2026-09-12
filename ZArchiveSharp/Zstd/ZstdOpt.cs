@@ -259,7 +259,9 @@ internal static class ZstdOpt
             // throwaway pass runs over temp tables (discarded, like the
             // native window-shift invalidation) sharing the frame statistics;
             // the real pass below refills the still-empty persistent tables.
-            var tmpStore = ZstdSequenceStore.Rent(blockEnd);
+            // Size by the block length, not the absolute end (which includes
+            // any dictionary prefix / prior blocks).
+            var tmpStore = ZstdSequenceStore.Rent(blockEnd - blockStart);
             var tmpRep = (uint[])repeatOffsets.Clone();
             var tmpNext = 0;
             var tmpTables = RentTables(table);

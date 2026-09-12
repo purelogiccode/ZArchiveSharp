@@ -53,6 +53,12 @@ public sealed class PackExtractParityTests : IDisposable
     [MemberData(nameof(FixtureNames))]
     public void PackExplicit_RoundTripAndCrossInterop(string fixtureName)
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            _output.WriteLine("Skipping battle: oracle not found (References/zarchive.exe or ZAR_ORACLE_EXE).");
+            return;
+        }
+
         var root = NewTempDir($"pack_{fixtureName}");
         var (oracleSrc, mineSrc) = BattleFixtures.CreateTwinCopies(root, fixtureName);
         var oracleZar = Path.Combine(root, "oracle.zar");
@@ -98,6 +104,12 @@ public sealed class PackExtractParityTests : IDisposable
     [MemberData(nameof(FixtureNames))]
     public void PackDefaultOutput_BothSucceed(string fixtureName)
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            _output.WriteLine("Skipping battle: oracle not found (References/zarchive.exe or ZAR_ORACLE_EXE).");
+            return;
+        }
+
         var root = NewTempDir($"defpack_{fixtureName}");
         var (oracleSrc, mineSrc) = BattleFixtures.CreateTwinCopies(root, fixtureName);
 
@@ -133,6 +145,12 @@ public sealed class PackExtractParityTests : IDisposable
     [Fact]
     public void ExtractDefaultOutput_BothSucceed()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            _output.WriteLine("Skipping battle: oracle not found (References/zarchive.exe or ZAR_ORACLE_EXE).");
+            return;
+        }
+
         var root = NewTempDir("defext");
         var src = Path.Combine(root, "game");
         Directory.CreateDirectory(src);
@@ -161,6 +179,12 @@ public sealed class PackExtractParityTests : IDisposable
     [Fact]
     public void PackChatter_AddingLinesMatch()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            _output.WriteLine("Skipping battle: oracle not found (References/zarchive.exe or ZAR_ORACLE_EXE).");
+            return;
+        }
+
         var root = NewTempDir("packchat");
         var (oracleSrc, mineSrc) = BattleFixtures.CreateTwinCopies(root, "nested");
 
@@ -185,6 +209,12 @@ public sealed class PackExtractParityTests : IDisposable
     [Fact]
     public void ExtractChatter_NestedLeadingSlashDrift()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            _output.WriteLine("Skipping battle: oracle not found (References/zarchive.exe or ZAR_ORACLE_EXE).");
+            return;
+        }
+
         var root = NewTempDir("extchat");
         var src = Path.Combine(root, "game");
         Directory.CreateDirectory(src);

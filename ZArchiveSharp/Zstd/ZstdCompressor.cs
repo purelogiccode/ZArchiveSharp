@@ -472,17 +472,21 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             or ZstdStrategy.Greedy or ZstdStrategy.Lazy or ZstdStrategy.Lazy2 or ZstdStrategy.BtLazy2
             or ZstdStrategy.BtOpt or ZstdStrategy.BtUltra or ZstdStrategy.BtUltra2;
         var contentOffset = prefix?.Length ?? 0;
+        var logicalLength = contentOffset + content.Length;
         // Pooled frame copy (fully overwritten below before any read, so no
         // clearing needed; may be larger than requested — all consumers use
-        // explicit block bounds, never the array length).
-        var frame = stateful ? ArrayPool<byte>.Shared.Rent(contentOffset + content.Length) : [];
-        if (stateful)
+        // explicit block bounds and the logical length, never the array length).
+        // Zero-length frames use the shared empty marker (never returned).
+        var frame = stateful && logicalLength > 0
+            ? ArrayPool<byte>.Shared.Rent(logicalLength)
+            : [];
+        if (stateful && logicalLength > 0)
         {
             prefix?.CopyTo(frame, 0);
-            content.CopyTo(frame.AsSpan(contentOffset));
+            content.CopyTo(frame.AsSpan(contentOffset, content.Length));
         }
 
-        var state = stateful ? new ZstdFrameState(frame, level, prm) : null;
+        var state = stateful ? new ZstdFrameState(frame, logicalLength, level, prm) : null;
         try
         {
             return EncodeFrameBlocks(
@@ -492,7 +496,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         finally
         {
             state?.ReleaseTables();
-            if (stateful)
+            if (stateful && logicalLength > 0)
             {
                 ArrayPool<byte>.Shared.Return(frame);
             }
@@ -543,7 +547,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         // full block needs verified savings (ZSTD_compress_frameChunk).
         long savings = 0;
         var frameSpan = state is not null
-            ? new ReadOnlySpan<byte>(frame)
+            ? state.Frame
             : content;
         do
         {

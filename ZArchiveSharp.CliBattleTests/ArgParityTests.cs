@@ -39,6 +39,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void NoArgs_BothSucceed_HelpTextDiffersByDesign()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return; // clean clone without References/zarchive.exe: nothing to battle.
+        }
+
         var oracle = CliRunner.RunOracle();
         var mine = CliRunner.RunMine();
 
@@ -55,6 +60,11 @@ public sealed class ArgParityTests : IDisposable
     [InlineData(4)]
     public void TooManyPaths_BothFailUsage_SameMessage(int pathCount)
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         // Shared args list is exactly `input_path [output_path]` on both
         // binaries: any extra positional is a usage error with the
         // oracle-identical message on stdout.
@@ -71,6 +81,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void MissingInput_BothBadUsage()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir("missing");
         var missing = Path.Combine(root, "nope");
 
@@ -86,6 +101,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void PackRefusesExisting_BothRefused()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir("refuse");
         var src = Path.Combine(root, "game");
         Directory.CreateDirectory(src);
@@ -110,6 +130,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void PackOutputIsDirectory_BothNotFound()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir("packisdir");
         var src = Path.Combine(root, "game");
         Directory.CreateDirectory(src);
@@ -128,6 +153,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void ExtractOutputIsFile_BothOutputNotDirectory()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir("extisfile");
         var src = Path.Combine(root, "game");
         Directory.CreateDirectory(src);
@@ -151,6 +181,11 @@ public sealed class ArgParityTests : IDisposable
     [Fact]
     public void GarbageExtract_BothRefused_KnownPeriodDrift()
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir("garbage");
         var garbage = Path.Combine(root, "garbage.zar");
         File.WriteAllBytes(garbage, [0xDE, 0xAD, 0xBE, 0xEF, 1, 2, 3, 4]);

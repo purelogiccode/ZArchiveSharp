@@ -459,8 +459,8 @@ public sealed class ZArchiveWriter : IDisposable
             return;
         }
 
-        _workers ??= CreateWorkers(Math.Min(_blockWorkers, _stagedBlocks.Count));
-        var workers = _workers;
+        EnsureWorkers(Math.Min(_blockWorkers, _stagedBlocks.Count));
+        var workers = _workers!;
         var results = new int[_stagedBlocks.Count];
         // NOTE: destination buffers are per BLOCK, never per worker: a worker
         // compresses several blocks per flush and must not overwrite an
@@ -494,9 +494,30 @@ public sealed class ZArchiveWriter : IDisposable
             {
                 EmitBlock(_stagedBlocks[i], ZArchiveCommon.CompressedBlockSize, dests[i], results[i]);
                 ArrayPool<byte>.Shared.Return(_stagedBlocks[i]);
+                // Detach immediately so a later EmitBlock fault cannot
+                // double-return an already-returned buffer via Dispose.
+                // The emit loop below removes the returned prefix on fault.
+                _stagedBlocks[i] = null!;
             }
 
             _stagedBlocks.Clear();
+        }
+        catch
+        {
+            // Drop the already-returned prefix (nulled above); the faulting
+            // entry and later ones stay queued for Dispose to return once.
+            var emitted = 0;
+            while (emitted < _stagedBlocks.Count && _stagedBlocks[emitted] is null)
+            {
+                emitted++;
+            }
+
+            if (emitted > 0)
+            {
+                _stagedBlocks.RemoveRange(0, emitted);
+            }
+
+            throw;
         }
         finally
         {
@@ -507,6 +528,25 @@ public sealed class ZArchiveWriter : IDisposable
                     ArrayPool<byte>.Shared.Return(dest);
                 }
             }
+        }
+    }
+
+    private void EnsureWorkers(int needed)
+    {
+        if (_compressorFactory is null)
+        {
+            return;
+        }
+
+        if (_workers is null)
+        {
+            _workers = CreateWorkers(Math.Max(1, needed));
+            return;
+        }
+
+        while (_workers.Count < needed)
+        {
+            _workers.Add(new BlockWorker { Compressor = _compressorFactory() });
         }
     }
 
@@ -780,7 +820,11 @@ public sealed class ZArchiveWriter : IDisposable
         _disposed = true;
         foreach (var staged in _stagedBlocks)
         {
-            ArrayPool<byte>.Shared.Return(staged);
+            // Null marks an already-returned prefix entry (emit fault path).
+            if (staged is not null)
+            {
+                ArrayPool<byte>.Shared.Return(staged);
+            }
         }
 
         _stagedBlocks.Clear();

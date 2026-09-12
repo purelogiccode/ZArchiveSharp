@@ -63,6 +63,11 @@ public sealed class SharedArgsMatrixTests : IDisposable
     [MemberData(nameof(Scenarios))]
     public void SharedArgs_BothAgree(string scenario)
     {
+        if (!BinaryLocator.OracleAvailable())
+        {
+            return;
+        }
+
         var root = NewTempDir($"matrix_{scenario}");
         var oracleHome = Path.Combine(root, "oracle");
         var mineHome = Path.Combine(root, "mine");

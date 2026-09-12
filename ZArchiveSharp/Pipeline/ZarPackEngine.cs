@@ -2,6 +2,7 @@ namespace ZArchiveSharp.Pipeline;
 
 using System.Buffers;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 
 /// <summary>
 /// Shared pack/extract engine behind <see cref="ZarPipeline"/>,
@@ -396,18 +397,29 @@ public static class ZarPackEngine
                     var wave = (int)Math.Min(touched, (ulong)waveSize);
                     var waveFirst = block;
                     Exception? failure = null;
-                    Parallel.For(0, wave,
-                        new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
-                        j =>
-                        {
-                            if (!archive.TryDecodeBlock(waveFirst + (ulong)j, slots[j]))
+                    try
+                    {
+                        Parallel.For(0, wave,
+                            new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
+                            j =>
                             {
-                                lock (slots)
+                                if (!archive.TryDecodeBlock(waveFirst + (ulong)j, slots[j]))
                                 {
-                                    failure ??= new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                                    lock (slots)
+                                    {
+                                        failure ??= new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                                    }
                                 }
-                            }
-                        });
+                            });
+                    }
+                    catch (AggregateException ex) when (ex.InnerExceptions.Count != 0)
+                    {
+                        // Same unwrapped contract as the parallel pack path:
+                        // callers map exact types (OCE stays raw, corruption
+                        // stays InvalidOperationException). IsBatchFault only
+                        // understands the inner type.
+                        ExceptionDispatchInfo.Throw(ex.InnerExceptions[0]);
+                    }
                     if (failure is not null)
                     {
                         throw failure;

@@ -28,21 +28,53 @@ public sealed record CliResult(int ExitCode, string StdOut, string StdErr)
 /// </summary>
 public static class BinaryLocator
 {
-    public static string OracleExe()
+    /// <summary>True when the reference oracle binary is present.</summary>
+    public static bool OracleAvailable()
+    {
+        return TryOracleExe(out _);
+    }
+
+    /// <summary>Tries to locate the oracle without throwing (clean-clone safe).</summary>
+    public static bool TryOracleExe(out string path)
     {
         var env = Environment.GetEnvironmentVariable("ZAR_ORACLE_EXE");
         if (!string.IsNullOrWhiteSpace(env) && File.Exists(env))
         {
-            return env;
+            path = env;
+            return true;
+        }
+
+        string? root = null;
+        try
+        {
+            root = FindRepoRoot();
+        }
+        catch (DirectoryNotFoundException)
+        {
+            path = string.Empty;
+            return false;
+        }
+
+        var candidate = Path.Combine(root, "References", "zarchive.exe");
+        if (File.Exists(candidate))
+        {
+            path = candidate;
+            return true;
+        }
+
+        path = string.Empty;
+        return false;
+    }
+
+    public static string OracleExe()
+    {
+        if (TryOracleExe(out var found))
+        {
+            return found;
         }
 
         var root = FindRepoRoot();
         var candidate = Path.Combine(root, "References", "zarchive.exe");
-        if (File.Exists(candidate))
-        {
-            return candidate;
-        }
-
         throw new FileNotFoundException(
             $"Oracle binary not found at '{candidate}'. " +
             "Set ZAR_ORACLE_EXE to the reference zarchive.exe path.");

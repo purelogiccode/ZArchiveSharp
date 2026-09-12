@@ -246,4 +246,203 @@ public sealed class ParallelBlockTests : IDisposable
             return -1; // store raw
         }
     }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(22)]
+    public void Pack_ParallelIsByteIdentical_UncoveredLevels(int level)
+    {
+        var root = NewTempDir($"parlevel_{level}");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        PopulateSpanning(src);
+
+        var seqZar = Path.Combine(root, "seq.zar");
+        var parZar = Path.Combine(root, "par.zar");
+        ZarPipeline.Pack(src, seqZar, new ZarPipelineOptions
+            { Level = level, MaxDegreeOfParallelism = 1 });
+        ZarPipeline.Pack(src, parZar, new ZarPipelineOptions
+            { Level = level, MaxDegreeOfParallelism = 8 });
+
+        Assert.True(File.ReadAllBytes(seqZar).SequenceEqual(File.ReadAllBytes(parZar)),
+            $"level {level}: parallel pack bytes differ.");
+    }
+
+    [Fact]
+    public void Pack_MultiWave_ParallelIsByteIdentical()
+    {
+        // >2 MiB forces a second parallel wave (waveSize 32 blocks at DOP 8)
+        // exercising the block+=wave / skip=0 continuation.
+        var root = NewTempDir("parmultiwave");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        var rng = new Random(9871);
+        var big = new byte[(2 * 1024 * 1024) + (512 * 1024) + 13];
+        rng.NextBytes(big);
+        File.WriteAllBytes(Path.Combine(src, "wave.bin"), big);
+        File.WriteAllText(Path.Combine(src, "note.txt"), "wave boundary\n");
+
+        var seqZar = Path.Combine(root, "seq.zar");
+        var parZar = Path.Combine(root, "par.zar");
+        ZarPipeline.Pack(src, seqZar, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 1 });
+        ZarPipeline.Pack(src, parZar, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 8 });
+
+        Assert.True(File.ReadAllBytes(seqZar).SequenceEqual(File.ReadAllBytes(parZar)),
+            "Multi-wave parallel pack bytes differ.");
+
+        var outDir = Path.Combine(root, "out");
+        ZarPipeline.Extract(parZar, outDir, new ZarPipelineOptions { MaxDegreeOfParallelism = 8 });
+        AssertTreesEqual(src, outDir);
+    }
+
+    [Fact]
+    public void Pack_ParallelTwice_IsDeterministic()
+    {
+        // Pool reuse must not leak garbage into bytes: two parallel packs
+        // in the same process must be identical (and match sequential).
+        var root = NewTempDir("pardeterminism");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        PopulateSpanning(src);
+
+        var first = Path.Combine(root, "first.zar");
+        var second = Path.Combine(root, "second.zar");
+        var seq = Path.Combine(root, "seq.zar");
+        ZarPipeline.Pack(src, first, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 8 });
+        ZarPipeline.Pack(src, second, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 8 });
+        ZarPipeline.Pack(src, seq, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 1 });
+
+        Assert.True(File.ReadAllBytes(first).SequenceEqual(File.ReadAllBytes(second)),
+            "Two parallel packs of the same tree differ (pool reuse leak).");
+        Assert.True(File.ReadAllBytes(seq).SequenceEqual(File.ReadAllBytes(first)),
+            "Parallel pack differs from sequential.");
+    }
+
+    [Fact]
+    public void Extract_ParallelCorruptTail_ThrowsInvalidOperationNotAggregate()
+    {
+        // Second-wave corruption: open still succeeds (footer intact) so the
+        // failure must surface from the parallel decode path with the
+        // sequential-path contract, never a raw AggregateException.
+        var root = NewTempDir("partail");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        var rng = new Random(4242);
+        var big = new byte[(2 * 1024 * 1024) + (512 * 1024) + 13];
+        rng.NextBytes(big);
+        File.WriteAllBytes(Path.Combine(src, "wave.bin"), big);
+
+        var zar = Path.Combine(root, "good.zar");
+        ZarPipeline.Pack(src, zar, new ZarPipelineOptions { Level = 6, MaxDegreeOfParallelism = 1 });
+
+        var bytes = File.ReadAllBytes(zar);
+        var broken = 0;
+        var halfway = bytes.Length / 2;
+        for (var i = halfway; i + 4 <= bytes.Length; i++)
+        {
+            if (bytes[i] == 0x28 && bytes[i + 1] == 0xB5 && bytes[i + 2] == 0x2F && bytes[i + 3] == 0xFD)
+            {
+                bytes[i] ^= 0xFF;
+                broken++;
+                break;
+            }
+        }
+
+        Assert.True(broken > 0, "Fixture produced no second-half compressed frame to break.");
+        var badZar = Path.Combine(root, "bad.zar");
+        File.WriteAllBytes(badZar, bytes);
+
+        var ex = Assert.ThrowsAny<Exception>(() =>
+            ZarPipeline.Extract(badZar, Path.Combine(root, "out"),
+                new ZarPipelineOptions { MaxDegreeOfParallelism = 8 }));
+        Assert.IsNotType<AggregateException>(ex);
+        Assert.IsType<InvalidOperationException>(ex);
+        Assert.Contains("Extraction failed", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Pack_FaultMidEmit_PoolStaysUsable()
+    {
+        // A fault during the ordered emit must not double-return staged
+        // buffers: a later pack in the same process must still round-trip.
+        var root = NewTempDir("parfault");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        PopulateSpanning(src);
+
+        // Direct fault injection through a throwing output: the emit path
+        // must not corrupt the shared pools for later packs.
+        var failStream = new FailingWriteStream(failAfterBytes: 200_000);
+        try
+        {
+            using var failWriter = new ZArchiveWriter(
+                failStream,
+                compressor: null,
+                maxDegreeOfParallelism: 4,
+                compressorFactory: () => new Zstd.ZstdCompressor());
+            foreach (var file in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(src, file).Replace('\\', '/');
+                var dir = Path.GetDirectoryName(rel)?.Replace('\\', '/');
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    failWriter.MakeDir(dir, recursive: true);
+                }
+
+                if (!failWriter.StartNewFile(rel))
+                {
+                    throw new InvalidOperationException($"Cannot create {rel}.");
+                }
+
+                failWriter.AppendData(File.ReadAllBytes(file));
+            }
+
+            Assert.Throws<IOException>(() => failWriter.Finalize());
+        }
+        catch (IOException)
+        {
+            // Expected: the failing sink threw mid-emit.
+        }
+
+        var zar = Path.Combine(root, "good.zar");
+        ZarPipeline.Pack(src, zar, new ZarPipelineOptions
+            { Level = 6, MaxDegreeOfParallelism = 4 });
+        var outDir = Path.Combine(root, "out");
+        ZarPipeline.Extract(zar, outDir, new ZarPipelineOptions { MaxDegreeOfParallelism = 4 });
+        AssertTreesEqual(src, outDir);
+    }
+
+    private sealed class FailingWriteStream : MemoryStream
+    {
+        private long _written;
+        private readonly long _failAfterBytes;
+
+        public FailingWriteStream(long failAfterBytes)
+        {
+            _failAfterBytes = failAfterBytes;
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            _written += count;
+            if (_written > _failAfterBytes)
+            {
+                throw new IOException("Simulated output fault.");
+            }
+
+            base.Write(buffer, offset, count);
+        }
+
+        public override void Write(ReadOnlySpan<byte> buffer)
+        {
+            _written += buffer.Length;
+            if (_written > _failAfterBytes)
+            {
+                throw new IOException("Simulated output fault.");
+            }
+
+            base.Write(buffer);
+        }
+    }
 }

@@ -24,6 +24,7 @@ namespace ZArchiveSharp.Zstd;
 internal sealed class ZstdFrameState
 {
     private readonly byte[] _frame;
+    private readonly int _length;
 
     private uint[]? _fastHash;
     private uint[]? _dfastLong;
@@ -38,14 +39,27 @@ internal sealed class ZstdFrameState
     private ZstdEntropyState? _stagedEntropy;
 
     /// <summary>Creates frame state over a private copy of the input.</summary>
-    public ZstdFrameState(byte[] frame, int level, ZstdCompressionParameters prm)
+    /// <param name="frame">Pooled backing array (may exceed <paramref name="length"/>).</param>
+    /// <param name="length">Logical frame length; only [0, length) is readable.</param>
+    /// <param name="level">Compression level (1..22).</param>
+    /// <param name="prm">Frame-level parameter row.</param>
+    public ZstdFrameState(byte[] frame, int length, int level, ZstdCompressionParameters prm)
     {
         ArgumentNullException.ThrowIfNull(frame);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(length, frame.Length);
         ArgumentOutOfRangeException.ThrowIfLessThan(level, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(level, 22);
         _frame = frame;
+        _length = length;
         Level = level;
         Prm = prm;
+    }
+
+    /// <summary>Creates frame state over an exactly-sized copy of the input.</summary>
+    public ZstdFrameState(byte[] frame, int level, ZstdCompressionParameters prm)
+        : this(frame, frame?.Length ?? 0, level, prm)
+    {
     }
 
     /// <summary>Compression level (1..22).</summary>
@@ -60,8 +74,8 @@ internal sealed class ZstdFrameState
     /// </summary>
     public int NextToUpdate;
 
-    /// <summary>Full frame bytes (absolute indexing).</summary>
-    public ReadOnlySpan<byte> Frame => _frame;
+    /// <summary>Full frame bytes (absolute indexing, logical length only).</summary>
+    public ReadOnlySpan<byte> Frame => new(_frame, 0, _length);
 
     /// <summary>
     /// Parses <c>[blockStart, blockEnd)</c> into <paramref name="store"/>,
@@ -75,7 +89,7 @@ internal sealed class ZstdFrameState
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(repeatOffsets);
-        if (blockEnd < blockStart || blockStart < 0 || blockEnd > _frame.Length)
+        if (blockEnd < blockStart || blockStart < 0 || blockEnd > _length)
         {
             throw new ArgumentOutOfRangeException(nameof(blockStart));
         }
