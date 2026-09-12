@@ -22,9 +22,24 @@ public static class Program
             .WriteTo.Sink(new CliConsoleSink())
             .WriteTo.Sink(bugSink, LogEventLevel.Warning)
             .CreateLogger();
-        UsageTracker.TrackLaunch();
-        var updateCheck = UpdateChecker.Begin();
         var quiet = Array.Exists(args, static arg => arg is "-q" or "--quiet");
+        var informational = IsInformationalLaunch(args);
+        if (HasOptionBeforeTerminator(args, "--no-telemetry"))
+        {
+            BugReportSink.DisableTelemetry();
+        }
+
+        // Usage stats and the update check are opt-out telemetry:
+        // --no-telemetry and ZAR_BUG_REPORT=off disable every outbound call,
+        // and --help/--version launches never phone home.
+        if (!informational)
+        {
+            UsageTracker.TrackLaunch();
+        }
+
+        var updateCheck = informational
+            ? Task.FromResult<UpdateChecker.ReleaseInfo?>(null)
+            : UpdateChecker.Begin();
         try
         {
             return Run(args);
@@ -208,13 +223,33 @@ public static class Program
                 case "--no-compress":
                     noCompress = true;
                     break;
+                case "--no-telemetry":
+                    // Applied process-wide in Main, before any telemetry
+                    // starts; accepted here so it is not a usage error.
+                    break;
                 case "--help" or "-h":
                     helpRequested = true;
                     break;
                 case "--version" or "-v":
                     CliLog.Out($"zar {GetVersion()}");
                     return 0;
+                case "--":
+                    // End of options: everything after is positional, so
+                    // paths that begin with '-' stay reachable.
+                    positional.AddRange(args[(i + 1)..]);
+                    i = args.Length;
+                    break;
                 default:
+                    // Unknown options are usage errors for the plain
+                    // pack/extract shape instead of silently becoming paths.
+                    // After a zstd/seekable token they are forwarded to that
+                    // subcommand's own parser (which owns its option set).
+                    if (args[i].StartsWith('-') && args[i].Length > 1 && !InSubcommandArguments(positional))
+                    {
+                        CliLog.Err($"Error: unknown option '{args[i]}'.");
+                        return ZarchiveCli.BadUsage;
+                    }
+
                     positional.Add(args[i]);
                     break;
             }
@@ -377,7 +412,7 @@ public static class Program
 
         if (stdoutFlag)
         {
-            CliLog.Err("Error: --stdout is only supported with 'zar zstd'.");
+            CliLog.Err("Error: --stdout is only supported with the 'zar zstd' and 'zar seekable' subcommands.");
             return ZarchiveCli.BadUsage;
         }
 
@@ -481,6 +516,61 @@ public static class Program
     {
         CliLog.Err($"Error: --policy {policy} is only supported with --batch.");
         return ZarchiveCli.BadUsage;
+    }
+
+    /// <summary>
+    /// True when <paramref name="option"/> appears before a <c>--</c>
+    /// terminator (after it, the token is a positional path).
+    /// </summary>
+    private static bool HasOptionBeforeTerminator(string[] args, string option)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (string.Equals(arg, option, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True when the launch only prints <c>--help</c>/<c>--version</c>
+    /// (informational launches skip usage stats and the update check).
+    /// </summary>
+    private static bool IsInformationalLaunch(string[] args)
+    {
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (arg is "--help" or "-h" or "--version" or "-v")
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True once the first positional is a zstd/seekable subcommand: unknown
+    /// dashed tokens are forwarded to that subcommand's parser from then on.
+    /// </summary>
+    private static bool InSubcommandArguments(List<string> positional)
+    {
+        var first = positional.Count > 0 ? positional[0] : null;
+        return string.Equals(first, "zstd", StringComparison.Ordinal)
+            || string.Equals(first, "seekable", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -659,8 +749,14 @@ public static class Program
         {
             bytes = File.ReadAllBytes(path);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            CliLog.Err($"Error: cannot read dictionary file (access denied): {path}", ex);
+            return null;
+        }
+        catch (IOException ex)
+        {
+            // Includes missing files/directories.
             CliLog.Err($"Error: dictionary file not found: {path}", ex);
             return null;
         }
@@ -859,7 +955,19 @@ public static class Program
 
         var destDir = outputPath ?? inputPath;
 
-        var files = ProcessableFiles.Find(inputPath, mode);
+        // A directory listing fault (e.g. access denied) must fail the run,
+        // not look like an empty directory with exit 0.
+        var listingFailed = false;
+        var files = ProcessableFiles.Find(inputPath, mode, message =>
+        {
+            listingFailed = true;
+            CliLog.Err($"Error: cannot list input directory '{inputPath}': {message}");
+        });
+        if (listingFailed)
+        {
+            return ZarchiveCli.PackFailed;
+        }
+
         if (files.Count == 0)
         {
             if (!quiet) CliLog.Out("No processable files found.");
@@ -1256,8 +1364,8 @@ public static class Program
         CliLog.Out("  -l, --level <N>       Compression level 1-22 (default: 6)");
         CliLog.Out("      --dict <file>     Dictionary file (pack/zstd; kept alongside,");
         CliLog.Out("                        never stored; --no-compress ignores it)");
-        CliLog.Out("  -c, --stdout          Stream to stdout (only with 'zar zstd'; inside");
-        CliLog.Out("                        'zar zstd', -c means --compress instead)");
+        CliLog.Out("  -c, --stdout          Stream to stdout ('zar zstd' and 'zar seekable';");
+        CliLog.Out("                        inside 'zar zstd', -c means --compress instead)");
         CliLog.Out("      --check           Write content checksums (pack/--iso/zstd)");
         CliLog.Out("      --no-check        Do not write checksums (default; last wins)");
         CliLog.Out("  -j, --jobs <N>        Parallel workers (default: 4)");
@@ -1280,10 +1388,15 @@ public static class Program
         CliLog.Out("      --no-compress     Store blocks without compression");
         CliLog.Out("  -v, --version         Show version");
         CliLog.Out("  -h, --help            Show this help");
+        CliLog.Out("      --no-telemetry    Disable usage stats, update checks and bug reports");
+        CliLog.Out("                        (also via ZAR_BUG_REPORT=off)");
         CliLog.Out();
         CliLog.Out("Run 'zar zstd --help' for the zstd subcommand. A path literally");
         CliLog.Out("named 'zstd' must be spelled ./zstd to pack/extract it.");
         CliLog.Out("Run 'zar seekable --help' for the seekable subcommand (same");
         CliLog.Out("./seekable escape for a colliding path).");
+        CliLog.Out();
+        CliLog.Out("Use '--' before paths that begin with '-'; unknown options are");
+        CliLog.Out("usage errors.");
     }
 }

@@ -30,13 +30,12 @@ public sealed class CliLogTests
         }
     }
 
-    [Fact]
-    public void Progress_BrokenConsole_DoesNotThrow()
+    private static Type? LoadCliType(string name)
     {
         var cli = RedumpIsoTests.FindCli();
         if (cli is null)
         {
-            return;
+            return null;
         }
 
         var assemblyPath = cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
@@ -44,10 +43,21 @@ public sealed class CliLogTests
             : Path.Combine(Path.GetDirectoryName(cli)!, "ZArchiveSharp.Cli.dll");
         if (!File.Exists(assemblyPath))
         {
+            return null;
+        }
+
+        return Assembly.LoadFrom(assemblyPath).GetType(name, throwOnError: true);
+    }
+
+    [Fact]
+    public void Progress_BrokenConsole_DoesNotThrow()
+    {
+        var cliLog = LoadCliType("ZArchiveSharp.Cli.CliLog");
+        if (cliLog is null)
+        {
             return;
         }
 
-        var cliLog = Assembly.LoadFrom(assemblyPath).GetType("ZArchiveSharp.Cli.CliLog", throwOnError: true)!;
         var progress = cliLog.GetMethod("Progress", BindingFlags.Public | BindingFlags.Static)!;
 
         var original = Console.Out;
@@ -63,5 +73,27 @@ public sealed class CliLogTests
         {
             Console.SetOut(original);
         }
+    }
+
+    [Theory]
+    [InlineData("https://github.com/purelogiccode/ZArchiveSharp", true)]
+    [InlineData("http://example.com/asset.zip", true)]
+    [InlineData("file:///C:/Windows/System32/calc.exe", false)]
+    [InlineData("javascript:alert(1)", false)]
+    [InlineData("not a url", false)]
+    [InlineData(null, false)]
+    public void UpdateChecker_ShellOpenAcceptsOnlyWebUrls(string? url, bool expected)
+    {
+        var updateChecker = LoadCliType("ZArchiveSharp.Cli.UpdateChecker");
+        if (updateChecker is null)
+        {
+            return;
+        }
+
+        // Pre-fix OpenBrowser handed whatever the API returned to
+        // UseShellExecute; the validator is new.
+        var method = updateChecker.GetMethod("IsWebUrl", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        Assert.Equal(expected, (bool)method.Invoke(null, [url])!);
     }
 }

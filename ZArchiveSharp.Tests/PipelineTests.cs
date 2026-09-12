@@ -895,6 +895,21 @@ public sealed class PipelineTests : IDisposable
     }
 
     [Fact]
+    public void Pause_SourceDispose_ReleasesAndRejectsReuse()
+    {
+        var source = new PauseTokenSource();
+        source.Pause();
+        Assert.IsAssignableFrom<IDisposable>(source);
+        ((IDisposable)(object)source).Dispose();
+
+        // A disposed source must not silently keep a released wait handle
+        // alive: reuse is an ObjectDisposedException, not a no-op.
+        Assert.Throws<ObjectDisposedException>(() => source.Pause());
+        Assert.Throws<ObjectDisposedException>(() => source.Resume());
+        ((IDisposable)(object)source).Dispose(); // idempotent
+    }
+
+    [Fact]
     public async Task Pack_PausedThenResumed_Completes()
     {
         var root = NewTempDir("pipe_pause");

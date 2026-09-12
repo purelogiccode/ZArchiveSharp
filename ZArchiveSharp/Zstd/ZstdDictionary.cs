@@ -68,10 +68,14 @@ public sealed class ZstdDictionary
     }
 
     /// <summary>
-    /// Uses <paramref name="prefix"/> as raw history content (prefix mode,
-    /// like <c>ZSTD_CCtx_refPrefix</c>). <paramref name="dictId"/> tags the
-    /// frames this dictionary writes (0 writes no dictionary-ID field);
-    /// decoding a tagged frame requires the same ID.
+    /// Builds a dictionary from raw history content (load-dictionary
+    /// raw-content mode, like <c>ZSTD_CCtx_loadDictionary</c> given a
+    /// magicless buffer: the content seeds history and the default repeat
+    /// offsets <c>[1, 4, 8]</c>). This is not <c>ZSTD_CCtx_refPrefix</c>:
+    /// the content participates as a normal dictionary, and
+    /// <paramref name="dictId"/> tags the frames this dictionary writes
+    /// (0 writes no dictionary-ID field); decoding a tagged frame requires
+    /// the same ID.
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="prefix"/> is empty.</exception>
     public static ZstdDictionary FromRawPrefix(ReadOnlySpan<byte> prefix, uint dictId = 0)

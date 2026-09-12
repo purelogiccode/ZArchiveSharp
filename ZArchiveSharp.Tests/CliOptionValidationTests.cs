@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace ZArchiveSharp.Tests;
 
 /// <summary>
@@ -341,6 +343,222 @@ public sealed class CliOptionValidationTests : IDisposable
         Assert.Equal(Pipeline.ZarchiveCli.PackFailed, exit);
         Assert.Contains("Unhandled exception.", stderr, StringComparison.Ordinal);
         Assert.Contains("ArgumentException", stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UnknownOption_IsUsageError()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_unknown");
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work, ["--bogus"]);
+        if (!started)
+        {
+            return;
+        }
+
+        // Pre-fix the token became the input path ("not a valid file or
+        // directory") instead of a usage error.
+        Assert.Equal(-1, exit);
+        Assert.Contains("unknown option", stderr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EndOfOptions_AllowsDashedPath()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_dashdash");
+        var src = Directory.CreateDirectory(Path.Combine(work, "-dashed")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+        var output = Path.Combine(work, "out.zar");
+
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work, ["--", "-dashed", output]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(output));
+    }
+
+    [Fact]
+    public void Help_DocumentsTelemetrySeekableStdoutAndTerminator()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_help");
+        var (started, exit, stdout, _) = RedumpIsoTests.TryRunCli(cli, work, ["--help"]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.Equal(0, exit);
+        Assert.Contains("--no-telemetry", stdout, StringComparison.Ordinal);
+        Assert.Contains("ZAR_BUG_REPORT", stdout, StringComparison.Ordinal);
+        Assert.Contains("Use '--'", stdout, StringComparison.Ordinal);
+        // Seekable also accepts -c/--stdout, so the old "only with zar zstd"
+        // wording was wrong.
+        Assert.Contains("'zar zstd' and 'zar seekable'", stdout, StringComparison.Ordinal);
+        Assert.DoesNotContain("only with 'zar zstd'", stdout, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NoTelemetry_IsAcceptedOnThePackPath()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_notelemetry");
+        var src = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+        var output = Path.Combine(work, "out.zar");
+
+        // Pre-fix --no-telemetry became the input path (too many paths).
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work, ["--no-telemetry", src, output]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(output));
+    }
+
+    [Fact]
+    public void Batch_UnreadableInputDirectory_Fails()
+    {
+        var cli = Cli;
+        if (cli is null || !OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_acllist");
+        var locked = Directory.CreateDirectory(Path.Combine(work, "locked")).FullName;
+        File.WriteAllText(Path.Combine(locked, "a.txt"), "data");
+        if (!SetDirectoryDenyAce(locked, deny: true))
+        {
+            return; // ACLs unavailable here: vacuous pass.
+        }
+
+        try
+        {
+            var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+                ["--batch", locked, Path.Combine(work, "outdir")]);
+            if (!started)
+            {
+                return;
+            }
+
+            // Pre-fix: empty list + "No processable files found." + exit 0.
+            Assert.Equal(Pipeline.ZarchiveCli.PackFailed, exit);
+            Assert.Contains("cannot list input directory", stderr, StringComparison.Ordinal);
+        }
+        finally
+        {
+            SetDirectoryDenyAce(locked, deny: false);
+        }
+    }
+
+    [Fact]
+    public void Dictionary_DirectoryPath_ReportsAccessDenied()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_dictdir");
+        var src = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+        var dictDir = Directory.CreateDirectory(Path.Combine(work, "dictdir")).FullName;
+
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            [src, Path.Combine(work, "out.zar"), "--dict", dictDir]);
+        if (!started)
+        {
+            return;
+        }
+
+        // Reading a directory is UnauthorizedAccessException, not a missing
+        // file: pre-fix both printed "dictionary file not found".
+        Assert.Equal(-1, exit);
+        Assert.Contains("access denied", stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dictionary file not found", stderr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ZstdDictionary_DirectoryPath_ReportsAccessDenied()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_zstddictdir");
+        var input = Path.Combine(work, "in.bin");
+        File.WriteAllBytes(input, Payload(2048, 5));
+        var dictDir = Directory.CreateDirectory(Path.Combine(work, "dictdir")).FullName;
+
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            ["zstd", "-c", input, Path.Combine(work, "in.zst"), "--dict", dictDir]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.Equal(-1, exit);
+        Assert.Contains("access denied", stderr, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("dictionary file not found", stderr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SetDirectoryDenyAce(string directory, bool deny)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("icacls")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add(directory);
+            psi.ArgumentList.Add(deny ? "/deny" : "/remove:d");
+            psi.ArgumentList.Add(Environment.UserName + ":(RD)");
+
+            using var proc = Process.Start(psi);
+            if (proc is null)
+            {
+                return false;
+            }
+
+            return proc.WaitForExit(15000) && proc.ExitCode == 0;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private static string? CreateSeekable(string cli, string work, string name)

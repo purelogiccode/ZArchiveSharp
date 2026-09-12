@@ -167,6 +167,43 @@ public sealed class ZArchiveSharpTests
         Assert.Null(ZArchiveReader.TryOpen((string)"nonexistent_xyz.zar"));
     }
 
+    private sealed class DisposeProbeStream : MemoryStream
+    {
+        public bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
+    }
+
+    [Fact]
+    public void Reader_FailedOpen_DisposesNonLeaveOpenStream()
+    {
+        using var stream = new DisposeProbeStream();
+        stream.Write(new byte[256]); // far too small to be an archive
+        stream.Position = 0;
+
+        Assert.Null(ZArchiveReader.TryOpen(stream, leaveOpen: false));
+
+        // Ownership was accepted by the failed open: the reader must not
+        // leak the caller's stream (TryOpen(string) already cleans up).
+        Assert.True(stream.Disposed);
+    }
+
+    [Fact]
+    public void Reader_FailedOpen_LeaveOpenKeepsStream()
+    {
+        using var stream = new DisposeProbeStream();
+        stream.Write(new byte[256]);
+        stream.Position = 0;
+
+        Assert.Null(ZArchiveReader.TryOpen(stream, leaveOpen: true));
+
+        Assert.False(stream.Disposed);
+    }
+
     [Fact]
     public void Reader_ReadClampsAndCrossesBlocks()
     {

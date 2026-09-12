@@ -125,8 +125,32 @@ public sealed class ZArchiveReader : IDisposable
         }
     }
 
-    /// <summary>Opens an archive from a seekable stream. Returns null when invalid.</summary>
+    /// <summary>
+    /// Opens an archive from a seekable stream. Returns null when invalid.
+    /// On failure a stream not opened with <c>leaveOpen</c> is disposed:
+    /// ownership is only transferred to the reader on success (the same
+    /// cleanup <see cref="TryOpen(string)"/> applies).
+    /// </summary>
     public static ZArchiveReader? TryOpen(Stream stream, bool leaveOpen = false)
+    {
+        var reader = TryOpenCore(stream, leaveOpen);
+        if (reader is null && !leaveOpen && stream is not null)
+        {
+            try
+            {
+                stream.Dispose();
+            }
+            catch (Exception disposeEx)
+            {
+                // Cleanup only: the open result stays "null".
+                _ = disposeEx;
+            }
+        }
+
+        return reader;
+    }
+
+    private static ZArchiveReader? TryOpenCore(Stream stream, bool leaveOpen)
     {
         try
         {
@@ -443,7 +467,14 @@ public sealed class ZArchiveReader : IDisposable
             }
 
             var index = entry.NodeStartIndex;
-            var endIndex = entry.NodeStartIndex + entry.Count;
+            // Subtraction form: NodeStartIndex + Count can wrap a crafted
+            // entry; require the whole child range inside the table.
+            if (index > (uint)_fileTree.Length || entry.Count > (uint)_fileTree.Length - index)
+            {
+                return InvalidNode;
+            }
+
+            var endIndex = index + entry.Count;
             var match = InvalidNode;
             while (index < endIndex)
             {
@@ -507,6 +538,14 @@ public sealed class ZArchiveReader : IDisposable
 
         var dir = _fileTree[node];
         if (index >= dir.Count)
+        {
+            return false;
+        }
+
+        // Subtraction form: NodeStartIndex + index can wrap a crafted entry
+        // onto an unrelated in-range node; require the sum inside the table.
+        if (dir.NodeStartIndex > (uint)_fileTree.Length
+            || index >= (uint)_fileTree.Length - dir.NodeStartIndex)
         {
             return false;
         }

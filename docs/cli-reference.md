@@ -22,6 +22,15 @@ with `-1` / `Too many paths specified`, never silently dropped.
 error); `zar --iso x [out.zar]` takes the output positionally or via
 `-o`, not both.
 
+Unknown options (except after the `zstd`/`seekable` subcommand tokens,
+where they belong to that subcommand's parser) are `-1` usage errors
+rather than silently becoming input paths. `--` ends option parsing, so
+a path that begins with `-` stays reachable: `zar -- -odd out.zar`.
+
+Usage stats, the GitHub update check, and the bug-report sink are opt-out:
+pass `--no-telemetry` or set `ZAR_BUG_REPORT=off`; `--help`/`--version`
+launches never send anything.
+
 ## Commands
 
 ### Compress/Decompress Single zstd Streams
@@ -239,7 +248,7 @@ zar -b --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--stdout` | `-c` | Stream to stdout — only with `zar zstd` (its default output); inside `zar zstd`, `-c` means `--compress` | off |
+| `--stdout` | `-c` | Stream to stdout — with `zar zstd` (its default output) and `zar seekable compress/decompress`; inside `zar zstd`, `-c` means `--compress` | off |
 
 ### Output
 
@@ -262,6 +271,7 @@ zar -b --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--quiet` | `-q` | Suppress output |
+| `--no-telemetry` | | Disable usage stats, update checks and bug reports (also `ZAR_BUG_REPORT=off`) |
 | `--version` | `-v` | Show version |
 | `--help` | `-h` | Show help |
 

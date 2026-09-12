@@ -47,9 +47,13 @@ collisions only.
   -o, --output <path>   Output path
   -q, --quiet           Suppress output
       --no-compress     Store blocks without compression
+      --no-telemetry    Disable usage stats, update checks and bug reports
   -v, --version         Show version
   -h, --help            Show this help
 ```
+
+`--` ends option parsing, so paths that begin with `-` stay reachable.
+Unknown options are usage errors (`-1`).
 
 ## Examples
 
@@ -101,7 +105,8 @@ to the PureLogicCode bug-report API with environment, error, and exception
 details (background sender, at most 9 reports/minute, never blocks or
 crashes the CLI). Each launch also records one anonymous usage hit with
 the PureLogicCode ApplicationStats API (rate-limited server-side to
-1/hour/IP). Set `ZAR_BUG_REPORT=off` to disable all outbound telemetry.
+1/hour/IP). Pass `--no-telemetry`, or set `ZAR_BUG_REPORT=off`, to disable
+all outbound telemetry; `--help`/`--version` launches never send anything.
 
 ## Documentation
 

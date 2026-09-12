@@ -366,8 +366,14 @@ public static class ZstdCli
         {
             bytes = await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (UnauthorizedAccessException)
         {
+            error($"Error: cannot read dictionary file (access denied): {path}");
+            return null;
+        }
+        catch (IOException)
+        {
+            // Includes missing files/directories.
             error($"Error: dictionary file not found: {path}");
             return null;
         }

@@ -29,14 +29,24 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
     /// <summary>
-    /// Master telemetry switch for the CLI binary (bug reports and usage
-    /// stats): set <c>ZAR_BUG_REPORT=off</c> to disable all outbound
-    /// telemetry. The test harness sets it so automation never pollutes
-    /// the production endpoints.
+    /// Master telemetry switch for the CLI binary (bug reports, usage stats
+    /// and update checks): set <c>ZAR_BUG_REPORT=off</c>, or pass
+    /// <c>--no-telemetry</c> (which calls <see cref="DisableTelemetry"/>),
+    /// to disable all outbound telemetry. The test harness sets the
+    /// environment variable so automation never pollutes the production
+    /// endpoints.
     /// </summary>
     internal static bool TelemetryDisabled =>
-        Environment.GetEnvironmentVariable("ZAR_BUG_REPORT")?.Trim()
+        _disabled || Environment.GetEnvironmentVariable("ZAR_BUG_REPORT")?.Trim()
             .ToLowerInvariant() is "off" or "0" or "false" or "no";
+
+    private static volatile bool _disabled;
+
+    /// <summary>Process-wide opt-out used by <c>--no-telemetry</c>.</summary>
+    internal static void DisableTelemetry()
+    {
+        _disabled = true;
+    }
 
     private readonly BlockingCollection<LogEvent> _queue = new(QueueCapacity);
     private readonly Task _sender;

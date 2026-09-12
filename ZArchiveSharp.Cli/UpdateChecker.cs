@@ -109,6 +109,13 @@ internal static class UpdateChecker
             }
 
             var target = release.AssetUrl ?? release.PageUrl;
+            if (!IsWebUrl(target))
+            {
+                // A malformed/compromised API response must never hand a
+                // non-HTTP scheme (file:, javascript:, ...) to the shell.
+                return;
+            }
+
             var prompt = release.AssetName is { Length: > 0 }
                 ? $"Download {release.AssetName} in your browser? [y/N] "
                 : "Open the release page in your browser? [y/N] ";
@@ -236,8 +243,21 @@ internal static class UpdateChecker
         return Version.TryParse(text, out var version) ? version : null;
     }
 
+    /// <summary>True for absolute HTTP(S) URLs (the only schemes safe to shell-open).</summary>
+    internal static bool IsWebUrl(string? url)
+    {
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+                || string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal));
+    }
+
     private static void OpenBrowser(string url)
     {
+        if (!IsWebUrl(url))
+        {
+            return;
+        }
+
         try
         {
             Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });

@@ -62,6 +62,35 @@ public sealed class ZarCorruptionTests : IDisposable
         return File.ReadAllBytes(zar);
     }
 
+    [Fact]
+    public void Reader_DirectoryEntryRange_DoesNotWrap()
+    {
+        var root = NewTempDir("zar_corr_wrap");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        for (var i = 0; i < 20; i++)
+        {
+            File.WriteAllText(Path.Combine(src, $"f{i:D2}.txt"), "wrap probe");
+        }
+
+        var zar = Path.Combine(root, "wrap.zar");
+        ZarPipeline.Pack(src, zar);
+
+        var bytes = File.ReadAllBytes(zar);
+        var footer = Footer.ReadFrom(bytes.AsSpan(bytes.Length - Footer.SizeOnDisk));
+        var treeOffset = (int)footer.SectionFileTree.Offset;
+
+        // Root entry: Field1 = NodeStartIndex, Field2 = Count. The crafted
+        // pair wraps index 31 onto node 15; the reader must reject the range
+        // instead of resolving an unrelated node.
+        ZArchiveCommon.WriteU32Be(bytes.AsSpan(treeOffset + 4), 0xFFFFFFF0u);
+        ZArchiveCommon.WriteU32Be(bytes.AsSpan(treeOffset + 8), 32u);
+        File.WriteAllBytes(zar, bytes);
+
+        using var reader = ZArchiveReader.TryOpen(zar);
+        Assert.NotNull(reader);
+        Assert.False(reader.GetDirEntry(0, 31, out _));
+    }
+
     /// <summary>Extracts under a hang guard. Returns the captured exception, or null on success.</summary>
     private static Exception? GuardedExtract(byte[] bytes, string workDir, string label)
     {
