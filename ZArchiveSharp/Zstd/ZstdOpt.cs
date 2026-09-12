@@ -251,9 +251,12 @@ internal static class ZstdOpt
         var stats = state.OptStats();
         var tables = state.OptTables();
 
+        // Block length (hoisted: inside the blockStart == 0 gate below,
+        // blockEnd - blockStart would read as blockEnd - 0).
+        var blockLength = blockEnd - blockStart;
         if (table.Strategy == ZstdStrategy.BtUltra2
             && stats.LitLengthSum == 0 && blockStart == 0
-            && blockEnd > PredefThreshold)
+            && blockLength > PredefThreshold)
         {
             // First-block two-pass seeding (ZSTD_initStats_ultra): the
             // throwaway pass runs over temp tables (discarded, like the
@@ -261,7 +264,7 @@ internal static class ZstdOpt
             // the real pass below refills the still-empty persistent tables.
             // Size by the block length, not the absolute end (which includes
             // any dictionary prefix / prior blocks).
-            var tmpStore = ZstdSequenceStore.Rent(blockEnd - blockStart);
+            var tmpStore = ZstdSequenceStore.Rent(blockLength);
             var tmpRep = (uint[])repeatOffsets.Clone();
             var tmpNext = 0;
             var tmpTables = RentTables(table);

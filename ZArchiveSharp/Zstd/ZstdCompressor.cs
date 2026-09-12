@@ -490,7 +490,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         try
         {
             return EncodeFrameBlocks(
-                content, contentOffset, frame, state, level, prm, blockMax,
+                content, contentOffset, frame, state, prm, blockMax,
                 dst, pos, checksum, streaming, repSeed);
         }
         finally
@@ -510,7 +510,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
     /// </summary>
     private static int EncodeFrameBlocks(
         ReadOnlySpan<byte> content, int contentOffset, byte[] frame, ZstdFrameState? state,
-        int level, ZstdCompressionParameters prm, int blockMax,
+        ZstdCompressionParameters prm, int blockMax,
         byte[] dst, int pos, bool checksum, bool streaming, uint[]? repSeed)
     {
         if (state is not null && contentOffset > 0)
