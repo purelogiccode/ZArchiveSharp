@@ -304,6 +304,12 @@ internal static class ZstdBlockSplitter
             }
 
             var slice = blockBytes.Slice(srcPos, srcBytes);
+            // Snapshot before resolving: a raw/RLE partition is never decoded,
+            // so its repcode updates must not advance the simulated
+            // decompression history used by later partitions. Native captures
+            // dRepOriginal at ZSTD_compressSeqStore_singleBlock entry, before
+            // ZSTD_seqStore_resolveOffCodes (zstd_compress.c).
+            var dEntry = (uint[])dRep.Clone();
             if (isPartition)
             {
                 var longLitIdx = chunk.LongLengthType == 1
@@ -311,8 +317,6 @@ internal static class ZstdBlockSplitter
                     : chunk.Count;
                 ZstdSeq.ResolveOffCodes(dRep, cRep, chunk, chunk.Count, longLitIdx);
             }
-
-            var dEntry = (uint[])dRep.Clone();
             int payload;
             try
             {

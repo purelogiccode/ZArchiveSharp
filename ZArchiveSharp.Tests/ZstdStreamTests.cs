@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Diagnostics;
 using ZArchiveSharp.Zstd;
 
@@ -219,6 +220,130 @@ public sealed class ZstdStreamTests
         combined.AddRange(payload);
         combined.AddRange(frame);
         Assert.Equal(content, DecompressViaStream([.. combined]));
+    }
+
+    [Fact]
+    public void Stream_FrameHeaderAtFullBufferTail_Decodes()
+    {
+        // Regression: a frame header can begin with exactly 5 bytes left in a
+        // physically full staging buffer. Parsing the window descriptor then
+        // compacts the buffer and moves the data to index 0, so the header
+        // cursor must be rebased or every following field reads the wrong
+        // offset (previously the index ran off the buffer).
+        var content = Text(20000);
+        var second = CompressViaStream(content, 6, checksum: true, 8192);
+
+        // 8187 skippable bytes leave the next frame's first 5 header bytes at
+        // the 8192-byte staging-buffer boundary.
+        var payload = new byte[8187 - 8];
+        var combined = new List<byte> { 0x50, 0x2A, 0x4D, 0x18, 0, 0, 0, 0 };
+        combined[4] = (byte)payload.Length;
+        combined[5] = (byte)(payload.Length >> 8);
+        combined.AddRange(payload);
+        combined.AddRange(second);
+
+        Assert.Equal(content, DecompressViaStream([.. combined]));
+    }
+
+    [Fact]
+    public void Stream_HugeSkippableFrame_SkipsWithoutBuffering()
+    {
+        // Regression: a skippable frame's declared payload can claim up to
+        // 4 GiB. Staging it before detecting truncation allocated that much;
+        // a seekable source must be skipped, not read.
+        const long gap = 8L * 1024 * 1024;
+        var content = Text(4096);
+        var frame = CompressViaStream(content, 6, false, 4096);
+
+        var prefix = new byte[8];
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix, 0x184D2A50);
+        BinaryPrimitives.WriteUInt32LittleEndian(prefix.AsSpan(4), (uint)gap);
+        using var src = new SparseSkippableStream(prefix, gap, frame);
+        using var dec = new ZstdDecompressionStream(src);
+        using var outMs = new MemoryStream();
+        dec.CopyTo(outMs);
+
+        Assert.Equal(content, outMs.ToArray());
+        Assert.True(src.BytesRead < gap / 2,
+            $"skippable payload was read ({src.BytesRead} bytes); it must be skipped");
+    }
+
+    // Seekable stream: real prefix, a sparse zero gap of a declared length,
+    // then real suffix bytes. Counts the bytes actually handed to the caller
+    // so tests can prove a skippable payload was seeked over, not read.
+    private sealed class SparseSkippableStream(byte[] prefix, long gapLength, byte[] suffix) : Stream
+    {
+        private readonly long _suffixStart = prefix.Length + gapLength;
+        private readonly byte[] _suffix = suffix;
+        private readonly byte[] _prefix = prefix;
+
+        public long BytesRead { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => true;
+
+        public override bool CanWrite => false;
+
+        public override long Length => _suffixStart + _suffix.Length;
+
+        public override long Position { get; set; }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = 0;
+            while (read < count && Position < Length)
+            {
+                int take;
+                if (Position < _prefix.Length)
+                {
+                    take = (int)Math.Min(count - read, _prefix.Length - Position);
+                    Array.Copy(_prefix, Position, buffer, offset + read, take);
+                }
+                else if (Position < _suffixStart)
+                {
+                    take = (int)Math.Min(count - read, _suffixStart - Position);
+                    Array.Clear(buffer, offset + read, take);
+                }
+                else
+                {
+                    take = (int)Math.Min(count - read, Length - Position);
+                    Array.Copy(_suffix, Position - _suffixStart, buffer, offset + read, take);
+                }
+
+                Position += take;
+                read += take;
+            }
+
+            BytesRead += read;
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            var target = origin switch
+            {
+                SeekOrigin.Begin => offset,
+                SeekOrigin.Current => Position + offset,
+                SeekOrigin.End => Length + offset,
+                _ => throw new ArgumentOutOfRangeException(nameof(origin)),
+            };
+            if (target < 0)
+            {
+                throw new IOException("Attempted to seek before the start of the stream.");
+            }
+
+            Position = target;
+            return Position;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]

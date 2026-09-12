@@ -291,14 +291,8 @@ public sealed class ZstdDecompressionStream : Stream
                 throw new ZstdException("Truncated skippable frame.");
             }
 
-            var skip = ZstdDecompressor.ReadU32Le(_inBuf, _inStart + 4);
-            var need = 8L + skip;
-            if (need > int.MaxValue || !EnsureBuffered((int)need))
-            {
-                throw new ZstdException("Truncated skippable frame.");
-            }
-
-            _inStart += 8 + (int)skip;
+            var skip = (long)ZstdDecompressor.ReadU32Le(_inBuf, _inStart + 4);
+            SkipSkippablePayload(skip);
             return true;
         }
 
@@ -323,7 +317,10 @@ public sealed class ZstdDecompressionStream : Stream
         var checksumFlag = (descriptor & 0x04) != 0;
         var dictFlag = descriptor & 3;
 
-        var pos = _inStart + 5;
+        // Header bytes consumed so far (4 magic + 1 descriptor). Always
+        // recomputed against _inStart: EnsureBuffered may compact the staging
+        // buffer and move _inStart while the remaining fields are read.
+        var headerPos = 5;
         ulong window;
         if (singleSegment)
         {
@@ -331,12 +328,13 @@ public sealed class ZstdDecompressionStream : Stream
         }
         else
         {
-            if (!EnsureBuffered(pos - _inStart + 1))
+            if (!EnsureBuffered(headerPos + 1))
             {
                 throw new ZstdException("Truncated window descriptor.");
             }
 
-            var wd = _inBuf[pos++];
+            var wd = _inBuf[_inStart + headerPos];
+            headerPos++;
             var windowLog = 10 + (uint)(wd >> 3);
             var windowBase = 1UL << (int)windowLog;
             var windowAdd = (windowBase / 8) * (uint)(wd & 7);
@@ -351,13 +349,13 @@ public sealed class ZstdDecompressionStream : Stream
                 2 => 2,
                 _ => 4
             };
-            if (!EnsureBuffered((pos - _inStart) + idSize))
+            if (!EnsureBuffered(headerPos + idSize))
             {
                 throw new ZstdException("Truncated zstd frame header.");
             }
 
-            var frameDictId = (uint)ZstdDecompressor.ReadUIntLe(_inBuf, pos, idSize);
-            pos += idSize;
+            var frameDictId = (uint)ZstdDecompressor.ReadUIntLe(_inBuf, _inStart + headerPos, idSize);
+            headerPos += idSize;
             if (_dictionary is null)
             {
                 throw new ZstdException(
@@ -383,18 +381,18 @@ public sealed class ZstdDecompressionStream : Stream
         var fcsKnown = fcsSize != 0;
         if (fcsKnown)
         {
-            if (!EnsureBuffered((pos - _inStart) + fcsSize))
+            if (!EnsureBuffered(headerPos + fcsSize))
             {
                 throw new ZstdException("Truncated frame content size.");
             }
 
-            fcs = ZstdDecompressor.ReadUIntLe(_inBuf, pos, fcsSize);
+            fcs = ZstdDecompressor.ReadUIntLe(_inBuf, _inStart + headerPos, fcsSize);
             if (fcsSize == 2)
             {
                 fcs += 256;
             }
 
-            pos += fcsSize;
+            headerPos += fcsSize;
             if (singleSegment)
             {
                 window = fcs;
@@ -424,7 +422,7 @@ public sealed class ZstdDecompressionStream : Stream
             maxBlock = (ulong)ZstdDecompressor.MaxBlockSizeLimit;
         }
 
-        _inStart = pos;
+        _inStart += headerPos;
         _frameOut.Clear();
         _outPos = 0;
         var serveBase = 0;
@@ -570,6 +568,55 @@ public sealed class ZstdDecompressionStream : Stream
         }
 
         _frame = null;
+    }
+
+    // Consumes a skippable frame's header (already staged, _inStart at the
+    // magic) and its payload without staging the payload: the declared length
+    // can claim up to 4 GiB, and buffering it would allocate up to that much
+    // before truncation is detected. Already-staged bytes are dropped; the
+    // rest is skipped on a seekable source or drained through the staging
+    // buffer.
+    private void SkipSkippablePayload(long length)
+    {
+        _inStart += 8; // magic + payload length
+        var buffered = _inEnd - _inStart;
+        if (buffered > 0)
+        {
+            var take = (int)Math.Min(buffered, length);
+            _inStart += take;
+            length -= take;
+        }
+
+        if (_inStart == _inEnd)
+        {
+            // The staging buffer holds no bytes of the next frame.
+            _inStart = 0;
+            _inEnd = 0;
+        }
+
+        if (length > 0 && _source.CanSeek)
+        {
+            // Bytes past _inEnd have not been read from the source yet, so
+            // its position is the next unread payload byte.
+            var available = Math.Max(0, _source.Length - _source.Position);
+            var skipped = Math.Min(length, available);
+            _source.Seek(skipped, SeekOrigin.Current);
+            length -= skipped;
+        }
+
+        while (length > 0)
+        {
+            var read = _source.Read(_inBuf, 0, (int)Math.Min(_inBuf.Length, length));
+            if (read == 0)
+            {
+                _eof = true;
+                throw new ZstdException("Truncated skippable frame.");
+            }
+
+            length -= read;
+            _inStart = 0;
+            _inEnd = 0;
+        }
     }
 
     // Reads from the source until at least minBytes are staged or EOF.

@@ -65,6 +65,7 @@ public static class Program
         var batch = false;
         string? dictPath = null;
         var stdoutFlag = false;
+        var zstdCompressFlag = false;
         bool? checksumOverride = null;
         var helpRequested = false;
         string? modeRaw = null;
@@ -128,8 +129,22 @@ public static class Program
 
                     dictPath = args[++i];
                     break;
-                case "--stdout" or "-c":
+                case "--stdout":
                     stdoutFlag = true;
+                    break;
+                case "-c":
+                    // Inside `zar zstd`, -c is the subcommand's --compress
+                    // (forwarded to its parser, which owns mode conflicts);
+                    // everywhere else it aliases the global --stdout.
+                    if (string.Equals(positional.FirstOrDefault(), "zstd", StringComparison.Ordinal))
+                    {
+                        zstdCompressFlag = true;
+                    }
+                    else
+                    {
+                        stdoutFlag = true;
+                    }
+
                     break;
                 case "--check":
                     checksumOverride = true;
@@ -214,13 +229,22 @@ public static class Program
         {
             if (outputExplicit)
             {
+                if (positional.Count == 0)
+                {
+                    // Without an input path the output would be dispatched as
+                    // the input (e.g. `zar -o game.zar` would extract it or
+                    // pack it): fail loud instead of running the wrong op.
+                    CliLog.Err("Error: missing input path (expected: zar [options] [input] [output]).");
+                    return ZarchiveCli.BadUsage;
+                }
+
                 if (positional.Count > 1)
                 {
                     CliLog.WarnToStdout("Too many paths specified");
                     return ZarchiveCli.BadUsage;
                 }
 
-                if (positional.Count > 0 && inputPath == null)
+                if (inputPath == null)
                 {
                     inputPath = positional[0];
                 }
@@ -267,6 +291,11 @@ public static class Program
             }
 
             var sub = positional.Skip(1).ToList();
+            if (zstdCompressFlag)
+            {
+                sub.Insert(0, "-c");
+            }
+
             if (helpRequested)
             {
                 sub.Add("--help");
