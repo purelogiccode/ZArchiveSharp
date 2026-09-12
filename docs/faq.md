@@ -24,7 +24,7 @@ The test suite enforces this with thousands of parity vectors and committed gold
 
 ### Is it production ready?
 
-The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4190 library tests plus 40 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
+The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4279 library tests plus 43 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
 
 ## Compatibility
 
@@ -84,6 +84,18 @@ items on top of that.
 ### Are dictionaries supported?
 
 Dictionary *use* is supported: `ZstdDictionary.FromBytes` (formatted dicts) / `FromRawPrefix` (raw content prefix), `ZstdCompressionOptions.Dictionary`, and CLI `--dict` on pack and `zar zstd` (extract needs the same dict; it is never stored). Dictionary *training* is out of scope, as are negative levels (rejected, locked by tests).
+
+### Does the `zar` CLI send telemetry?
+
+Only when you leave it enabled. The CLI records one anonymous usage hit per
+non-informational launch, checks GitHub for newer releases in the background,
+and forwards Warning/Error/Fatal log events to a bug-report endpoint with
+environment/error/exception details (user profile and account name are
+redacted; reports are rate-limited to 9/minute). Disable all three with
+`--no-telemetry` or `ZAR_BUG_REPORT=off`; `--help`/`--version` launches never
+send anything. The library itself never performs network I/O. Telemetry is
+best-effort and never delays a command's exit by more than a fraction of a
+second.
 
 ## Errors
 

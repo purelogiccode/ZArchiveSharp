@@ -55,13 +55,21 @@ using ZArchiveSharp.Zstd;
 // Array-based with a size cap (required — protects against zip bombs)
 byte[] data = ZstdCompressor.DecompressFrame(frame, maxSize: expectedSize);
 
-// Decoder options (defaults: 512 MiB window, 512 MiB frame content)
+// Decoder options (defaults: 512 MiB window, 512 MiB frame content,
+// 1 GiB total output across all frames of one Decompress call)
 var options = new ZstdDecoderOptions
 {
     MaxWindowSize = 512 * 1024 * 1024,
     MaxFrameContentSize = 512 * 1024 * 1024,
+    MaxTotalOutputSize = 1UL * 1024 * 1024 * 1024, // ulong.MaxValue disables
 };
 ```
+
+`ZstdDecompressor.Decompress`/`DecompressExact` also validate their
+`src`/`dst`/`options` arguments and both ranges up front
+(`ArgumentOutOfRangeException`), and `ZstdCompressor.DecompressFrame`
+enforces its `maxSize` during decode rather than after materializing the
+output.
 
 The decoder handles:
 - Standard frames (magic `0xFD2FB528`)

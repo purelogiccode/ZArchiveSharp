@@ -24,12 +24,21 @@ error); `zar --iso x [out.zar]` takes the output positionally or via
 
 Unknown options (except after the `zstd`/`seekable` subcommand tokens,
 where they belong to that subcommand's parser) are `-1` usage errors
-rather than silently becoming input paths. `--` ends option parsing, so
-a path that begins with `-` stays reachable: `zar -- -odd out.zar`.
+rather than silently becoming input paths. `--` ends option parsing
+everywhere — the plain pack/extract shape *and* inside `zar zstd` /
+`zar seekable` — so a path that begins with `-` stays reachable:
+`zar -- -odd out.zar` and `zar zstd -c -- -in.bin out.zst`.
+
+Value-taking options must not be followed by another known option
+(`zar --jobs --quiet in out` is `-1`), but other dash-prefixed values are
+accepted as paths: `zar -o -out.zar src` and `zar --iso -game.iso out.zar`
+work. Missing values for `-o/--iso/--jobs/--level/--policy/--dict/--mode/--seven-zip`
+are always `-1`. `zar -o game.zar` without an input path is `-1`, and
+`--iso` cannot be combined with `--batch`.
 
 Usage stats, the GitHub update check, and the bug-report sink are opt-out:
 pass `--no-telemetry` or set `ZAR_BUG_REPORT=off`; `--help`/`--version`
-launches never send anything.
+launches never send anything. See [Telemetry and Update Checks](#telemetry-and-update-checks).
 
 ## Commands
 
@@ -195,10 +204,10 @@ zar --batch <input_dir> [output_dir]
 
 Processes all eligible files in the input directory in parallel.
 
-- `auto` (default): archives run the 7z container stage (extract to
-  `temp_<stem>`, first `.iso` keeps going as `<stem>.iso`, otherwise the
-  whole tree becomes `<stem>/`) then continue to `.zar`; plain ISOs
-  convert straight to `.zar`; directories pack to `.zar`.
+- `auto` (default): archives run the 7z container stage (extract to a
+  unique `temp_<stem>_<id>`, first `.iso` keeps going as `<stem>.iso`,
+  otherwise the whole tree becomes `<stem>/`) then continue to `.zar`;
+  plain ISOs convert straight to `.zar`; directories pack to `.zar`.
 - `extract-archive` (aliases `extract-arc`, `archive`): `.zip/.rar/.7z/.tar/.gz`
   only — extract with 7z and stop (no `.zar`).
 - `extract-iso` (aliases `extract`, `iso`): `.iso` only — convert to `.zar`.
@@ -209,8 +218,11 @@ Windows install location); `--seven-zip <exe>` overrides the path, and
 archive items fail with rebuild-free instructions when no binary is found.
 `--delete-source` removes each source (archive *and* intermediate) after
 sources are kept by default (`--keep-originals`, last wins against
-`--delete-source`). The collision `--policy` applies to every stage output
-(intermediate and `.zar`). All three flags are `--batch`-only.
+`--delete-source`). A source is deleted only after the terminal `.zar` stage
+actually completed — a failed or skipped downstream stage keeps the original.
+The collision `--policy` applies to every stage output (intermediate and
+`.zar`), and same-stem archives get unique scratch/extraction destinations so
+parallel workers never race. All three flags are `--batch`-only.
 
 **Examples:**
 
@@ -277,6 +289,28 @@ zar -b --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 
 ---
 
+## Telemetry and Update Checks
+
+The CLI sends three kinds of outbound traffic; all are opt-out:
+
+- **Usage stats** — one anonymous hit per non-informational launch
+  (application id and version only) to the PureLogicCode ApplicationStats API.
+- **GitHub update check** — a background lookup of the latest release. When a
+  newer version exists it prints a notice on stderr and, on an interactive
+  console only, offers to open the release page or the platform download.
+  The prompt waits at most 15 s and never blocks redirected/piped runs.
+- **Bug reports** — logging flows through Serilog and Warning/Error/Fatal
+  events are forwarded with environment, error, and exception details. The
+  user profile directory and account name are redacted before sending. At
+  most 9 reports/minute.
+
+Disable all three with `--no-telemetry` or by setting `ZAR_BUG_REPORT` to
+`off`, `0`, `false`, or `no`. `--help`/`--version` launches never send
+anything. The exit flush is best-effort and bounded to well under a second,
+so a slow or unreachable endpoint never delays the command.
+
+---
+
 ## Exit Codes
 
 The CLI returns the same exit codes as `zarchive.exe` for compatibility:
@@ -284,7 +318,7 @@ The CLI returns the same exit codes as `zarchive.exe` for compatibility:
 | Code | Constant | Description |
 |------|----------|-------------|
 | `0` | `Ok` | Success |
-| `-1` | `BadUsage` | Usage error (too many paths, invalid input) |
+| `-1` | `BadUsage` | Usage error (too many paths, unknown option, missing option value, invalid input) |
 | `-3` | `OutputNotDirectory` | Extract output path exists and is not a directory |
 | `-4` | `OutputDirectoryNotCreated` | Extract output directory could not be created |
 | `-10` | `NotFound` | Archive file not found, or pack output exists and is not a regular file |
@@ -313,6 +347,11 @@ a missing/unparseable seek table, an out-of-range frame, or a bad range —
 depend on the file (`--from` past `--to`, start frame past end frame) are
 `-1`. Failed runs delete the file outputs they created.
 
+Batch runs aggregate per-item results: if every failure was a collision
+refusal under the `fail` policy, the run exits `-11`; any other failed item
+makes it `-13`, as do an unreadable batch input directory and a missing 7z
+binary. `--mode` mismatches and `--iso` + `--batch` are `-1`.
+
 ---
 
 ## Collision Policies
@@ -325,6 +364,13 @@ On `--batch` runs, when a stage output already exists, the `--policy` option con
 | `skip` | Skip the item, continue processing |
 | `overwrite` | Delete existing file and write new one |
 | `auto-rename` | Write to `{stem}_{n}{suffix}` (first free `n` from 1) |
+
+Resolution is race-safe: when parallel batch items (or another process)
+claim the chosen name between resolve and write/move, the output is
+re-resolved from the requested path, keeping suffixes canonical
+(`game.zar`, `game_1.zar`, …) instead of compounding. A batch whose only
+failures are `fail`-policy collisions exits `-11`; any other failure makes
+the batch exit `-13`.
 
 Single pack/extract/`--iso` and the `zstd`/`seekable` subcommands keep the
 `zarchive.exe` contract instead: an existing pack output is refused with

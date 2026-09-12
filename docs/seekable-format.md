@@ -108,6 +108,12 @@ byte[] frames = reader.DecompressFrames(2, 5);
 
 Mid-frame starts decompress from the frame start (like zeekstd's dummy decompression up to the offset) — correctness is identical, only the touched frames cost time.
 
+Since v1.2.0, invalid ranges are caller errors and reported as
+`ArgumentOutOfRangeException`: negative values, ranges past
+`DecompressedLength`, frame indices past `FrameCount`, and ranges larger than
+`int.MaxValue` (which cannot be materialized as one array) are rejected before
+decoding. A `null` table argument throws `ArgumentNullException`.
+
 ### Seek Table Binary Search
 
 `SeekTable.FrameIndexAtDecomp(offset)` locates the frame containing a decompressed offset via binary search over frame boundaries.
@@ -153,9 +159,14 @@ Per-frame bytes are streaming-style, byte-identical to real libzstd streaming (v
 | Frame size (uncompressed) | 1 GiB (`SEEKABLE_MAX_FRAME_SIZE`) |
 | Frame count | 134,217,728 (`0x08000000`, `SEEKABLE_MAX_FRAMES`) |
 
+The writer enforces the 1 GiB uncompressed cap in **both** policies: in the
+`Compressed` policy a frame ends when the compressed threshold is reached or
+when the uncompressed cap is hit (matching the oracle's
+`remaining_frame_size`).
+
 ## Compatibility
 
 - Files written by ZArchiveSharp decode with the `zeekstd` CLI and the C seekable format reference
 - Stock `zstd` ignores the skippable table and decodes the frame stream linearly
 - Files produced by either reference flavor (plain frames, checksummed frames) decode here
-- Verified by 585 seekable tests, including 248 byte-identity vectors vs a gcc oracle over real libzstd streaming (levels 1–19, Foot + Head + Compressed policy)
+- Verified by 681 seekable tests, including 248 byte-identity vectors vs a gcc oracle over real libzstd streaming (levels 1–19, Foot + Head + Compressed policy)

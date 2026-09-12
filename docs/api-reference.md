@@ -11,6 +11,20 @@ Complete API documentation for ZArchiveSharp. All types are in the `ZArchiveShar
 | `ZArchiveSharp.Seekable` | Seekable zstd format (Foot + Head) |
 | `ZArchiveSharp.Pipeline` | Pipeline engine, batch operations, progress |
 
+## Changed in v1.2.0
+
+| Area | Change |
+|------|--------|
+| `SeekableReader.DecompressRange` / `DecompressFrames` | Range errors now throw `ArgumentOutOfRangeException` (was `ZstdException`); ranges larger than `int.MaxValue` are rejected before allocating |
+| `ZArchiveReader.TryOpen(Stream, leaveOpen: false)` | Disposes the stream when the open fails (ownership transfers only on success) |
+| `ZarPackEngine.PackEntries` | Returns the path actually written and takes an optional `ZarCollisionPolicy` |
+| `ZarPackEngine` | New `MoveIntoPlace`, `OutputExistsMessage`, and `MaxExtractDepth` members |
+| `ZstdDecoderOptions` | New `MaxTotalOutputSize` cumulative cap (default 1 GiB) for concatenated frames |
+| `PauseTokenSource` | Now implements `IDisposable`; dispose after workers stop |
+| `ZstdDecompressor.Decompress` / `DecompressExact` | Validate `src`/`dst`/`options` and both ranges up front |
+| Extraction | Rejects unsafe entry names (zip-slip, device names), builds through scratch files, and caps nesting at `MaxExtractDepth` |
+| `DirectoryPackSource` | Never descends directory symlinks/junctions (the link stays as an empty directory entry) |
+
 ---
 
 ## ZArchiveWriter
@@ -135,6 +149,10 @@ Opens an archive. Returns `null` on invalid archives (never throws).
 - `leaveOpen` — Keep stream open after reader disposal
 
 **Returns:** Reader instance, or `null` if invalid
+
+**Ownership:** with `leaveOpen: false` (the default), a failed open disposes
+the stream — ownership is only transferred to the returned reader on success.
+Pass `leaveOpen: true` to keep the stream alive after a failed open.
 
 ### Properties
 
@@ -310,10 +328,18 @@ CLI flags `--level`, `--check`, `--dict`).
 | `Level` | `int` | `6` | zstd level 1–22 for packing |
 | `Checksum` | `bool` | `false` | Write per-block content checksums |
 | `Dictionary` | `ZstdDictionary?` | `null` | Pack dictionary frames / extract them (never stored in the archive; inert for plain frames; ignored when `Compressor` is set) |
+| `Compressor` | `IZarBlockCompressor?` | `null` | Explicit block compressor; `null` builds one from `Level`/`Checksum`/`Dictionary` (explicit instances keep the sequential path) |
 | `CollisionPolicy` | `ZarCollisionPolicy` | `Fail` | What to do when the output path already exists |
-| `MaxDegreeOfParallelism` | `int` | `4` | Batch parallelism |
+| `MaxDegreeOfParallelism` | `int` | `4` | Batch parallelism, plus the 64 KiB block fan-out inside a single pack/extract |
 | `DeterministicOrder` | `bool` | `true` | Sort entries ordinally before packing |
+| `DeleteSourceOnSuccess` | `bool` | `false` | Delete the pack source directory after a successful pack (single and batch) |
+| `Pause` | `PauseToken` | default | Pause gate checked alongside the cancellation token |
 | `NameOrder` | `IReadOnlyList<string>?` | `null` | Pre-seeded name-table order; `null` = pack order (first appearance). Set to a source-walk (discovery) order for byte-parity with packers that write names in discovery order |
+
+`ZarPipeline.Pack` validates and collects the source *before* resolving the
+output, so an `Overwrite` policy never deletes a previous archive when the
+pack cannot start; `ZarPipeline.PackSource` honors the collision policy and
+creates the output directory.
 
 ---
 
@@ -336,6 +362,80 @@ Built-in compressor that stores every block raw (no compression).
 
 ```csharp
 public sealed class ZarRawCompressor : IZarBlockCompressor
+```
+
+---
+
+## ZarPackEngine (ZArchiveSharp.Pipeline)
+
+Engine behind `ZarPipeline` and the callable CLI runners: collision
+resolution, pack, and the hardened extraction path.
+
+```csharp
+public static class ZarPackEngine
+{
+    // Prefix of the IOException thrown when the Fail policy refuses.
+    // Batch callers match it to separate -11 refusals from other faults.
+    public const string OutputExistsMessage = "The output file already exists:";
+
+    // Maximum accepted archive directory nesting during extraction.
+    public const int MaxExtractDepth = 1024;
+
+    public static string? ResolveOutputPath(string wantedPath, ZarCollisionPolicy policy);
+    public static string? MoveIntoPlace(
+        string source, string wantedPath, ZarCollisionPolicy policy, bool isDirectory);
+
+    public static string PackEntries(
+        IReadOnlyList<ZarPackEntry> entries, string displayPath, string zarPath,
+        ZarPipelineOptions? options = null, IProgress<ZarProgress>? progress = null,
+        CancellationToken cancellationToken = default,
+        ZarCollisionPolicy collisionPolicy = ZarCollisionPolicy.Fail);
+
+    public static IReadOnlyList<string> ExtractEntries(
+        string zarPath, string destDir, string? displayPath = null,
+        ZarPipelineOptions? options = null, IProgress<ZarProgress>? progress = null,
+        CancellationToken cancellationToken = default, Action<string>? log = null);
+
+    public static IReadOnlyList<string> ExtractOpen(
+        ZArchiveReader reader, string displayPath, string destDir,
+        ZarPipelineOptions? options = null, IProgress<ZarProgress>? progress = null,
+        CancellationToken cancellationToken = default, Action<string>? log = null);
+}
+```
+
+**Collision resolution.** `ResolveOutputPath` returns the path to use, or
+`null` for `Skip`; `Fail` throws `IOException` prefixed with
+`OutputExistsMessage`. `MoveIntoPlace` moves a staged file/directory into
+place and re-resolves when the free name is claimed between resolve and move,
+keeping `AutoRename` suffixes canonical (`game`, `game_1`, …).
+`PackEntries` returns the path actually written (which can differ from
+`zarPath` after an `AutoRename` race) and deletes its partial output on
+failure.
+
+**Extraction safety.** Entry names are validated (no `..`, separators,
+rooted/drive-qualified paths, or Windows device names), the resolved path is
+re-checked against the destination root, nesting deeper than
+`MaxExtractDepth` fails catchably, and files are written through unique
+`.part` scratch files and moved into place only after the size check.
+
+---
+
+## PauseTokenSource (ZArchiveSharp.Pipeline)
+
+Pause gate shared by pipeline workers. `PauseToken` is a snapshot struct; a
+default value never pauses. `PauseTokenSource` implements `IDisposable` since
+v1.2.0 — dispose it after the workers stop, while no `PauseToken` from it can
+still be waited on.
+
+```csharp
+public sealed class PauseTokenSource : IDisposable
+{
+    public bool IsPaused { get; }
+    public PauseToken Token { get; }
+    public void Pause();
+    public void Resume();
+    public void Dispose();
+}
 ```
 
 ---
@@ -410,13 +510,63 @@ Returns the maximum possible compressed size for a given input size.
 public static byte[] DecompressFrame(ReadOnlySpan<byte> src, int maxSize)
 ```
 
-Decompresses a zstd frame.
+Decompresses a zstd frame. Since v1.2.0 the cap is enforced *during* decoding
+(the decoder's `MaxFrameContentSize` is set to `maxSize`), so an oversized
+frame is rejected before a large buffer is materialized. `maxSize: 0` decodes
+under a one-byte cap, so only an empty frame passes.
 
 **Parameters:**
 - `src` — Frame bytes
 - `maxSize` — Maximum allowed decompressed size
 
 **Returns:** Decompressed data
+
+---
+
+## ZstdDecompressor (ZArchiveSharp.Zstd)
+
+Stateless decoder entry points over concatenated frames, with optional
+dictionary and explicit resource limits.
+
+```csharp
+public static class ZstdDecompressor
+{
+    public static byte[] Decompress(byte[] src);
+    public static byte[] Decompress(byte[] src, ZstdDecoderOptions options);
+    public static byte[] Decompress(byte[] src, int offset, int length);
+    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDecoderOptions options);
+    public static byte[] Decompress(byte[] src, ZstdDictionary? dict);
+    public static byte[] Decompress(byte[] src, int offset, int length, ZstdDictionary? dict);
+    public static byte[] Decompress(
+        byte[] src, int offset, int length, ZstdDictionary? dict, ZstdDecoderOptions options);
+
+    public static void DecompressExact(
+        byte[] src, int srcOffset, int srcLength,
+        byte[] dst, int dstOffset, int dstLength); // + options / dict overloads
+}
+```
+
+Since v1.2.0 every overload validates `src`/`dst`/`options` and both ranges
+up front (`ArgumentNullException` / `ArgumentOutOfRangeException`) and
+enforces a cumulative output cap across concatenated frames (see
+`MaxTotalOutputSize`). Corruption, dictionary mismatch, and cap violations
+throw `ZstdException`.
+
+### ZstdDecoderOptions
+
+Decoder resource limits (all configurable; defaults accept foreign frames up
+to 512 MiB and cap one `Decompress` call at 1 GiB total):
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MaxWindowSize` | `ulong` | 512 MiB | Reject frames declaring a larger window |
+| `MaxFrameContentSize` | `ulong` | 512 MiB | Bound allocation for frames without a declared content size |
+| `MaxTotalOutputSize` | `ulong` | 1 GiB | Cumulative output cap across all frames of one `Decompress` call; set to `ulong.MaxValue` to disable |
+
+```csharp
+var options = new ZstdDecoderOptions { MaxTotalOutputSize = 64UL * 1024 * 1024 };
+byte[] data = ZstdDecompressor.Decompress(frame, options);
+```
 
 ---
 
@@ -651,7 +801,9 @@ Appends data, emitting full frames as needed. The `Stream` overload pumps in
 128 KiB takes, so regular files frame exactly like one span write and like the
 oracle CLI; short-read streams can shift `Compressed`-policy boundaries (like
 odd oracle reads would) while `Uncompressed` boundaries never move — every
-framing decodes identically.
+framing decodes identically. A frame never exceeds the format's 1 GiB
+uncompressed cap: the `Compressed` policy ends a frame when the compressed
+threshold is reached *or* when the uncompressed cap is hit.
 
 #### Finish
 
@@ -682,7 +834,7 @@ Reads seekable zstd files.
 // Parse embedded Foot table
 public SeekableReader(byte[] data)
 
-// Use external seek table (e.g., standalone Head)
+// Use external seek table (e.g., standalone Head; table must not be null)
 public SeekableReader(byte[] data, SeekTable table)
 
 // Stream-backed: parses the Foot from the tail, reads frames on demand
@@ -720,6 +872,12 @@ public byte[] DecompressRange(long offset, long length)
 
 Decompresses a byte range, decoding only the frames the range touches.
 
+**Exceptions:**
+- `ArgumentOutOfRangeException` — negative `offset`/`length`, a range past
+  `DecompressedLength`, or a range larger than `int.MaxValue` (it cannot be
+  materialized as one array). Since v1.2.0 these are
+  `ArgumentOutOfRangeException` (previously `ZstdException`).
+
 #### DecompressFrames
 
 ```csharp
@@ -728,6 +886,10 @@ public byte[] DecompressFrames(int first, int lastInclusive)
 
 Decompresses frames `first` through `lastInclusive` concatenated
 (`set_lower_frame` / `set_upper_frame`).
+
+**Exceptions:**
+- `ArgumentOutOfRangeException` — negative indices, `lastInclusive < first`,
+  or `lastInclusive >= FrameCount` (since v1.2.0; previously `ZstdException`).
 
 ---
 

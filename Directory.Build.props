@@ -26,7 +26,7 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
-    <PackageReleaseNotes>v1.1.0: block-level parallelism (single pack/extract fans 64 KiB blocks across workers, byte-identical), codec scratch pooling, hardened pool/error contracts, CLI positional guards (-o/--iso extras rejected like the oracle), CLI battle-test suite, XISOSharp via NuGet. See WhatsNew.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.2.0: opt-out CLI telemetry, logging, bug reports and update checks; extraction hardening (zip-slip/device-name rejection, bounded nesting, scratch-and-move writes, no symlink traversal); strict CLI argument rules (-- terminator everywhere, dashed values, unknown-option errors, batch exit -11/-13); decoder total-output cap; seekable range errors are ArgumentOutOfRangeException; CP1252 name identity and other correctness fixes. See WhatsNew.md.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

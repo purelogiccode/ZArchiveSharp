@@ -14,8 +14,9 @@
 - **At native speed on the hot path** — L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× (measured; see [Benchmarks](docs/benchmarks.md))
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
 - **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, byte-identical block-level parallelism inside a single pack/extract, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
+- **Hardened extraction** — zip-slip/device-name rejection with resolved-path re-validation, 1024-level nesting cap, and scratch-and-move writes that never leave truncated files
 - **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
-- **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior
+- **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior, with `--` path escapes, strict option validation, collision policies, and opt-out telemetry (`--no-telemetry` / `ZAR_BUG_REPORT=off`)
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
 - **Zero runtime dependencies** — BCL only, no `unsafe` code in the zstd path
 
@@ -132,7 +133,15 @@ zar seekable decompress --from 1M --to 2M big.zst slice.bin
 zar --batch C:\games C:\archives
 zar --batch --mode extract-archive C:\games C:\unpacked
 zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
+
+# Paths that begin with '-' via the option terminator
+zar -- -odd-directory out.zar
 ```
+
+The CLI sends opt-out telemetry (anonymous usage stats, a background update
+check, and bug reports for warnings/errors). Disable it with
+`--no-telemetry` or `ZAR_BUG_REPORT=off`; `--help`/`--version` never send
+anything.
 
 ## Projects
 
@@ -141,7 +150,7 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 | **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZArchiveSharp.Tests** | Comprehensive test suite (4190 tests + 40 CLI battle tests, parity validation) |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4279 tests + 43 CLI battle tests, parity validation) |
 
 ## Documentation
 
@@ -154,7 +163,8 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 - **[Pipeline](docs/pipeline.md)** — Batch operations, progress, and collision handling
 - **[Benchmarks](docs/benchmarks.md)** — Performance characteristics and tuning
 - **[FAQ](docs/faq.md)** — Frequently asked questions
-- **[What's New](WhatsNew.md)** — v1.1.0 release notes (block parallelism, CLI guards, upgrade notes)
+- **[Release Notes](docs/release-notes.md)** — Version history and upgrade notes
+- **[What's New](WhatsNew.md)** — v1.2.0 release notes (telemetry, extraction hardening, CLI argument rules, upgrade notes)
 
 ## Byte-Identity Target
 

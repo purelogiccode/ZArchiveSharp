@@ -35,15 +35,22 @@ archives (`.zip/.rar/.7z/.tar/.gz` via an installed 7z, `--seven-zip` override)
 → ISO/dir → `.zar`; `--mode auto/extract-archive/extract-iso/compress`
 selects the legs, `--keep-originals`/`--delete-source` (default keep) controls
 cleanup, and `--policy` (fail/skip/overwrite/auto-rename) applies to batch
-collisions only.
+collisions only. Sources are deleted only after the terminal `.zar` stage
+succeeded, and same-stem archives are isolated so parallel items never race.
+A batch whose only failures are collision refusals exits `-11`.
 
 ## Options
 
 ```
   -l, --level <N>       Compression level 1-22 (default: 6)
+      --dict <file>     Dictionary file (pack/zstd; never stored)
+      --check/--no-check  Write/omit content checksums
   -j, --jobs <N>        Parallel workers: batch items plus 64 KiB block fan-out inside a single pack/extract, capped by CPU, byte-identical (default: 4)
   -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename
   -b, --batch           Batch process all files in input directory
+      --mode <M>        Batch stages: auto, extract-archive, extract-iso, compress
+      --seven-zip <exe> 7z binary for the archive stage
+      --keep-originals/--delete-source  Batch source cleanup (default: keep)
   -o, --output <path>   Output path
   -q, --quiet           Suppress output
       --no-compress     Store blocks without compression
@@ -52,8 +59,12 @@ collisions only.
   -h, --help            Show this help
 ```
 
-`--` ends option parsing, so paths that begin with `-` stay reachable.
-Unknown options are usage errors (`-1`).
+`--` ends option parsing everywhere — including inside `zar zstd` and
+`zar seekable` — so paths that begin with `-` stay reachable. Unknown options
+are usage errors (`-1`), value options must not be followed by another known
+option, but other dash-prefixed values are accepted as paths
+(`zar -o -out.zar src`, `zar --iso -game.iso out.zar`). `zar -o game.zar`
+without an input and `--iso` combined with `--batch` are usage errors.
 
 ## Examples
 
@@ -81,16 +92,17 @@ Identical to `zarchive.exe` (`-2` and `-5`..`-9` are unused upstream too):
 | Code | Meaning |
 |------|---------|
 | `0` | Success |
-| `-1` | Usage error (too many paths; input neither file nor directory) |
+| `-1` | Usage error (too many paths, unknown option, missing option value; input neither file nor directory) |
 | `-3` | Extract output path exists and is not a directory |
 | `-4` | Extract output directory could not be created |
 | `-10` | Archive not found; pack output exists and is not a regular file |
-| `-11` | Archive failed to open; pack output already exists |
-| `-12` | Extraction failed (corrupt archive or I/O) |
-| `-13` | Pack failed on archive structure |
+| `-11` | Archive failed to open; pack output already exists; batch with only collision refusals |
+| `-12` | Extraction failed (corrupt archive, out-of-range seekable range, or I/O) |
+| `-13` | Pack failed on archive structure; batch with mixed failures, unreadable batch input, or missing 7z |
 | `-14` | Pack failed to create an archive entry (duplicate or bad path) |
 | `-15` | Pack failed to open an input file |
 | `-16` | Pack failed on output I/O |
+| `130` | Interrupted by Ctrl+C (shell SIGINT convention) |
 
 ## Format Notes
 
@@ -102,15 +114,18 @@ Identical to `zarchive.exe` (`-2` and `-5`..`-9` are unused upstream too):
 
 All logging flows through Serilog. Warnings and errors are also forwarded
 to the PureLogicCode bug-report API with environment, error, and exception
-details (background sender, at most 9 reports/minute, never blocks or
-crashes the CLI). Each launch also records one anonymous usage hit with
-the PureLogicCode ApplicationStats API (rate-limited server-side to
-1/hour/IP). Pass `--no-telemetry`, or set `ZAR_BUG_REPORT=off`, to disable
-all outbound telemetry; `--help`/`--version` launches never send anything.
+details (background sender, at most 9 reports/minute, best-effort flush
+bounded to well under a second at exit, never crashes the CLI; user profile
+and account name are redacted). Each launch also records one anonymous usage
+hit with the PureLogicCode ApplicationStats API (rate-limited server-side to
+1/hour/IP), and a background GitHub check announces newer releases with a
+bounded (15 s) optional browser prompt. Pass `--no-telemetry`, or set
+`ZAR_BUG_REPORT=off`, to disable all outbound telemetry; `--help`/`--version`
+launches never send anything.
 
 ## Documentation
 
-Full documentation lives in the [repository wiki](https://github.com/purelogiccode/ZArchiveSharp/wiki) ([docs/](https://github.com/purelogiccode/ZArchiveSharp/tree/master/docs)): format spec, compression guide, pipeline API, benchmarks and FAQ.
+Full documentation lives in the [repository wiki](https://github.com/purelogiccode/ZArchiveSharp/wiki) ([docs/](https://github.com/purelogiccode/ZArchiveSharp/tree/master/docs)): format spec, compression guide, pipeline API, benchmarks and FAQ. Release notes: [WhatsNew.md](../WhatsNew.md) and [docs/release-notes.md](../docs/release-notes.md).
 
 ## License
 

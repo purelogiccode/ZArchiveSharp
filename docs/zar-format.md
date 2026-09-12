@@ -147,15 +147,21 @@ The SHA-256 covers **every output byte written before the footer**, then the foo
 
 - Separators: both `/` and `\` accepted on input; stored paths use `/`
 - Lookup is **case-insensitive** (ASCII A–Z folding only)
-- Name deduplication in the writer's table is **case-sensitive** (ordinal)
+- Name deduplication is by **Windows-1252 bytes** (v1.2.0): writer names are
+  truncated to 0x7FFF chars and encoded before identity/sort decisions, so
+  names that differ only in characters CP1252 cannot represent collapse to
+  one node exactly like the C++ tool; the file-tree sort uses the same byte
+  comparator as the native reader
 - Sort order mirrors the C++ comparator exactly, including its reversed-mismatch quirk (`(byte)c2 - (byte)c1`) and "shorter string sorts after its prefix"
 
 ## Reader Behavior
 
-- `TryOpen` returns `null` on **any** validation failure — it never throws (mirrors the C++ open chain)
+- `TryOpen` returns `null` on **any** validation failure — it never throws (mirrors the C++ open chain); with `leaveOpen: false` (the default), a failed `TryOpen(Stream)` also disposes the stream, so ownership only transfers on success
 - A **4 MiB LRU cache** (64 × 64 KiB blocks) holds decompressed blocks
 - Reads are thread-safe (single lock, like the C++ mutex)
 - Data blocks carry no per-block checksums (same as native): flipped bytes may decode to different content instead of throwing. Truncations always fail the open.
+- Crafted tables are bounds-checked without wrapping (`OffsetInfo.IsWithinValidRange`, child ranges, directory indices); a block fault mid-read returns a short read instead of looking like EOF
+- Extraction treats entry names as untrusted: traversal, rooted, drive-qualified, and reserved device names are refused, and the resolved path must stay under the destination root (see [Pipeline](pipeline.md#extraction-safety))
 
 ## Limits
 
