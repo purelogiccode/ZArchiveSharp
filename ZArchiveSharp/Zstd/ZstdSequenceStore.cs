@@ -219,6 +219,17 @@ public sealed class ZstdSequenceStore
     private const int LongLengthMatch = 2;
     private const int LongLengthAdd = 0x10000;
 
+    // Pooled-store cap: a handful per worker is plenty (one live store per
+    // in-flight block); excess returns simply drop for the GC, exactly like
+    // ArrayPool's trimming behavior.
+    private const int PoolCapacity = 64;
+    private static readonly Stack<ZstdSequenceStore> Pool = new();
+#if NET9_0_OR_GREATER
+    private static readonly Lock PoolGate = new();
+#else
+    private static readonly object PoolGate = new();
+#endif
+
     private uint[] _offBases;
     private ushort[] _litLengths;
     private ushort[] _mlBases;
@@ -227,8 +238,7 @@ public sealed class ZstdSequenceStore
     private bool _trailingSet;
 
     /// <summary>Creates a store pre-sized for a source of <paramref name="maxSourceSize"/> bytes.</summary>
-    public ZstdSequenceStore(int maxSourceSize = 65536)
-    {
+    public ZstdSequenceStore(int maxSourceSize = 65536)    {
         ArgumentOutOfRangeException.ThrowIfNegative(maxSourceSize);
         // Every sequence consumes at least MinMatch... in practice ≥ 4 bytes
         // (both finders); bound generously and grow on demand regardless.
@@ -237,6 +247,47 @@ public sealed class ZstdSequenceStore
         _litLengths = new ushort[seqCap];
         _mlBases = new ushort[seqCap];
         _literals = new byte[Math.Max(1, maxSourceSize)];
+    }
+
+    /// <summary>
+    /// Rents a store sized for <paramref name="maxSourceSize"/> input bytes,
+    /// reset and empty. All reads are bounded by the written counts, so reused
+    /// backing arrays need no clearing — output is identical to a fresh store.
+    /// Pair every rent with <see cref="Return"/>.
+    /// </summary>
+    internal static ZstdSequenceStore Rent(int maxSourceSize)
+    {
+        int need = Math.Max(1, maxSourceSize);
+        lock (PoolGate)
+        {
+            while (Pool.Count != 0)
+            {
+                var candidate = Pool.Pop();
+                // First fit wins; misses are dropped for the GC (sizes on a
+                // given path are uniform, so the pool converges in a block or
+                // two, like ArrayPool bucketing).
+                if (candidate._literals.Length >= need)
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return new ZstdSequenceStore(maxSourceSize);
+    }
+
+    /// <summary>Returns a rented store for reuse (reset; oversized pool drops the excess).</summary>
+    internal static void Return(ZstdSequenceStore store)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        store.Reset();
+        lock (PoolGate)
+        {
+            if (Pool.Count < PoolCapacity)
+            {
+                Pool.Push(store);
+            }
+        }
     }
 
     /// <summary>Number of stored sequences.</summary>

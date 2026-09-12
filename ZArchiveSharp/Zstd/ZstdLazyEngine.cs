@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 
 namespace ZArchiveSharp.Zstd;
@@ -39,6 +40,12 @@ internal static class ZstdLazyEngine
     private const int RowHashTagBits = 8; // ZSTD_ROW_HASH_TAG_BITS (zstd_lazy.h).
     private const int RowHashTagMask = (1 << RowHashTagBits) - 1;
     private const int RowHashCacheSize = 8; // ZSTD_ROW_HASH_CACHE_SIZE.
+
+    /// <summary>
+    /// Candidate scratch entries for <c>RowFindBestMatch</c>: <c>rowLog</c> is
+    /// clamped to 6, so a 64-entry stack buffer always suffices.
+    /// </summary>
+    private const int MaxRowEntries = 1 << 6;
     private const uint Prime4 = 2654435761U;
     private const ulong Prime5 = 889523592379UL;
     private const ulong Prime6 = 227718039650203UL;
@@ -202,13 +209,27 @@ internal static class ZstdLazyEngine
             return 0;
         }
 
-        uint[] hashTable = new uint[1 << table.HashLog];
-        uint[] chainTable = new uint[1 << table.ChainLog];
-        byte[] tagTable = new byte[1 << table.HashLog];
+        // Pooled (cleared: the search treats zeros as empty, exactly like a
+        // fresh table, so output is identical while the GC sees nothing).
+        var hashTable = ArrayPool<uint>.Shared.Rent(1 << table.HashLog);
+        var chainTable = ArrayPool<uint>.Shared.Rent(1 << table.ChainLog);
+        var tagTable = ArrayPool<byte>.Shared.Rent(1 << table.HashLog);
+        Array.Clear(hashTable, 0, 1 << table.HashLog);
+        Array.Clear(chainTable, 0, 1 << table.ChainLog);
+        Array.Clear(tagTable, 0, 1 << table.HashLog);
         var nextToUpdate = 0;
-        return FindMatchesCore(
-            source, 0, source.Length, hashTable, chainTable, tagTable,
-            ref nextToUpdate, store, repeatOffsets, table);
+        try
+        {
+            return FindMatchesCore(
+                source, 0, source.Length, hashTable, chainTable, tagTable,
+                ref nextToUpdate, store, repeatOffsets, table);
+        }
+        finally
+        {
+            ArrayPool<uint>.Shared.Return(hashTable);
+            ArrayPool<uint>.Shared.Return(chainTable);
+            ArrayPool<byte>.Shared.Return(tagTable);
+        }
     }
 
     /// <summary>
@@ -295,6 +316,10 @@ internal static class ZstdLazyEngine
         var ip = blockStart == 0 ? 1 : blockStart;
         var lazySkipping = false; // Reset per block, like ms->lazySkipping.
 
+        // Candidate scratch for every row search below (stack: zero GC, and
+        // hoisted out of the loops for CA2014; sequential uses never overlap).
+        Span<uint> matchScratch = stackalloc uint[MaxRowEntries];
+
         while (ip < ilimit)
         {
             var matchLength = 0;
@@ -316,7 +341,7 @@ internal static class ZstdLazyEngine
                 uint found = 999999999;
                 var ml2 = useRow
                     ? RowFindBestMatch(source, blockEnd, ip, ref found, mls, rowHashLog, rowLog, searchLog,
-                        windowLog, hashTable, tagTable, ref nextToUpdate, ref lazySkipping)
+                        windowLog, hashTable, tagTable, matchScratch, ref nextToUpdate, ref lazySkipping)
                     : useBt
                         ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref found, mls, hashLog, searchLog,
                             chainLog, windowLog, hashTable, chainTable, ref nextToUpdate)
@@ -361,7 +386,7 @@ internal static class ZstdLazyEngine
                         uint candidate = 999999999;
                         var ml2 = useRow
                             ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog, searchLog,
-                                windowLog, hashTable, tagTable, ref nextToUpdate, ref lazySkipping)
+                                windowLog, hashTable, tagTable, matchScratch, ref nextToUpdate, ref lazySkipping)
                             : useBt
                                 ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog,
                                     searchLog,
@@ -396,13 +421,12 @@ internal static class ZstdLazyEngine
                             }
                         }
 
-                        {
-                            uint candidate = 999999999;
-                            var ml2 = useRow
-                                ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog,
-                                    searchLog,
-                                    windowLog, hashTable, tagTable, ref nextToUpdate, ref lazySkipping)
-                                : useBt
+                    {
+                        uint candidate = 999999999;
+                        var ml2 = useRow
+                            ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog, searchLog,
+                                windowLog, hashTable, tagTable, matchScratch, ref nextToUpdate, ref lazySkipping)
+                            : useBt
                                     ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog,
                                         searchLog,
                                         chainLog, windowLog, hashTable, chainTable, ref nextToUpdate)
@@ -589,11 +613,14 @@ internal static class ZstdLazyEngine
     /// (head forward, position 0 skipped, lowLimit break, attempts capped at
     /// <c>min(searchLog,rowLog)</c>), inserts the current position, then
     /// returns the longest match (strictly greater wins ties).
+    /// <paramref name="matchBuffer"/> is caller scratch for the candidate
+    /// collection (at least <c>1 &lt;&lt; rowLog</c> entries; callers pass a
+    /// stack buffer, so the per-position search allocates nothing).
     /// </summary>
     private static int RowFindBestMatch(
         ReadOnlySpan<byte> src, int end, int ip, ref uint offBase,
         int mls, int rowHashLog, int rowLog, int searchLog, int windowLog,
-        uint[] hashTable, byte[] tagTable,
+        uint[] hashTable, byte[] tagTable, Span<uint> matchBuffer,
         ref int nextToUpdate, ref bool lazySkipping)
     {
         var rowEntries = 1 << rowLog;
@@ -629,7 +656,6 @@ internal static class ZstdLazyEngine
         var head = (uint)(tagTable[relRow] & rowMask);
 
         // Collect candidates in row order from head forward.
-        var matchBuffer = new uint[rowEntries];
         var numMatches = 0;
         for (var k = 0; k < rowEntries && attempts > 0; k++)
         {

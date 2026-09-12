@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace ZArchiveSharp.Zstd;
 
 /// <summary>
@@ -99,30 +101,66 @@ internal sealed class ZstdFrameState
     /// <summary>Persistent fast hash table (<c>1 &lt;&lt; hashLog</c>, zeroed).</summary>
     internal uint[] FastHashTable()
     {
-        return _fastHash ??= new uint[1 << Prm.HashLog];
+        if (_fastHash is null)
+        {
+            _fastHash = ArrayPool<uint>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_fastHash, 0, 1 << Prm.HashLog);
+        }
+
+        return _fastHash;
     }
 
     /// <summary>Persistent double-fast tables (long: <c>hashLog</c>, small: <c>chainLog</c>).</summary>
     internal (uint[] Long, uint[] Small) DoubleFastTables()
     {
-        _dfastLong ??= new uint[1 << Prm.HashLog];
-        _dfastSmall ??= new uint[1 << Prm.ChainLog];
+        if (_dfastLong is null)
+        {
+            _dfastLong = ArrayPool<uint>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_dfastLong, 0, 1 << Prm.HashLog);
+        }
+
+        if (_dfastSmall is null)
+        {
+            _dfastSmall = ArrayPool<uint>.Shared.Rent(1 << Prm.ChainLog);
+            Array.Clear(_dfastSmall, 0, 1 << Prm.ChainLog);
+        }
+
         return (_dfastLong, _dfastSmall);
     }
 
     /// <summary>Persistent lazy hash + chain tables (hash-chain and BT searches).</summary>
     internal (uint[] Hash, uint[] Chain) LazyChainTables()
     {
-        _lazyHash ??= new uint[1 << Prm.HashLog];
-        _lazyChain ??= new uint[1 << Prm.ChainLog];
+        if (_lazyHash is null)
+        {
+            _lazyHash = ArrayPool<uint>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_lazyHash, 0, 1 << Prm.HashLog);
+        }
+
+        if (_lazyChain is null)
+        {
+            _lazyChain = ArrayPool<uint>.Shared.Rent(1 << Prm.ChainLog);
+            Array.Clear(_lazyChain, 0, 1 << Prm.ChainLog);
+        }
+
         return (_lazyHash, _lazyChain);
     }
 
     /// <summary>Persistent lazy hash + tag tables (row search).</summary>
     internal (uint[] Hash, byte[] Tag) LazyRowTables()
     {
-        _lazyHash ??= new uint[1 << Prm.HashLog];
-        _lazyTag ??= new byte[1 << Prm.HashLog];
+        if (_lazyHash is null)
+        {
+            _lazyHash = ArrayPool<uint>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_lazyHash, 0, 1 << Prm.HashLog);
+        }
+
+        if (_lazyTag is null)
+        {
+            _lazyTag = ArrayPool<byte>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_lazyTag, 0, 1 << Prm.HashLog);
+        }
+
         return (_lazyHash, _lazyTag);
     }
 
@@ -192,14 +230,61 @@ internal sealed class ZstdFrameState
     /// </summary>
     internal (uint[] Hash, uint[] Bt, uint[] Hash3) OptTables()
     {
-        _optHash ??= new uint[1 << Prm.HashLog];
-        _optBt ??= new uint[1 << Prm.ChainLog];
+        if (_optHash is null)
+        {
+            _optHash = ArrayPool<uint>.Shared.Rent(1 << Prm.HashLog);
+            Array.Clear(_optHash, 0, 1 << Prm.HashLog);
+        }
+
+        if (_optBt is null)
+        {
+            _optBt = ArrayPool<uint>.Shared.Rent(1 << Prm.ChainLog);
+            Array.Clear(_optBt, 0, 1 << Prm.ChainLog);
+        }
+
         if (_optHash3 is null)
         {
             var hashLog3 = ZstdOpt.HashLog3For(Prm);
-            _optHash3 = hashLog3 > 0 ? new uint[1 << hashLog3] : [];
+            _optHash3 = hashLog3 > 0 ? ArrayPool<uint>.Shared.Rent(1 << hashLog3) : [];
+            if (_optHash3.Length != 0)
+            {
+                Array.Clear(_optHash3, 0, 1 << hashLog3);
+            }
         }
 
         return (_optHash, _optBt, _optHash3);
+    }
+
+    /// <summary>
+    /// Returns all rented match tables to the pool. Called once the frame is
+    /// fully encoded (see <c>EncodeFrameCore</c>); tables are re-rented (and
+    /// re-cleared) on next use, so reuse is invisible to the search. States
+    /// that escape without release simply let the GC reclaim the arrays.
+    /// </summary>
+    internal void ReleaseTables()
+    {
+        Return(ref _fastHash);
+        Return(ref _dfastLong);
+        Return(ref _dfastSmall);
+        Return(ref _lazyHash);
+        Return(ref _lazyChain);
+        Return(ref _lazyTag);
+        Return(ref _optHash);
+        Return(ref _optBt);
+        Return(ref _optHash3);
+
+        static void Return<T>(ref T[]? table)
+        {
+            if (table is not null)
+            {
+                // The empty hash3 marker was never rented.
+                if (table.Length != 0)
+                {
+                    ArrayPool<T>.Shared.Return(table);
+                }
+
+                table = null;
+            }
+        }
     }
 }

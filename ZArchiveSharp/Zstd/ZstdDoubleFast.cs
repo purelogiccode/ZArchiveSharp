@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace ZArchiveSharp.Zstd;
 
 /// <summary>
@@ -77,9 +79,19 @@ internal static class ZstdDoubleFast
             return 0;
         }
 
-        var hashLong = new uint[1 << prm.HashLog];
-        var hashSmall = new uint[1 << prm.ChainLog];
-        return FindMatchesCore(source, 0, source.Length, hashLong, hashSmall, store, repeatOffsets, prm);
+        var hashLong = ArrayPool<uint>.Shared.Rent(1 << prm.HashLog);
+        var hashSmall = ArrayPool<uint>.Shared.Rent(1 << prm.ChainLog);
+        Array.Clear(hashLong, 0, 1 << prm.HashLog);
+        Array.Clear(hashSmall, 0, 1 << prm.ChainLog);
+        try
+        {
+            return FindMatchesCore(source, 0, source.Length, hashLong, hashSmall, store, repeatOffsets, prm);
+        }
+        finally
+        {
+            ArrayPool<uint>.Shared.Return(hashLong);
+            ArrayPool<uint>.Shared.Return(hashSmall);
+        }
     }
 
     /// <summary>

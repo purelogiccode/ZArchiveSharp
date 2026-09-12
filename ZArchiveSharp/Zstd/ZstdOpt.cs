@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 using System.Runtime.InteropServices;
 
@@ -182,22 +183,43 @@ internal static class ZstdOpt
 
         var optLevel = OptLevelFor(table.Strategy);
         var stats = new OptStats(); // fresh: litLengthSum == 0 (first block init)
-
-        if (table.Strategy == ZstdStrategy.BtUltra2 && n > PredefThreshold)
+        var tables = RentTables(table);
+        ZstdSequenceStore? tmpStore = null;
+        try
         {
-            // Two-pass stats seeding (ZSTD_initStats_ultra): a throwaway pass
-            // collects statistics; the real pass runs over fresh tables with
-            // the seeded stats (equivalent to the native window-shift
-            // invalidation, whose stale entries all sit below lowLimit).
-            var tmpStore = new ZstdSequenceStore(n);
-            var tmpRep = (uint[])repeatOffsets.Clone();
-            var tmpNext = 0;
-            OptGeneric(source, 0, n, tmpStore, tmpRep, table, optLevel, stats, NewTables(table), ref tmpNext);
-        }
+            if (table.Strategy == ZstdStrategy.BtUltra2 && n > PredefThreshold)
+            {
+                // Two-pass stats seeding (ZSTD_initStats_ultra): a throwaway pass
+                // collects statistics; the real pass runs over fresh tables with
+                // the seeded stats (equivalent to the native window-shift
+                // invalidation, whose stale entries all sit below lowLimit).
+                tmpStore = ZstdSequenceStore.Rent(n);
+                var tmpRep = (uint[])repeatOffsets.Clone();
+                var tmpNext = 0;
+                var tmpTables = RentTables(table);
+                try
+                {
+                    OptGeneric(source, 0, n, tmpStore, tmpRep, table, optLevel, stats, tmpTables, ref tmpNext);
+                }
+                finally
+                {
+                    ReturnTables(tmpTables);
+                }
+            }
 
-        var nextToUpdate = 0;
-        return OptGeneric(source, 0, n, store, repeatOffsets, table, optLevel, stats, NewTables(table),
-            ref nextToUpdate);
+            var nextToUpdate = 0;
+            return OptGeneric(source, 0, n, store, repeatOffsets, table, optLevel, stats, tables,
+                ref nextToUpdate);
+        }
+        finally
+        {
+            if (tmpStore is not null)
+            {
+                ZstdSequenceStore.Return(tmpStore);
+            }
+
+            ReturnTables(tables);
+        }
     }
 
     /// <summary>
@@ -237,11 +259,20 @@ internal static class ZstdOpt
             // throwaway pass runs over temp tables (discarded, like the
             // native window-shift invalidation) sharing the frame statistics;
             // the real pass below refills the still-empty persistent tables.
-            var tmpStore = new ZstdSequenceStore(blockEnd);
+            var tmpStore = ZstdSequenceStore.Rent(blockEnd);
             var tmpRep = (uint[])repeatOffsets.Clone();
             var tmpNext = 0;
-            OptGeneric(state.Frame, blockStart, blockEnd, tmpStore, tmpRep, table, optLevel, stats, NewTables(table),
-                ref tmpNext);
+            var tmpTables = RentTables(table);
+            try
+            {
+                OptGeneric(state.Frame, blockStart, blockEnd, tmpStore, tmpRep, table, optLevel, stats, tmpTables,
+                    ref tmpNext);
+            }
+            finally
+            {
+                ZstdSequenceStore.Return(tmpStore);
+                ReturnTables(tmpTables);
+            }
         }
 
         return OptGeneric(state.Frame, blockStart, blockEnd, store, repeatOffsets, table, optLevel, stats, tables,
@@ -271,6 +302,38 @@ internal static class ZstdOpt
         var hashLog3 = HashLog3For(prm);
         uint[] hash3 = hashLog3 > 0 ? new uint[1 << hashLog3] : [];
         return (hash, bt, hash3);
+    }
+
+    /// <summary>
+    /// Pooled <see cref="NewTables"/> equivalent: cleared tables (zeros read
+    /// as empty, exactly like fresh ones, so output is identical). Pair with
+    /// <see cref="ReturnTables"/>.
+    /// </summary>
+    private static (uint[] Hash, uint[] Bt, uint[] Hash3) RentTables(ZstdCompressionParameters prm)
+    {
+        var hash = ArrayPool<uint>.Shared.Rent(1 << prm.HashLog);
+        var bt = ArrayPool<uint>.Shared.Rent(1 << prm.ChainLog);
+        var hashLog3 = HashLog3For(prm);
+        uint[] hash3 = hashLog3 > 0 ? ArrayPool<uint>.Shared.Rent(1 << hashLog3) : [];
+        Array.Clear(hash, 0, 1 << prm.HashLog);
+        Array.Clear(bt, 0, 1 << prm.ChainLog);
+        if (hash3.Length != 0)
+        {
+            Array.Clear(hash3, 0, 1 << hashLog3);
+        }
+
+        return (hash, bt, hash3);
+    }
+
+    /// <summary>Returns tables rented by <see cref="RentTables"/>.</summary>
+    private static void ReturnTables((uint[] Hash, uint[] Bt, uint[] Hash3) tables)
+    {
+        ArrayPool<uint>.Shared.Return(tables.Hash);
+        ArrayPool<uint>.Shared.Return(tables.Bt);
+        if (tables.Hash3.Length != 0)
+        {
+            ArrayPool<uint>.Shared.Return(tables.Hash3);
+        }
     }
 
     /// <summary>

@@ -1,3 +1,4 @@
+using System.Buffers;
 using ZArchiveSharp.Zstd;
 
 namespace ZArchiveSharp;
@@ -66,7 +67,6 @@ public sealed class ZArchiveReader : IDisposable
 
     private readonly LinkedList<CacheBlock> _lruChain = new();
     private readonly Dictionary<ulong, LinkedListNode<CacheBlock>> _blockLookup = [];
-    private readonly byte[] _blockDecompressionBuffer = new byte[ZArchiveCommon.CompressedBlockSize];
     private bool _disposed;
 
     /// <summary>
@@ -615,6 +615,103 @@ public sealed class ZArchiveReader : IDisposable
     // Block cache
     // ------------------------------------------------------------------
 
+    /// <summary>
+    /// Returns the global uncompressed offset and size of a file node.
+    /// Thread-safe: the file tree is immutable after opening.
+    /// </summary>
+    internal bool TryGetFileRange(uint node, out ulong offset, out ulong size)
+    {
+        offset = 0;
+        size = 0;
+        if (node >= (uint)_fileTree.Length || !_fileTree[node].IsFile)
+        {
+            return false;
+        }
+
+        offset = _fileTree[node].GetFileOffset();
+        size = _fileTree[node].GetFileSize();
+        return true;
+    }
+
+    /// <summary>
+    /// Decodes one global 64 KiB block into <paramref name="destination"/>
+    /// (which must hold <c>CompressedBlockSize</c> bytes at
+    /// <paramref name="destinationOffset"/>). Thread-safe and independent of
+    /// the LRU cache, so concurrent calls for distinct blocks scale: only the
+    /// compressed-slice stream read holds the mutex, never the decode itself.
+    /// Returns false (never throws) when the block is out of range,
+    /// unreadable, or corrupt.
+    /// </summary>
+    internal bool TryDecodeBlock(ulong blockIndex, byte[] destination, int destinationOffset = 0)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (blockIndex >= _blockCount ||
+            destinationOffset < 0 ||
+            destination.Length - destinationOffset < ZArchiveCommon.CompressedBlockSize)
+        {
+            return false;
+        }
+
+        var recordIndex = blockIndex / (ulong)ZArchiveCommon.EntriesPerOffsetRecord;
+        var recordSubIndex = blockIndex % (ulong)ZArchiveCommon.EntriesPerOffsetRecord;
+        if (recordIndex >= (ulong)_offsetRecords.Length)
+        {
+            return false;
+        }
+
+        var record = _offsetRecords[recordIndex];
+        var offset = record.BaseOffset;
+        for (ulong i = 0; i < recordSubIndex; i++)
+        {
+            offset += (ulong)record.Sizes[i] + 1;
+        }
+
+        var compressedSize = (uint)record.Sizes[recordSubIndex] + 1;
+        if (offset + compressedSize > _compressedDataSize)
+        {
+            return false;
+        }
+
+        // Single read under the set-before-reading contract.
+        var dict = Dictionary;
+        var fileOffset = _compressedDataOffset + offset;
+        if (compressedSize == (uint)ZArchiveCommon.CompressedBlockSize)
+        {
+            lock (_mutex)
+            {
+                return !_disposed && TryReadAt(_stream, (long)fileOffset,
+                    destination, destinationOffset, ZArchiveCommon.CompressedBlockSize);
+            }
+        }
+
+        var rented = ArrayPool<byte>.Shared.Rent((int)compressedSize);
+        try
+        {
+            lock (_mutex)
+            {
+                if (_disposed || !TryReadAt(_stream, (long)fileOffset, rented, 0, (int)compressedSize))
+                {
+                    return false;
+                }
+            }
+
+            try
+            {
+                ZstdDecompressor.DecompressExact(rented, 0, (int)compressedSize,
+                    destination, destinationOffset, ZArchiveCommon.CompressedBlockSize, dict);
+                return true;
+            }
+            catch (ZstdException)
+            {
+                return false;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
+
     private CacheBlock? GetCachedBlock(ulong blockIndex)
     {
         if (_blockLookup.TryGetValue(blockIndex, out var node))
@@ -683,21 +780,25 @@ public sealed class ZArchiveReader : IDisposable
             return TryReadAt(_stream, (long)fileOffset, block.Data, 0, block.Data.Length);
         }
 
-        if (!TryReadAt(_stream, (long)fileOffset, _blockDecompressionBuffer, 0, (int)compressedSize))
-        {
-            return false;
-        }
-
+        // Pooled scratch (fully read before decode, so no clearing needed).
+        var src = ArrayPool<byte>.Shared.Rent((int)compressedSize);
         try
         {
-            var src = new byte[compressedSize];
-            Array.Copy(_blockDecompressionBuffer, src, (int)compressedSize);
+            if (!TryReadAt(_stream, (long)fileOffset, src, 0, (int)compressedSize))
+            {
+                return false;
+            }
+
             ZstdDecompressor.DecompressExact(src, 0, (int)compressedSize, block.Data, 0, block.Data.Length, Dictionary);
             return true;
         }
         catch (ZstdException)
         {
             return false;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(src);
         }
     }
 

@@ -1,3 +1,5 @@
+using System.Buffers;
+
 namespace ZArchiveSharp.Zstd;
 
 #pragma warning disable MA0048 // File name must match type name — related types are grouped intentionally
@@ -214,9 +216,17 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         var windowSize = Math.Max(1L, Math.Min(1L << prm.WindowLog, (long)src.Length));
         var blockMax = (int)Math.Min(MaxBlockSize, windowSize);
 
-        var dst = new byte[GetCompressBound(src.Length)];
-        var pos = WriteFrameHeader(dst, 0, src.Length, checksum, level);
-        return EncodeFrameCore(src, null, level, prm, blockMax, dst, pos, checksum);
+        var dst = ArrayPool<byte>.Shared.Rent(GetCompressBound(src.Length));
+        try
+        {
+            var pos = WriteFrameHeader(dst, 0, src.Length, checksum, level);
+            pos = EncodeFrameCore(src, null, level, prm, blockMax, dst, pos, checksum);
+            return FinishFrame(dst, pos);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(dst);
+        }
     }
 
     /// <summary>
@@ -240,9 +250,17 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         var prm = ZstdCompressionParameters.ForTierLevel(
             ZstdCompressionParameters.SizeTier.Default, level);
         var blockMax = (int)Math.Min(MaxBlockSize, 1L << prm.WindowLog);
-        var dst = new byte[GetCompressBound(chunk.Length)];
-        var pos = WriteStreamingFrameHeader(prm.WindowLog, dst, 0, checksum);
-        return EncodeFrameCore(chunk, null, level, prm, blockMax, dst, pos, checksum, streaming: true);
+        var dst = ArrayPool<byte>.Shared.Rent(GetCompressBound(chunk.Length));
+        try
+        {
+            var pos = WriteStreamingFrameHeader(prm.WindowLog, dst, 0, checksum);
+            pos = EncodeFrameCore(chunk, null, level, prm, blockMax, dst, pos, checksum, streaming: true);
+            return FinishFrame(dst, pos);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(dst);
+        }
     }
 
     /// <summary>
@@ -291,11 +309,19 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         }
 
         var (prm, blockMax) = DictFrameParams(total, level);
-        var dst = new byte[GetCompressBound((int)total)];
-        var pos = WriteDictFrameHeader(prm.WindowLog, dst, 0, src.Length, checksum, unchecked((uint)dict.DictId));
-        return EncodeFrameCore(
-            src, dict.Content, level, prm, blockMax, dst, pos, checksum,
-            repSeed: (uint[])dict.RepeatOffsets.Clone());
+        var dst = ArrayPool<byte>.Shared.Rent(GetCompressBound((int)total));
+        try
+        {
+            var pos = WriteDictFrameHeader(prm.WindowLog, dst, 0, src.Length, checksum, unchecked((uint)dict.DictId));
+            pos = EncodeFrameCore(
+                src, dict.Content, level, prm, blockMax, dst, pos, checksum,
+                repSeed: (uint[])dict.RepeatOffsets.Clone());
+            return FinishFrame(dst, pos);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(dst);
+        }
     }
 
     /// <summary>
@@ -319,11 +345,19 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         }
 
         var (prm, blockMax) = DictFrameParams(total, level);
-        var dst = new byte[GetCompressBound((int)total)];
-        var pos = WriteDictStreamingFrameHeader(prm.WindowLog, dst, 0, checksum, unchecked((uint)dict.DictId));
-        return EncodeFrameCore(
-            chunk, dict.Content, level, prm, blockMax, dst, pos, checksum,
-            streaming: true, repSeed: (uint[])dict.RepeatOffsets.Clone());
+        var dst = ArrayPool<byte>.Shared.Rent(GetCompressBound((int)total));
+        try
+        {
+            var pos = WriteDictStreamingFrameHeader(prm.WindowLog, dst, 0, checksum, unchecked((uint)dict.DictId));
+            pos = EncodeFrameCore(
+                chunk, dict.Content, level, prm, blockMax, dst, pos, checksum,
+                streaming: true, repSeed: (uint[])dict.RepeatOffsets.Clone());
+            return FinishFrame(dst, pos);
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(dst);
+        }
     }
 
     /// <summary>
@@ -420,7 +454,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         return pos - offset;
     }
 
-    private static byte[] EncodeFrameCore(
+    private static int EncodeFrameCore(
         ReadOnlySpan<byte> content, byte[]? prefix, int level, ZstdCompressionParameters prm, int blockMax,
         byte[] dst, int pos, bool checksum, bool streaming = false, uint[]? repSeed = null)
     {
@@ -438,7 +472,10 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             or ZstdStrategy.Greedy or ZstdStrategy.Lazy or ZstdStrategy.Lazy2 or ZstdStrategy.BtLazy2
             or ZstdStrategy.BtOpt or ZstdStrategy.BtUltra or ZstdStrategy.BtUltra2;
         var contentOffset = prefix?.Length ?? 0;
-        var frame = stateful ? new byte[contentOffset + content.Length] : [];
+        // Pooled frame copy (fully overwritten below before any read, so no
+        // clearing needed; may be larger than requested — all consumers use
+        // explicit block bounds, never the array length).
+        var frame = stateful ? ArrayPool<byte>.Shared.Rent(contentOffset + content.Length) : [];
         if (stateful)
         {
             prefix?.CopyTo(frame, 0);
@@ -446,6 +483,32 @@ public sealed class ZstdCompressor : IZarBlockCompressor
         }
 
         ZstdFrameState? state = stateful ? new ZstdFrameState(frame, level, prm) : null;
+        try
+        {
+            return EncodeFrameBlocks(
+                content, contentOffset, frame, state, level, prm, blockMax,
+                dst, pos, checksum, streaming, repSeed);
+        }
+        finally
+        {
+            state?.ReleaseTables();
+            if (stateful)
+            {
+                ArrayPool<byte>.Shared.Return(frame);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Block loop of <see cref="EncodeFrameCore"/>: writes blocks at
+    /// <c>dst[pos]</c>, returning the final position (the caller trims
+    /// <paramref name="dst"/> to the product).
+    /// </summary>
+    private static int EncodeFrameBlocks(
+        ReadOnlySpan<byte> content, int contentOffset, byte[] frame, ZstdFrameState? state,
+        int level, ZstdCompressionParameters prm, int blockMax,
+        byte[] dst, int pos, bool checksum, bool streaming, uint[]? repSeed)
+    {
         if (state is not null && contentOffset > 0)
         {
             if (prm.Strategy == ZstdStrategy.Fast)
@@ -547,8 +610,15 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             pos += 4;
         }
 
-        Array.Resize(ref dst, pos);
-        return dst;
+        return pos;
+    }
+
+    /// <summary>Trims pooled <paramref name="dst"/> to the encoded product.</summary>
+    private static byte[] FinishFrame(byte[] dst, int pos)
+    {
+        var result = new byte[pos];
+        Buffer.BlockCopy(dst, 0, result, 0, pos);
+        return result;
     }
 
     /// <summary>

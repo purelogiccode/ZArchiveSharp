@@ -48,6 +48,9 @@ public sealed class ZarPipelineOptions
 
     /// <summary>
     /// the actual worker count is <c>min(workers, items)</c> like
+    /// 64 KiB block compression/decompression inside a single pack/extract
+    /// (capped by processor count); blocks are independent, so parallel
+    /// output is byte-identical to sequential.
     /// </summary>
     public int MaxDegreeOfParallelism { get; set; } = 4;
 
@@ -74,6 +77,35 @@ public sealed class ZarPipelineOptions
     {
         return Compressor ?? new ZstdCompressor(new ZstdCompressionOptions
             { Level = Level, ChecksumFlag = Checksum, Dictionary = Dictionary });
+    }
+
+    /// <summary>
+    /// One compressor per block-compression worker, or null to pack
+    /// sequentially. Only the default level/checksum/dictionary configuration
+    /// qualifies: an explicit <see cref="Compressor"/> (including
+    /// <c>ZarRawCompressor</c>) stays on the single-threaded path because a
+    /// foreign implementation's thread-safety is unknown — and raw storage is
+    /// a memcpy that parallelism cannot speed up anyway.
+    /// </summary>
+    internal Func<IZarBlockCompressor>? ResolveCompressorFactory()
+    {
+        if (Compressor is not null)
+        {
+            return null;
+        }
+
+        var options = new ZstdCompressionOptions
+            { Level = Level, ChecksumFlag = Checksum, Dictionary = Dictionary };
+        return () => new ZstdCompressor(options);
+    }
+
+    /// <summary>
+    /// Block-level fan-out for a single pack/extract: at least 1, at most the
+    /// processor count (oversubscribing a CPU-bound codec only adds churn).
+    /// </summary>
+    internal int BlockWorkers()
+    {
+        return Math.Min(Math.Max(1, MaxDegreeOfParallelism), Environment.ProcessorCount);
     }
 
     internal int ClampedWorkers(int items)

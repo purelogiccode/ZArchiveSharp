@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Numerics;
 
 namespace ZArchiveSharp.Zstd;
@@ -239,12 +240,19 @@ internal static class ZstdBlockEncoder
             throw new ZstdException("Block destination too small.");
         }
 
-        var store = new ZstdSequenceStore(Math.Max(1, src.Length));
-        var srcCopy = src.ToArray();
-        ZstdMatchFinder.FindMatches(srcCopy, store, rep, prm);
-        // Standalone block: entropy starts with no previous tables (first-
-        // block behavior); the staged next state is discarded.
-        return EncodeStore(store, prm.Strategy, dst, dstOffset, end, new ZstdEntropyState(), new ZstdEntropyState());
+        var store = ZstdSequenceStore.Rent(Math.Max(1, src.Length));
+        try
+        {
+            var srcCopy = src.ToArray();
+            ZstdMatchFinder.FindMatches(srcCopy, store, rep, prm);
+            // Standalone block: entropy starts with no previous tables (first-
+            // block behavior); the staged next state is discarded.
+            return EncodeStore(store, prm.Strategy, dst, dstOffset, end, new ZstdEntropyState(), new ZstdEntropyState());
+        }
+        finally
+        {
+            ZstdSequenceStore.Return(store);
+        }
     }
 
     /// <summary>
@@ -264,9 +272,16 @@ internal static class ZstdBlockEncoder
             throw new ZstdException("Block destination too small.");
         }
 
-        var store = new ZstdSequenceStore(Math.Max(1, blockEnd - blockStart));
-        state.FindMatches(blockStart, blockEnd, store, rep);
-        return EncodeStoreStateful(state, store, dst, dstOffset, end);
+        var store = ZstdSequenceStore.Rent(Math.Max(1, blockEnd - blockStart));
+        try
+        {
+            state.FindMatches(blockStart, blockEnd, store, rep);
+            return EncodeStoreStateful(state, store, dst, dstOffset, end);
+        }
+        finally
+        {
+            ZstdSequenceStore.Return(store);
+        }
     }
 
     /// <summary>
@@ -337,92 +352,101 @@ internal static class ZstdBlockEncoder
             return pos - start;
         }
 
-        var litBuf = new byte[litLen];
+        // Pooled working copy (fully written by the two copies below before
+        // any read; every use passes explicit litLen bounds, so a larger
+        // rented array is invisible).
+        var litBuf = ArrayPool<byte>.Shared.Rent(litLen);
         store.Literals.CopyTo(new Span<byte>(litBuf, 0, store.LiteralLength));
         store.TrailingLiterals.CopyTo(new Span<byte>(litBuf, store.LiteralLength, store.TrailingLength));
-
-        // Too small: don't even attempt compression (ZSTD_minLiteralsToCompress:
-        // 8 << min(9-strategy, 3), or 6 with a valid repeat table).
-        var shift = Math.Min(9 - (int)strategy, 3);
-        var minLit = prev.HufRepeat == ZstdHufRepeat.Valid ? 6 : 8 << shift;
-        if (litLen < minLit)
+        try
         {
-            return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
-        }
-
-        // Suspect-uncompressible sampling gate (SUSPECT_UNCOMPRESSIBLE_LITERAL_RATIO).
-        var suspect = nbSeq == 0 || litLen / Math.Max(1, nbSeq) >= 20;
-
-        // Huffman attempt with previous-table reuse (HUF_compress1X/4X_repeat):
-        // output (table description + streams, or bare treeless streams) lands
-        // after the header slot. Strategies below lazy prefer the old table
-        // for inputs up to 1 KiB; btultra and above probe the optimal depth.
-        var lhSize = 3 + (litLen >= 1024 ? 1 : 0) + (litLen >= 16384 ? 1 : 0);
-        var preferRepeat = strategy < ZstdStrategy.Lazy && litLen <= 1024;
-        var huffSize = 0;
-        HuffmanCTable? huffTable = null;
-        var repeat = prev.HufRepeat;
-        if (end > (pos + lhSize))
-        {
-            huffSize = ZstdHuffmanEncoder.CompressWithRepeat(
-                dst, pos + lhSize, end - (pos + lhSize), litBuf, 0, litLen,
-                prev.HufTable, ref repeat, preferRepeat,
-                suspectUncompressible: suspect,
-                optimalDepth: strategy >= ZstdStrategy.BtUltra,
-                out huffTable);
-        }
-
-        // Minimum gain gate (ZSTD_minGain, same formula for blocks and literals).
-        var minGain = MinGain(litLen, strategy);
-        if (huffSize == 0 || huffSize >= litLen - minGain)
-        {
-            return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
-        }
-
-        if (huffSize == 1)
-        {
-            // Single-symbol alphabet: RLE when large or truly uniform.
-            if (litLen >= 8 || AllIdentical(litBuf))
+            // Too small: don't even attempt compression (ZSTD_minLiteralsToCompress:
+            // 8 << min(9-strategy, 3), or 6 with a valid repeat table).
+            var shift = Math.Min(9 - (int)strategy, 3);
+            var minLit = prev.HufRepeat == ZstdHufRepeat.Valid ? 6 : 8 << shift;
+            if (litLen < minLit)
             {
-                return WriteRawOrRle(dst, pos, end, litLen, SetRle, litBuf[0]);
+                return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
             }
 
-            return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
-        }
+            // Suspect-uncompressible sampling gate (SUSPECT_UNCOMPRESSIBLE_LITERAL_RATIO).
+            var suspect = nbSeq == 0 || litLen / Math.Max(1, nbSeq) >= 20;
 
-        // Treeless (reused) streams carry no table description; the staged
-        // mode and table stay exactly as CompressWithRepeat left them (valid
-        // stays valid, check stays check).
-        uint hType = SetCompressed;
-        if (huffTable is null)
-        {
-            hType = SetRepeat;
-        }
-        else
-        {
-            next.HufTable = huffTable;
-            next.HufRepeat = ZstdHufRepeat.Check;
-        }
+            // Huffman attempt with previous-table reuse (HUF_compress1X/4X_repeat):
+            // output (table description + streams, or bare treeless streams) lands
+            // after the header slot. Strategies below lazy prefer the old table
+            // for inputs up to 1 KiB; btultra and above probe the optimal depth.
+            var lhSize = 3 + (litLen >= 1024 ? 1 : 0) + (litLen >= 16384 ? 1 : 0);
+            var preferRepeat = strategy < ZstdStrategy.Lazy && litLen <= 1024;
+            var huffSize = 0;
+            HuffmanCTable? huffTable = null;
+            var repeat = prev.HufRepeat;
+            if (end > (pos + lhSize))
+            {
+                huffSize = ZstdHuffmanEncoder.CompressWithRepeat(
+                    dst, pos + lhSize, end - (pos + lhSize), litBuf, 0, litLen,
+                    prev.HufTable, ref repeat, preferRepeat,
+                    suspectUncompressible: suspect,
+                    optimalDepth: strategy >= ZstdStrategy.BtUltra,
+                    out huffTable);
+            }
 
-        // The stream layout matches the encoder's choice (single below 256
-        // literals, or below 1 KiB with a valid table).
-        var singleStream = litLen < ZstdHuffmanEncoder.SingleStreamThreshold
-                           || (prev.HufRepeat == ZstdHufRepeat.Valid && litLen < 1024);
-        var sizeFormat = lhSize switch
-        {
-            3 => (singleStream ? 0 : 1),
-            4 => 2,
-            _ => 3
-        };
-        var regenBits = sizeFormat <= 1 ? 10 : sizeFormat == 2 ? 14 : 18;
-        if (litLen >= (1 << regenBits) || huffSize >= (1 << regenBits))
-        {
-            throw new ZstdException("Literals size exceeds header field.");
-        }
+            // Minimum gain gate (ZSTD_minGain, same formula for blocks and literals).
+            var minGain = MinGain(litLen, strategy);
+            if (huffSize == 0 || huffSize >= litLen - minGain)
+            {
+                return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
+            }
 
-        Ensure(dst, pos, end, lhSize + huffSize);
-        WriteLiteralsCompressedHeader(dst, pos, hType, lhSize, sizeFormat, litLen, huffSize);
-        return lhSize + huffSize; // Huffman bytes already in place.
+            if (huffSize == 1)
+            {
+                // Single-symbol alphabet: RLE when large or truly uniform.
+                if (litLen >= 8 || AllIdentical(litBuf, litLen))
+                {
+                    return WriteRawOrRle(dst, pos, end, litLen, SetRle, litBuf[0]);
+                }
+
+                return WriteRawOrRle(dst, pos, end, litLen, SetBasic, 0, litBuf);
+            }
+
+            // Treeless (reused) streams carry no table description; the staged
+            // mode and table stay exactly as CompressWithRepeat left them (valid
+            // stays valid, check stays check).
+            uint hType = SetCompressed;
+            if (huffTable is null)
+            {
+                hType = SetRepeat;
+            }
+            else
+            {
+                next.HufTable = huffTable;
+                next.HufRepeat = ZstdHufRepeat.Check;
+            }
+
+            // The stream layout matches the encoder's choice (single below 256
+            // literals, or below 1 KiB with a valid table).
+            var singleStream = litLen < ZstdHuffmanEncoder.SingleStreamThreshold
+                               || (prev.HufRepeat == ZstdHufRepeat.Valid && litLen < 1024);
+            var sizeFormat = lhSize switch
+            {
+                3 => (singleStream ? 0 : 1),
+                4 => 2,
+                _ => 3
+            };
+            var regenBits = sizeFormat <= 1 ? 10 : sizeFormat == 2 ? 14 : 18;
+            if (litLen >= (1 << regenBits) || huffSize >= (1 << regenBits))
+            {
+                throw new ZstdException("Literals size exceeds header field.");
+            }
+
+            Ensure(dst, pos, end, lhSize + huffSize);
+            WriteLiteralsCompressedHeader(dst, pos, hType, lhSize, sizeFormat, litLen, huffSize);
+            return lhSize + huffSize; // Huffman bytes already in place.
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(litBuf);
+        }
     }
 
     private static void WriteLiteralsCompressedHeader(
@@ -489,17 +513,18 @@ internal static class ZstdBlockEncoder
         }
         else
         {
-            litBuf!.CopyTo(new Span<byte>(dst, pos, litLen));
+            // litBuf may be a larger rented array: copy exactly litLen bytes.
+            new Span<byte>(litBuf!, 0, litLen).CopyTo(new Span<byte>(dst, pos, litLen));
             pos += litLen;
         }
 
         return pos - start;
     }
 
-    private static bool AllIdentical(byte[] buf)
+    private static bool AllIdentical(byte[] buf, int length)
     {
         var value = buf[0];
-        for (var i = 1; i < buf.Length; i++)
+        for (var i = 1; i < length; i++)
         {
             if (buf[i] != value)
             {

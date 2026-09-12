@@ -1,5 +1,6 @@
 namespace ZArchiveSharp.Pipeline;
 
+using System.Buffers;
 using System.Diagnostics;
 
 /// <summary>
@@ -98,7 +99,8 @@ public static class ZarPackEngine
         try
         {
             using var output = new FileStream(zarPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536);
-            using var writer = new ZArchiveWriter(output, options.ResolveCompressor(), options.NameOrder);
+            using var writer = new ZArchiveWriter(output, options.ResolveCompressor(), options.NameOrder,
+                options.BlockWorkers(), options.ResolveCompressorFactory());
             var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
 
             Report(string.Empty);
@@ -284,6 +286,7 @@ public static class ZarPackEngine
         var clock = Stopwatch.StartNew();
         long filesCompleted = 0;
         long bytesCompleted = 0;
+        int blockWorkers = options.BlockWorkers();
 
         Report(string.Empty);
         var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
@@ -307,31 +310,40 @@ public static class ZarPackEngine
                 throw new InvalidOperationException($"Unable to extract file: {item.SrcPath}");
             }
 
-            using var output = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-            ulong offset = 0;
-            while (true)
+            if (blockWorkers > 1 && item.Size > (ulong)ZArchiveCommon.CompressedBlockSize &&
+                reader.TryGetFileRange(handle, out var fileOffset, out var fileSize) && fileSize == item.Size)
             {
-                pause.WaitIfPaused(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-                var read = reader.ReadFromFile(handle, offset, buffer);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                output.Write(buffer, 0, (int)read);
-                offset += read;
-                bytesCompleted += (long)read;
-                if (clock.Elapsed >= ProgressInterval)
-                {
-                    Report(item.RelativePath);
-                    clock.Restart();
-                }
+                ExtractFileParallel(reader, item, outPath, fileOffset, fileSize, blockWorkers,
+                    pause, cancellationToken, ref bytesCompleted, clock);
             }
-
-            if (offset != reader.GetFileSize(handle))
+            else
             {
-                throw new InvalidOperationException($"Extraction failed: {item.SrcPath}");
+                using var output = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+                ulong offset = 0;
+                while (true)
+                {
+                    pause.WaitIfPaused(cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var read = reader.ReadFromFile(handle, offset, buffer);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    output.Write(buffer, 0, (int)read);
+                    offset += read;
+                    bytesCompleted += (long)read;
+                    if (clock.Elapsed >= ProgressInterval)
+                    {
+                        Report(item.RelativePath);
+                        clock.Restart();
+                    }
+                }
+
+                if (offset != reader.GetFileSize(handle))
+                {
+                    throw new InvalidOperationException($"Extraction failed: {item.SrcPath}");
+                }
             }
 
             files.Add(item.RelativePath);
@@ -347,6 +359,92 @@ public static class ZarPackEngine
             progress?.Report(new ZarProgress(
                 ZarOperation.Extract, displayPath, destDir, current,
                 filesCompleted, filesTotal, bytesCompleted, bytesTotal));
+        }
+
+        // Decodes one file's global block range in bounded parallel waves
+        // and writes the waves in order: identical bytes to the sequential
+        // loop above (same blocks, same order), with the same per-interval
+        // progress and the same corruption contract (InvalidOperationException
+        // naming the archive path; OperationCanceledException propagates raw).
+        void ExtractFileParallel(
+            ZArchiveReader archive, ExtractPlanEntry entry, string path,
+            ulong globalOffset, ulong size, int dop,
+            PauseToken gate, CancellationToken token,
+            ref long completed, Stopwatch timer)
+        {
+            const int WindowBlocks = 64;
+            int waveSize = Math.Min(dop * 4, WindowBlocks);
+            var slots = new byte[waveSize][];
+            for (var s = 0; s < waveSize; s++)
+            {
+                slots[s] = ArrayPool<byte>.Shared.Rent(ZArchiveCommon.CompressedBlockSize);
+            }
+
+            try
+            {
+                using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
+                ulong block = globalOffset / (ulong)ZArchiveCommon.CompressedBlockSize;
+                int skip = (int)(globalOffset % (ulong)ZArchiveCommon.CompressedBlockSize);
+                ulong remaining = size;
+                ulong written = 0;
+                while (remaining > 0)
+                {
+                    gate.WaitIfPaused(token);
+                    token.ThrowIfCancellationRequested();
+                    ulong touched = ((ulong)skip + remaining + (ulong)ZArchiveCommon.CompressedBlockSize - 1) /
+                        (ulong)ZArchiveCommon.CompressedBlockSize;
+                    int wave = (int)Math.Min(touched, (ulong)waveSize);
+                    ulong waveFirst = block;
+                    Exception? failure = null;
+                    Parallel.For(0, wave,
+                        new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
+                        j =>
+                        {
+                            if (!archive.TryDecodeBlock(waveFirst + (ulong)j, slots[j]))
+                            {
+                                lock (slots)
+                                {
+                                    failure ??= new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                                }
+                            }
+                        });
+                    if (failure is not null)
+                    {
+                        throw failure;
+                    }
+
+                    for (var j = 0; j < wave; j++)
+                    {
+                        int from = j == 0 ? skip : 0;
+                        int take = (int)Math.Min(
+                            (ulong)ZArchiveCommon.CompressedBlockSize - (ulong)from, remaining);
+                        output.Write(slots[j], from, take);
+                        remaining -= (ulong)take;
+                        written += (ulong)take;
+                        completed += take;
+                        if (timer.Elapsed >= ProgressInterval)
+                        {
+                            Report(entry.RelativePath);
+                            timer.Restart();
+                        }
+                    }
+
+                    block += (ulong)wave;
+                    skip = 0;
+                }
+
+                if (written != size)
+                {
+                    throw new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                }
+            }
+            finally
+            {
+                foreach (var slot in slots)
+                {
+                    ArrayPool<byte>.Shared.Return(slot);
+                }
+            }
         }
     }
 

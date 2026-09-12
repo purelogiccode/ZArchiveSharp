@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using ZArchiveSharp.Zstd;
 
@@ -80,6 +82,26 @@ public sealed class ZArchiveWriter : IDisposable
     private ulong _numWrittenOffsetRecords;
     private readonly List<CompressionOffsetRecord> _offsetRecords = [];
 
+    // Parallel block compression staging (opt-in via maxDegreeOfParallelism +
+    // compressorFactory; off by default so the sequential path is untouched).
+    // Full 64 KiB blocks are copied to rented buffers as they complete and
+    // compressed out of order, but always emitted in input order — output
+    // bytes are identical to sequential packing.
+    private readonly int _blockWorkers;
+    private readonly Func<IZarBlockCompressor>? _compressorFactory;
+    private readonly int _flushThreshold;
+    private readonly List<byte[]> _stagedBlocks = [];
+    private List<BlockWorker>? _workers;
+
+    /// <summary>Upper bound for one compressed 64 KiB block (per-block dest buffers).</summary>
+    private static readonly int CompressBound =
+        ZstdCompressor.GetCompressBound(ZArchiveCommon.CompressedBlockSize);
+
+    private sealed class BlockWorker
+    {
+        public required IZarBlockCompressor Compressor;
+    }
+
     private IncrementalHash? _sha;
     private bool _finalized;
     private bool _disposed;
@@ -88,16 +110,37 @@ public sealed class ZArchiveWriter : IDisposable
     /// Creates a writer with output callbacks. <paramref name="newOutputFile"/>
     /// is invoked immediately with <c>-1</c> (mirrors the C++ ctor).
     /// </summary>
+    /// <param name="newOutputFile">Invoked with the part index for each new output file.</param>
+    /// <param name="writeOutputData">Appends raw bytes to the current output file.</param>
+    /// <param name="compressor">Block compressor (default zstd level 6).</param>
+    /// <param name="nameOrder">Pre-seeded name-table order, or null for pack order.</param>
+    /// <param name="maxDegreeOfParallelism">
+    /// Block-compression fan-out (default 1 = sequential, current behavior).
+    /// Values above 1 take effect only with <paramref name="compressorFactory"/>
+    /// (custom <see cref="IZarBlockCompressor"/> instances stay sequential:
+    /// their thread-safety is unknown). Compressed bytes are always emitted
+    /// in input order, so parallel output is byte-identical to sequential.
+    /// </param>
+    /// <param name="compressorFactory">
+    /// Creates one compressor per worker (e.g. <c>() => new
+    /// ZstdCompressor(options)</c>); <paramref name="compressor"/> remains the
+    /// sequential-path instance and is never shared across workers.
+    /// </param>
     public ZArchiveWriter(
         Action<int> newOutputFile,
         Action<byte[], int, int> writeOutputData,
         IZarBlockCompressor? compressor = null,
-        IEnumerable<string>? nameOrder = null)
+        IEnumerable<string>? nameOrder = null,
+        int maxDegreeOfParallelism = 1,
+        Func<IZarBlockCompressor>? compressorFactory = null)
     {
         _newOutputFile = newOutputFile ?? throw new ArgumentNullException(nameof(newOutputFile));
         _writeOutputData = writeOutputData ?? throw new ArgumentNullException(nameof(writeOutputData));
         _compressor = compressor ?? new ZstdCompressor();
         _compressionBuffer = new byte[ZstdCompressor.GetCompressBound(ZArchiveCommon.CompressedBlockSize)];
+        _blockWorkers = Math.Max(1, maxDegreeOfParallelism);
+        _compressorFactory = _blockWorkers > 1 ? compressorFactory : null;
+        _flushThreshold = Math.Max(2, _blockWorkers * 2);
         _sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         if (nameOrder != null)
         {
@@ -117,12 +160,16 @@ public sealed class ZArchiveWriter : IDisposable
     /// <see cref="ZArchiveSharp.Pipeline.ZarPipelineOptions.NameOrder"/>).
     /// </summary>
     public ZArchiveWriter(Stream output, IZarBlockCompressor? compressor = null,
-        IEnumerable<string>? nameOrder = null)
+        IEnumerable<string>? nameOrder = null,
+        int maxDegreeOfParallelism = 1,
+        Func<IZarBlockCompressor>? compressorFactory = null)
         : this(
             _ => { },
             (buf, off, count) => output.Write(buf, off, count),
             compressor,
-            nameOrder)
+            nameOrder,
+            maxDegreeOfParallelism,
+            compressorFactory)
     {
     }
 
@@ -283,7 +330,16 @@ public sealed class ZArchiveWriter : IDisposable
             if (bytesToCopy == ZArchiveCommon.CompressedBlockSize)
             {
                 // Block-aligned input bypasses the staging buffer (as in C++).
-                StoreBlock(data.Slice(offset, bytesToCopy));
+                if (_compressorFactory is null)
+                {
+                    StoreBlock(data.Slice(offset, bytesToCopy));
+                }
+                else
+                {
+                    // The caller's span is reused for the next read: copy.
+                    StageBlock(data.Slice(offset, bytesToCopy));
+                }
+
                 offset += bytesToCopy;
                 remaining -= bytesToCopy;
                 continue;
@@ -295,7 +351,15 @@ public sealed class ZArchiveWriter : IDisposable
             _bufferedBytes += bytesToCopy;
             if (_bufferedBytes == ZArchiveCommon.CompressedBlockSize)
             {
-                StoreBlock(_currentWriteBuffer);
+                if (_compressorFactory is null)
+                {
+                    StoreBlock(_currentWriteBuffer);
+                }
+                else
+                {
+                    StageBlock(_currentWriteBuffer);
+                }
+
                 _bufferedBytes = 0;
             }
         }
@@ -363,17 +427,121 @@ public sealed class ZArchiveWriter : IDisposable
 
     private void StoreBlock(ReadOnlySpan<byte> uncompressedData)
     {
-        var writeOffset = GetCurrentOutputOffset();
         var outputSize = _compressor.Compress(uncompressedData, _compressionBuffer.AsSpan());
-        if (outputSize < 0 || outputSize >= ZArchiveCommon.CompressedBlockSize)
+        EmitBlock(uncompressedData, ZArchiveCommon.CompressedBlockSize, _compressionBuffer, outputSize);
+    }
+
+    /// <summary>
+    /// Stages one full block for parallel compression (copied: the source
+    /// span may be reused by the caller) and flushes once a full window is
+    /// staged, keeping memory bounded while workers stay fed.
+    /// </summary>
+    private void StageBlock(ReadOnlySpan<byte> uncompressedData)
+    {
+        var copy = ArrayPool<byte>.Shared.Rent(ZArchiveCommon.CompressedBlockSize);
+        uncompressedData.Slice(0, ZArchiveCommon.CompressedBlockSize).CopyTo(copy);
+        _stagedBlocks.Add(copy);
+        if (_stagedBlocks.Count >= _flushThreshold)
+        {
+            FlushStagedBlocks();
+        }
+    }
+
+    /// <summary>
+    /// Compresses all staged blocks across workers and emits them in input
+    /// order. Compressor faults surface unwrapped (same contract as the
+    /// sequential path: callers map exact exception types to exit codes).
+    /// </summary>
+    private void FlushStagedBlocks()
+    {
+        if (_stagedBlocks.Count == 0)
+        {
+            return;
+        }
+
+        _workers ??= CreateWorkers(Math.Min(_blockWorkers, _stagedBlocks.Count));
+        var workers = _workers;
+        var results = new int[_stagedBlocks.Count];
+        // NOTE: destination buffers are per BLOCK, never per worker: a worker
+        // compresses several blocks per flush and must not overwrite an
+        // earlier block's output before it is emitted in order below.
+        var dests = new byte[_stagedBlocks.Count][];
+        try
+        {
+            for (var i = 0; i < dests.Length; i++)
+            {
+                dests[i] = ArrayPool<byte>.Shared.Rent(CompressBound);
+            }
+
+            try
+            {
+                Parallel.For(0, _stagedBlocks.Count,
+                    new ParallelOptions { MaxDegreeOfParallelism = workers.Count },
+                    i =>
+                    {
+                        var worker = workers[i % workers.Count];
+                        // Explicit length: rented arrays may exceed the block size.
+                        results[i] = worker.Compressor.Compress(
+                            _stagedBlocks[i].AsSpan(0, ZArchiveCommon.CompressedBlockSize), dests[i]);
+                    });
+            }
+            catch (AggregateException ex) when (ex.InnerExceptions.Count != 0)
+            {
+                ExceptionDispatchInfo.Throw(ex.InnerExceptions[0]);
+            }
+
+            for (var i = 0; i < _stagedBlocks.Count; i++)
+            {
+                EmitBlock(_stagedBlocks[i], ZArchiveCommon.CompressedBlockSize, dests[i], results[i]);
+                ArrayPool<byte>.Shared.Return(_stagedBlocks[i]);
+            }
+
+            _stagedBlocks.Clear();
+        }
+        finally
+        {
+            foreach (var dest in dests)
+            {
+                if (dest is not null)
+                {
+                    ArrayPool<byte>.Shared.Return(dest);
+                }
+            }
+        }
+    }
+
+    private List<BlockWorker> CreateWorkers(int count)
+    {
+        var list = new List<BlockWorker>(count);
+        for (var i = 0; i < count; i++)
+        {
+            list.Add(new BlockWorker { Compressor = _compressorFactory!() });
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Emits one block (compressed or raw fallback) with its offset record.
+    /// Single-threaded and order-sensitive: the only block-output path for
+    /// both sequential and parallel packing, so their bytes are identical.
+    /// </summary>
+    private void EmitBlock(
+        ReadOnlySpan<byte> raw, int rawLength,
+        ReadOnlySpan<byte> compressed, int compressedSize)
+    {
+        var writeOffset = GetCurrentOutputOffset();
+        int outputSize;
+        if (compressedSize < 0 || compressedSize >= ZArchiveCommon.CompressedBlockSize)
         {
             // Store raw when incompressible (or when the compressor declines).
-            OutputData(uncompressedData.Slice(0, ZArchiveCommon.CompressedBlockSize));
+            OutputData(raw.Slice(0, rawLength));
             outputSize = ZArchiveCommon.CompressedBlockSize;
         }
         else
         {
-            OutputData(_compressionBuffer.AsSpan(0, outputSize));
+            OutputData(compressed.Slice(0, compressedSize));
+            outputSize = compressedSize;
         }
 
         if ((_numWrittenOffsetRecords % (ulong)ZArchiveCommon.EntriesPerOffsetRecord) == 0)
@@ -413,6 +581,10 @@ public sealed class ZArchiveWriter : IDisposable
             AppendData(new byte[pad]);
             _bufferedBytes = 0;
         }
+
+        // Parallel path: emit everything staged (padding included) in order
+        // before any section is written.
+        FlushStagedBlocks();
 
         _finalized = true;
 
@@ -606,6 +778,12 @@ public sealed class ZArchiveWriter : IDisposable
         }
 
         _disposed = true;
+        foreach (var staged in _stagedBlocks)
+        {
+            ArrayPool<byte>.Shared.Return(staged);
+        }
+
+        _stagedBlocks.Clear();
         _sha?.Dispose();
         _sha = null;
     }
