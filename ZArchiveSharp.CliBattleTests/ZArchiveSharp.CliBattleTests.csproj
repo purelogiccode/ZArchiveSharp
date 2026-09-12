@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <IsPackable>false</IsPackable>
+        <Nullable>enable</Nullable>
+        <RootNamespace>ZArchiveSharp.CliBattleTests</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+        <PackageReference Include="xunit" Version="2.9.3" />
+        <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+            <PrivateAssets>all</PrivateAssets>
+            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="Xunit" />
+    </ItemGroup>
+
+    <!-- Build ordering only: battles shell out to the CLI exe, they never
+         link its assembly. ReferenceOutputAssembly=false keeps the test
+         output clean while guaranteeing `dotnet test` builds the CLI first. -->
+    <ItemGroup>
+        <ProjectReference Include="..\ZArchiveSharp.Cli\ZArchiveSharp.Cli.csproj" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+</Project>
