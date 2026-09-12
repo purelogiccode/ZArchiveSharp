@@ -272,6 +272,7 @@ internal sealed class ZstdFrameState
         Return(ref _optHash);
         Return(ref _optBt);
         Return(ref _optHash3);
+        return;
 
         static void Return<T>(ref T[]? table)
         {

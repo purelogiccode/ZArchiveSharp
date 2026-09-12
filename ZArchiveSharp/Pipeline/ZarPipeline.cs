@@ -132,7 +132,7 @@ public static class ZarPipeline
                 },
                 i => results[i] = PackOne(items[i], snapshot, destDir, items.Count,
                     progress, progressLock, () => Volatile.Read(ref completed),
-                    afterItem: () => Interlocked.Increment(ref completed),
+                    () => Interlocked.Increment(ref completed),
                     cancellationToken));
         }
         catch (OperationCanceledException)
@@ -182,7 +182,7 @@ public static class ZarPipeline
                         : Path.Combine(destDir, DefaultExtractName(items[i])),
                     snapshot, items.Count, progress, progressLock,
                     () => Volatile.Read(ref completed),
-                    afterItem: () => Interlocked.Increment(ref completed),
+                    () => Interlocked.Increment(ref completed),
                     cancellationToken));
         }
         catch (OperationCanceledException)

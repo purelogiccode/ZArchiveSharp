@@ -53,6 +53,7 @@ public sealed class ParallelBlockTests : IDisposable
         File.WriteAllBytes(Path.Combine(dir, "empty.bin"), []);
         Directory.CreateDirectory(Path.Combine(dir, "sub"));
         WriteRandom(Path.Combine(dir, "sub", "deep.bin"), 150000, rng);
+        return;
 
         static void WriteRandom(string path, int length, Random rng)
         {
@@ -119,7 +120,8 @@ public sealed class ParallelBlockTests : IDisposable
         var root = NewTempDir("pardict");
         var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
         PopulateSpanning(src);
-        var dict = Zstd.ZstdDictionary.FromBytes("the quick brown fox jumps over lazy dictionaries 0123456789"u8.ToArray());
+        var dict = Zstd.ZstdDictionary.FromBytes(
+            "the quick brown fox jumps over lazy dictionaries 0123456789"u8.ToArray());
 
         var seqZar = Path.Combine(root, "seq.zar");
         var parZar = Path.Combine(root, "par.zar");
@@ -151,7 +153,7 @@ public sealed class ParallelBlockTests : IDisposable
 
         // Foreign compressors never leave the sequential path: one thread,
         // and output identical to an explicit DOP=1 pack.
-        Assert.Equal(1, probe.ThreadIds.Count);
+        Assert.Single(probe.ThreadIds);
         var seqZar = Path.Combine(root, "seq.zar");
         ZarPipeline.Pack(src, seqZar, new ZarPipelineOptions
             { Compressor = new ThreadTrackingCompressor(), MaxDegreeOfParallelism = 1 });

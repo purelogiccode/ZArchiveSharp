@@ -482,7 +482,7 @@ public sealed class ZstdCompressor : IZarBlockCompressor
             content.CopyTo(frame.AsSpan(contentOffset));
         }
 
-        ZstdFrameState? state = stateful ? new ZstdFrameState(frame, level, prm) : null;
+        var state = stateful ? new ZstdFrameState(frame, level, prm) : null;
         try
         {
             return EncodeFrameBlocks(

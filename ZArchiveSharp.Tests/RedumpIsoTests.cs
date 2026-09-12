@@ -49,12 +49,12 @@ public sealed class RedumpIsoTests
         }
 
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        for (int i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
+        for (var i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
         {
             if (File.Exists(Path.Combine(dir.FullName, "CSharp_ZArchiveSharp.sln")))
             {
-                string baseDir = AppContext.BaseDirectory;
-                string inferred = baseDir.Contains("Release", StringComparison.OrdinalIgnoreCase) ? "Release" : "Debug";
+                var baseDir = AppContext.BaseDirectory;
+                var inferred = baseDir.Contains("Release", StringComparison.OrdinalIgnoreCase) ? "Release" : "Debug";
                 foreach (var cfg in new[] { inferred, "Release", "Debug" })
                 {
                     foreach (var tfm in new[] { "net10.0", "net9.0", "net8.0" })
@@ -108,8 +108,8 @@ public sealed class RedumpIsoTests
     internal static (bool Started, int Exit, string Stdout, string Stderr) TryRunCli(string cli, string work,
         string[] args)
     {
-        string fileName = cli;
-        string arguments = Quote(args);
+        var fileName = cli;
+        var arguments = Quote(args);
         if (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
         {
             fileName = "dotnet";
@@ -141,8 +141,8 @@ public sealed class RedumpIsoTests
 
         using (proc)
         {
-            string stdout = proc.StandardOutput.ReadToEnd();
-            string stderr = proc.StandardError.ReadToEnd();
+            var stdout = proc.StandardOutput.ReadToEnd();
+            var stderr = proc.StandardError.ReadToEnd();
             if (!proc.WaitForExit(CliTimeoutMs))
             {
                 try
@@ -170,7 +170,7 @@ public sealed class RedumpIsoTests
     /// </summary>
     internal static bool CliSupportsIso(string cli)
     {
-        string probeDir = NewTempDir("isoprobe");
+        var probeDir = NewTempDir("isoprobe");
         try
         {
             string probe;
@@ -214,7 +214,7 @@ public sealed class RedumpIsoTests
     /// </summary>
     internal static void WriteMinimalXiso(string path, long baseOffset, string fileName, byte[] payload)
     {
-        byte[] name = Encoding.Latin1.GetBytes(fileName);
+        var name = Encoding.Latin1.GetBytes(fileName);
         Assert.True(name.Length is > 0 and <= 255, "Test XISO name must fit in one length byte.");
         const uint rootSector = 0x200;
         const uint fileSector = 0x300;
@@ -253,9 +253,9 @@ public sealed class RedumpIsoTests
 
     internal static void AssertExtractsPayload(string cli, string work, string zarPath, string fileName, byte[] payload)
     {
-        string outDir = Path.Combine(work, "extracted");
+        var outDir = Path.Combine(work, "extracted");
         RunCli(cli, work, zarPath, outDir);
-        string[] files = Directory.GetFiles(outDir, "*", SearchOption.AllDirectories);
+        var files = Directory.GetFiles(outDir, "*", SearchOption.AllDirectories);
         Assert.Single(files);
         Assert.Equal(fileName, Path.GetFileName(files[0]));
         Assert.Equal(payload, File.ReadAllBytes(files[0]));
@@ -278,15 +278,15 @@ public sealed class RedumpIsoTests
         var work = NewTempDir("redump8");
         try
         {
-            string iso = Path.Combine(work, "game.redump.iso");
+            var iso = Path.Combine(work, "game.redump.iso");
             if (!TryCreateSparse(iso, RedumpLenType8))
             {
                 return;
             }
 
-            byte[] payload = Payload();
+            var payload = Payload();
             WriteMinimalXiso(iso, OffsetXgd3, "hello.txt", payload);
-            string zar = Path.Combine(work, "game.zar");
+            var zar = Path.Combine(work, "game.zar");
             RunCli(cli, work, "--iso", iso, zar);
             AssertExtractsPayload(cli, work, zar, "hello.txt", payload);
         }
@@ -320,22 +320,22 @@ public sealed class RedumpIsoTests
         var work = NewTempDir("redump5");
         try
         {
-            string iso = Path.Combine(work, "wave.redump.iso");
+            var iso = Path.Combine(work, "wave.redump.iso");
             if (!TryCreateSparse(iso, RedumpLenType5))
             {
                 return;
             }
 
-            byte[] payload = Payload();
+            var payload = Payload();
             WriteMinimalXiso(iso, OffsetXgd2, "hello.txt", payload);
             using (var fs = new FileStream(iso, FileMode.Open, FileAccess.Write, FileShare.None))
             {
                 fs.Seek(PvdOffset, SeekOrigin.Begin);
-                byte[] pvd = Encoding.ASCII.GetBytes(WavePvd3);
+                var pvd = Encoding.ASCII.GetBytes(WavePvd3);
                 fs.Write(pvd, 0, pvd.Length);
             }
 
-            string zar = Path.Combine(work, "wave.zar");
+            var zar = Path.Combine(work, "wave.zar");
             RunCli(cli, work, "--iso", iso, zar);
             AssertExtractsPayload(cli, work, zar, "hello.txt", payload);
         }
@@ -369,7 +369,7 @@ public sealed class RedumpIsoTests
         var work = NewTempDir("redump5u");
         try
         {
-            string iso = Path.Combine(work, "nowave.redump.iso");
+            var iso = Path.Combine(work, "nowave.redump.iso");
             if (!TryCreateSparse(iso, RedumpLenType5))
             {
                 return;
@@ -377,9 +377,9 @@ public sealed class RedumpIsoTests
 
             // Zero PVD: no wave resolves, so the CLI falls back to video type 0
             // (XGD1 offset), exactly like XISOSharp.Cli --zar.
-            byte[] payload = Payload();
+            var payload = Payload();
             WriteMinimalXiso(iso, OffsetXgd1, "hello.txt", payload);
-            string zar = Path.Combine(work, "nowave.zar");
+            var zar = Path.Combine(work, "nowave.zar");
             RunCli(cli, work, "--iso", iso, zar);
             AssertExtractsPayload(cli, work, zar, "hello.txt", payload);
         }
@@ -413,18 +413,18 @@ public sealed class RedumpIsoTests
         var work = NewTempDir("redumpid");
         try
         {
-            byte[] payload = Payload();
-            string plain = Path.Combine(work, "plain.iso");
+            var payload = Payload();
+            var plain = Path.Combine(work, "plain.iso");
             WriteMinimalXiso(plain, 0, "hello.txt", payload);
-            string redump = Path.Combine(work, "game.redump.iso");
+            var redump = Path.Combine(work, "game.redump.iso");
             if (!TryCreateSparse(redump, RedumpLenType8))
             {
                 return;
             }
 
             WriteMinimalXiso(redump, OffsetXgd3, "hello.txt", payload);
-            string plainZar = Path.Combine(work, "plain.zar");
-            string redumpZar = Path.Combine(work, "game.zar");
+            var plainZar = Path.Combine(work, "plain.zar");
+            var redumpZar = Path.Combine(work, "game.zar");
             RunCli(cli, work, "--iso", plain, plainZar);
             RunCli(cli, work, "--iso", redump, redumpZar);
             Assert.Equal(File.ReadAllBytes(plainZar), File.ReadAllBytes(redumpZar));

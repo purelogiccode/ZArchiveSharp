@@ -238,7 +238,8 @@ public sealed class ZstdSequenceStore
     private bool _trailingSet;
 
     /// <summary>Creates a store pre-sized for a source of <paramref name="maxSourceSize"/> bytes.</summary>
-    public ZstdSequenceStore(int maxSourceSize = 65536)    {
+    public ZstdSequenceStore(int maxSourceSize = 65536)
+    {
         ArgumentOutOfRangeException.ThrowIfNegative(maxSourceSize);
         // Every sequence consumes at least MinMatch... in practice ≥ 4 bytes
         // (both finders); bound generously and grow on demand regardless.
@@ -257,7 +258,7 @@ public sealed class ZstdSequenceStore
     /// </summary>
     internal static ZstdSequenceStore Rent(int maxSourceSize)
     {
-        int need = Math.Max(1, maxSourceSize);
+        var need = Math.Max(1, maxSourceSize);
         lock (PoolGate)
         {
             while (Pool.Count != 0)

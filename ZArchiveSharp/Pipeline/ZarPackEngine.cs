@@ -286,7 +286,7 @@ public static class ZarPackEngine
         var clock = Stopwatch.StartNew();
         long filesCompleted = 0;
         long bytesCompleted = 0;
-        int blockWorkers = options.BlockWorkers();
+        var blockWorkers = options.BlockWorkers();
 
         Report(string.Empty);
         var buffer = new byte[ZArchiveCommon.CompressedBlockSize];
@@ -372,8 +372,8 @@ public static class ZarPackEngine
             PauseToken gate, CancellationToken token,
             ref long completed, Stopwatch timer)
         {
-            const int WindowBlocks = 64;
-            int waveSize = Math.Min(dop * 4, WindowBlocks);
+            const int windowBlocks = 64;
+            var waveSize = Math.Min(dop * 4, windowBlocks);
             var slots = new byte[waveSize][];
             for (var s = 0; s < waveSize; s++)
             {
@@ -383,18 +383,18 @@ public static class ZarPackEngine
             try
             {
                 using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-                ulong block = globalOffset / (ulong)ZArchiveCommon.CompressedBlockSize;
-                int skip = (int)(globalOffset % (ulong)ZArchiveCommon.CompressedBlockSize);
-                ulong remaining = size;
+                var block = globalOffset / (ulong)ZArchiveCommon.CompressedBlockSize;
+                var skip = (int)(globalOffset % (ulong)ZArchiveCommon.CompressedBlockSize);
+                var remaining = size;
                 ulong written = 0;
                 while (remaining > 0)
                 {
                     gate.WaitIfPaused(token);
                     token.ThrowIfCancellationRequested();
-                    ulong touched = ((ulong)skip + remaining + (ulong)ZArchiveCommon.CompressedBlockSize - 1) /
-                        (ulong)ZArchiveCommon.CompressedBlockSize;
-                    int wave = (int)Math.Min(touched, (ulong)waveSize);
-                    ulong waveFirst = block;
+                    var touched = ((ulong)skip + remaining + (ulong)ZArchiveCommon.CompressedBlockSize - 1) /
+                                  (ulong)ZArchiveCommon.CompressedBlockSize;
+                    var wave = (int)Math.Min(touched, (ulong)waveSize);
+                    var waveFirst = block;
                     Exception? failure = null;
                     Parallel.For(0, wave,
                         new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
@@ -415,8 +415,8 @@ public static class ZarPackEngine
 
                     for (var j = 0; j < wave; j++)
                     {
-                        int from = j == 0 ? skip : 0;
-                        int take = (int)Math.Min(
+                        var from = j == 0 ? skip : 0;
+                        var take = (int)Math.Min(
                             (ulong)ZArchiveCommon.CompressedBlockSize - (ulong)from, remaining);
                         output.Write(slots[j], from, take);
                         remaining -= (ulong)take;

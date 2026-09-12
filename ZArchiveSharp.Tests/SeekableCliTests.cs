@@ -44,7 +44,7 @@ public sealed class SeekableCliTests : IDisposable
         const string alphabet =
             "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
         var data = new byte[size];
-        for (int i = 0; i < size; i++)
+        for (var i = 0; i < size; i++)
         {
             data[i] = (byte)alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
@@ -85,14 +85,14 @@ public sealed class SeekableCliTests : IDisposable
     [Fact]
     public void Parse_NoVerb_Rejects()
     {
-        Assert.False(Parsed([], out _, out string? error));
+        Assert.False(Parsed([], out _, out var error));
         Assert.Contains("compress", error, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Parse_BadVerb_Rejects()
     {
-        Assert.False(Parsed(["frobnicate"], out _, out string? error));
+        Assert.False(Parsed(["frobnicate"], out _, out var error));
         Assert.Contains("frobnicate", error, StringComparison.Ordinal);
     }
 
@@ -193,7 +193,7 @@ public sealed class SeekableCliTests : IDisposable
                      "--to-frame", "--num-frames", "--seek-table-format"
                  })
         {
-            string verb = flag switch
+            var verb = flag switch
             {
                 "--num-frames" or "--seek-table-format" => "list",
                 "--from" or "--to" => "decompress",
@@ -222,7 +222,7 @@ public sealed class SeekableCliTests : IDisposable
     [InlineData("2 gib", 2UL * 1024 * 1024 * 1024)]
     public void ByteSize_Parses(string raw, ulong expected)
     {
-        Assert.True(SeekableCli.TryParseByteSize(raw, out ulong size, out _));
+        Assert.True(SeekableCli.TryParseByteSize(raw, out var size, out _));
         Assert.Equal(expected, size);
     }
 
@@ -518,7 +518,7 @@ public sealed class SeekableCliTests : IDisposable
             Quiet = true,
         }, new MemoryStream(), new MemoryStream()));
 
-        long start = (long)table.FrameStartDecomp(1);
+        var start = (long)table.FrameStartDecomp(1);
         Assert.Equal(data.AsSpan((int)start).ToArray(), await File.ReadAllBytesAsync(partPath));
     }
 
@@ -553,7 +553,7 @@ public sealed class SeekableCliTests : IDisposable
         await File.WriteAllBytesAsync(input, CycleBytes(20_000));
 
         Assert.Equal(0, await RunSeekableAsync(CompressJob(input, packed), new MemoryStream(), new MemoryStream()));
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Decompress,
             InputPath = packed,
@@ -575,7 +575,7 @@ public sealed class SeekableCliTests : IDisposable
         await File.WriteAllBytesAsync(input, CycleBytes(20_000));
 
         Assert.Equal(0, await RunSeekableAsync(CompressJob(input, packed), new MemoryStream(), new MemoryStream()));
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Decompress,
             InputPath = packed,
@@ -593,7 +593,7 @@ public sealed class SeekableCliTests : IDisposable
         var input = Path.Combine(dir, "plain.bin");
         await File.WriteAllBytesAsync(input, CycleBytes(1000));
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.Decompress,
             InputPath = input,
@@ -611,7 +611,7 @@ public sealed class SeekableCliTests : IDisposable
     public async Task MissingInput_Codes()
     {
         var dir = NewTempDir("seekmissing");
-        string missing = Path.Combine(dir, "nope.bin");
+        var missing = Path.Combine(dir, "nope.bin");
 
         Assert.Equal(-15, await RunSeekableAsync(
             CompressJob(missing, Path.Combine(dir, "o.zst")), new MemoryStream(), new MemoryStream()));
@@ -638,7 +638,7 @@ public sealed class SeekableCliTests : IDisposable
         await File.WriteAllBytesAsync(input, CycleBytes(20_000));
 
         Assert.Equal(0, await RunSeekableAsync(CompressJob(input, packed), new MemoryStream(), new MemoryStream()));
-        long first = new FileInfo(packed).Length;
+        var first = new FileInfo(packed).Length;
 
         Assert.Equal(-11, await RunSeekableAsync(CompressJob(input, packed), new MemoryStream(), new MemoryStream()));
         Assert.Contains(_errors, e => e.Contains("already exists", StringComparison.OrdinalIgnoreCase));
@@ -690,7 +690,7 @@ public sealed class SeekableCliTests : IDisposable
         var dir = NewTempDir("seeklist");
         var packed = await PackThreeFramesAsync(dir);
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,
@@ -708,7 +708,7 @@ public sealed class SeekableCliTests : IDisposable
         var dir = NewTempDir("seeklistq");
         var packed = await PackThreeFramesAsync(dir);
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,
@@ -725,7 +725,7 @@ public sealed class SeekableCliTests : IDisposable
         var packed = await PackThreeFramesAsync(dir);
         var table = SeekTable.ParseFoot(await File.ReadAllBytesAsync(packed));
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,
@@ -780,7 +780,7 @@ public sealed class SeekableCliTests : IDisposable
             Quiet = true,
         }, new MemoryStream(), new MemoryStream()));
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = headPath,
@@ -797,7 +797,7 @@ public sealed class SeekableCliTests : IDisposable
         var dir = NewTempDir("seeklistbad");
         var packed = await PackThreeFramesAsync(dir);
 
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,
@@ -814,7 +814,7 @@ public sealed class SeekableCliTests : IDisposable
         var packed = await PackThreeFramesAsync(dir);
 
         // End past the last frame is a decode-time range failure.
-        int code = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var code = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,
@@ -823,7 +823,7 @@ public sealed class SeekableCliTests : IDisposable
         Assert.Equal(-12, code);
 
         // Start past the default end trips the oracle's start>end guard first.
-        int usage = await RunSeekableAsync(new SeekableCli.SeekableJob
+        var usage = await RunSeekableAsync(new SeekableCli.SeekableJob
         {
             Command = SeekableCli.SeekableCommand.List,
             InputPath = packed,

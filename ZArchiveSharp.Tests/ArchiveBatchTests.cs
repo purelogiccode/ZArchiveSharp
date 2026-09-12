@@ -16,11 +16,11 @@ public sealed class ArchiveBatchTests
     private static void AssertExtractsTree(
         string cli, string work, string zarPath, Dictionary<string, byte[]> expected)
     {
-        string outDir = Path.Combine(work, "extracted_" + Guid.NewGuid().ToString("N"));
+        var outDir = Path.Combine(work, "extracted_" + Guid.NewGuid().ToString("N"));
         RedumpIsoTests.RunCli(cli, work, zarPath, outDir);
         foreach (var (rel, data) in expected)
         {
-            string full = Path.Combine(outDir, rel);
+            var full = Path.Combine(outDir, rel);
             Assert.True(File.Exists(full), $"Missing {rel} in {zarPath}.");
             Assert.Equal(data, File.ReadAllBytes(full));
         }
@@ -105,10 +105,10 @@ public sealed class ArchiveBatchTests
         {
             var inDir = Path.Combine(work, "in");
             Directory.CreateDirectory(inDir);
-            byte[] payload = RedumpIsoTests.Payload();
-            string iso = Path.Combine(work, "game.iso");
+            var payload = RedumpIsoTests.Payload();
+            var iso = Path.Combine(work, "game.iso");
             RedumpIsoTests.WriteMinimalXiso(iso, 0, "hello.txt", payload);
-            byte[] isoBytes = File.ReadAllBytes(iso);
+            var isoBytes = File.ReadAllBytes(iso);
             ZipSingleFile(iso, "game.iso", Path.Combine(inDir, "game.zip"));
             var outDir = Path.Combine(work, "out");
 
@@ -146,7 +146,7 @@ public sealed class ArchiveBatchTests
         {
             var inDir = Path.Combine(work, "in");
             Directory.CreateDirectory(inDir);
-            byte[] payload = RedumpIsoTests.Payload();
+            var payload = RedumpIsoTests.Payload();
             RedumpIsoTests.WriteMinimalXiso(Path.Combine(inDir, "game.iso"), 0, "hello.txt", payload);
             var outDir = Path.Combine(work, "out");
 
@@ -183,7 +183,7 @@ public sealed class ArchiveBatchTests
         {
             var inDir = Path.Combine(work, "in");
             Directory.CreateDirectory(inDir);
-            byte[] payload = RedumpIsoTests.Payload();
+            var payload = RedumpIsoTests.Payload();
             RedumpIsoTests.WriteMinimalXiso(Path.Combine(inDir, "game.iso"), 0, "hello.txt", payload);
             var outDir = Path.Combine(work, "out");
 
@@ -225,7 +225,7 @@ public sealed class ArchiveBatchTests
             File.WriteAllBytes(Path.Combine(stage, "hello.txt"), "hi"u8.ToArray());
             ZipTree(stage, Path.Combine(inDir, "game.zip"));
 
-            string iso = Path.Combine(work, "disc.iso");
+            var iso = Path.Combine(work, "disc.iso");
             File.WriteAllBytes(iso, "fake-iso-bytes"u8.ToArray());
             ZipSingleFile(iso, "disc.iso", Path.Combine(inDir, "disc.zip"));
             var outDir = Path.Combine(work, "out");

@@ -122,8 +122,8 @@ public sealed class ZArchiveWriter : IDisposable
     /// in input order, so parallel output is byte-identical to sequential.
     /// </param>
     /// <param name="compressorFactory">
-    /// Creates one compressor per worker (e.g. <c>() => new
-    /// ZstdCompressor(options)</c>); <paramref name="compressor"/> remains the
+    /// Creates one compressor per worker (e.g. <code>() => new
+    /// ZstdCompressor(options)</code>); <paramref name="compressor"/> remains the
     /// sequential-path instance and is never shared across workers.
     /// </param>
     public ZArchiveWriter(

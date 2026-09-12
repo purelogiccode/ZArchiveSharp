@@ -46,6 +46,7 @@ internal static class ZstdLazyEngine
     /// clamped to 6, so a 64-entry stack buffer always suffices.
     /// </summary>
     private const int MaxRowEntries = 1 << 6;
+
     private const uint Prime4 = 2654435761U;
     private const ulong Prime5 = 889523592379UL;
     private const ulong Prime6 = 227718039650203UL;
@@ -421,12 +422,13 @@ internal static class ZstdLazyEngine
                             }
                         }
 
-                    {
-                        uint candidate = 999999999;
-                        var ml2 = useRow
-                            ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog, searchLog,
-                                windowLog, hashTable, tagTable, matchScratch, ref nextToUpdate, ref lazySkipping)
-                            : useBt
+                        {
+                            uint candidate = 999999999;
+                            var ml2 = useRow
+                                ? RowFindBestMatch(source, blockEnd, ip, ref candidate, mls, rowHashLog, rowLog,
+                                    searchLog,
+                                    windowLog, hashTable, tagTable, matchScratch, ref nextToUpdate, ref lazySkipping)
+                                : useBt
                                     ? ZstdBinaryTree.BtFindBestMatch(source, blockEnd, ip, ref candidate, mls, hashLog,
                                         searchLog,
                                         chainLog, windowLog, hashTable, chainTable, ref nextToUpdate)
@@ -576,7 +578,7 @@ internal static class ZstdLazyEngine
     /// </summary>
     private static uint RowNextIndex(byte[] tagTable, int rowStart, uint rowMask)
     {
-        uint next = (uint)((tagTable[rowStart] - 1) & rowMask);
+        var next = (uint)((tagTable[rowStart] - 1) & rowMask);
         if (next == 0)
         {
             next += rowMask;

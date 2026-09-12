@@ -34,10 +34,7 @@ public static class BattleFixtures
                 File.WriteAllText(Path.Combine(dir, "sub", "b.txt"), "mid\n");
                 File.WriteAllText(Path.Combine(dir, "sub", "deep", "c.txt"), "deep\n");
             },
-            ["empty_dir"] = dir =>
-            {
-                Directory.CreateDirectory(Path.Combine(dir, "empty_sub"));
-            },
+            ["empty_dir"] = dir => { Directory.CreateDirectory(Path.Combine(dir, "empty_sub")); },
             ["empty_files"] = dir =>
             {
                 File.WriteAllBytes(Path.Combine(dir, "empty.bin"), []);
@@ -80,7 +77,7 @@ public static class BattleFixtures
     private static void WritePattern(string path, int length)
     {
         var bytes = new byte[length];
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             bytes[i] = (byte)(i % 251);
         }
@@ -151,19 +148,27 @@ public static class TreeAssert
         return map;
     }
 
-    private static string ToForwardSlash(string rel) =>
-        rel.Replace(Path.DirectorySeparatorChar, '/');
+    private static string ToForwardSlash(string rel)
+    {
+        return rel.Replace(Path.DirectorySeparatorChar, '/');
+    }
 
-    private static string ToOsPath(string rel) =>
-        rel.Replace('/', Path.DirectorySeparatorChar);
+    private static string ToOsPath(string rel)
+    {
+        return rel.Replace('/', Path.DirectorySeparatorChar);
+    }
 }
 
 /// <summary>Log normalizations shared by the chatter comparisons.</summary>
 public static class ZarLog
 {
-    public static string SlashToForward(string s) =>
-        s.Replace('\\', '/');
+    public static string SlashToForward(string s)
+    {
+        return s.Replace('\\', '/');
+    }
 
-    public static string FileName(string path) =>
-        path.Replace('\\', '/').Split('/').Last();
+    public static string FileName(string path)
+    {
+        return path.Replace('\\', '/').Split('/').Last();
+    }
 }

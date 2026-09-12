@@ -25,7 +25,7 @@ public static class ZarProcessModes
             return false;
         }
 
-        string name = value.Trim();
+        var name = value.Trim();
         if (string.Equals(name, "auto", StringComparison.OrdinalIgnoreCase))
         {
             mode = ZarProcessMode.Auto;

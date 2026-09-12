@@ -176,7 +176,7 @@ public static class SeekableCli
             return false;
         }
 
-        int digits = 0;
+        var digits = 0;
         while (digits < value.Length && char.IsAsciiDigit(value[digits]))
         {
             digits++;
@@ -189,14 +189,14 @@ public static class SeekableCli
         }
 
         if (!ulong.TryParse(value.AsSpan(0, digits), System.Globalization.NumberStyles.None,
-                System.Globalization.CultureInfo.InvariantCulture, out ulong number))
+                System.Globalization.CultureInfo.InvariantCulture, out var number))
         {
             error = $"Invalid size '{value}': number too large.";
             return false;
         }
 
-        string unit = string.Concat(value.AsSpan(digits).ToString().Where(c => !char.IsWhiteSpace(c)));
-        ulong factor = unit.Length == 0
+        var unit = string.Concat(value.AsSpan(digits).ToString().Where(c => !char.IsWhiteSpace(c)));
+        var factor = unit.Length == 0
             ? 1UL
             : unit.ToUpperInvariant() switch
             {
@@ -266,7 +266,7 @@ public static class SeekableCli
             return false;
         }
 
-        SeekableCommand command = args[0].ToLowerInvariant() switch
+        var command = args[0].ToLowerInvariant() switch
         {
             "compress" or "c" => SeekableCommand.Compress,
             "decompress" or "d" => SeekableCommand.Decompress,
@@ -295,15 +295,15 @@ public static class SeekableCli
             Quiet = defaultQuiet,
         };
 
-        bool stdout = defaultStdout;
-        bool toSet = false;
-        bool toFrameSet = false;
-        bool numFramesSet = false;
-        bool fromSet = false;
-        bool fromFrameSet = false;
+        var stdout = defaultStdout;
+        var toSet = false;
+        var toFrameSet = false;
+        var numFramesSet = false;
+        var fromSet = false;
+        var fromFrameSet = false;
         var positional = new List<string>();
 
-        for (int i = 1; i < args.Length; i++)
+        for (var i = 1; i < args.Length; i++)
         {
             switch (args[i])
             {
@@ -320,7 +320,7 @@ public static class SeekableCli
                         return false;
                     }
 
-                    if (!int.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out int lv) ||
+                    if (!int.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out var lv) ||
                         lv < 1 || lv > 22)
                     {
                         error = $"Invalid level '{args[i]}': expected 1-22.";
@@ -342,7 +342,7 @@ public static class SeekableCli
                         return false;
                     }
 
-                    if (!TryParseByteSize(args[++i], out ulong frameBytes, out string? frameError))
+                    if (!TryParseByteSize(args[++i], out var frameBytes, out var frameError))
                     {
                         error = frameError;
                         return false;
@@ -369,7 +369,7 @@ public static class SeekableCli
                         return false;
                     }
 
-                    string policyRaw = args[++i];
+                    var policyRaw = args[++i];
                     if (string.Equals(policyRaw, "compressed", StringComparison.OrdinalIgnoreCase))
                     {
                         parsed.Policy = SeekableFrameSizePolicy.Compressed;
@@ -432,7 +432,7 @@ public static class SeekableCli
                         return false;
                     }
 
-                    if (!TryParseByteSize(args[++i], out ulong from, out string? fromError))
+                    if (!TryParseByteSize(args[++i], out var from, out var fromError))
                     {
                         error = fromError;
                         return false;
@@ -454,10 +454,10 @@ public static class SeekableCli
                         return false;
                     }
 
-                    string toRaw = args[++i];
+                    var toRaw = args[++i];
                     if (!string.Equals(toRaw, "end", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!TryParseByteSize(toRaw, out ulong to, out string? toError))
+                        if (!TryParseByteSize(toRaw, out var to, out var toError))
                         {
                             error = toError;
                             return false;
@@ -482,7 +482,7 @@ public static class SeekableCli
                     }
 
                     if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture,
-                            out uint fromFrame))
+                            out var fromFrame))
                     {
                         error = $"Invalid frame index '{args[i]}': expected a non-negative integer.";
                         return false;
@@ -504,13 +504,13 @@ public static class SeekableCli
                         return false;
                     }
 
-                    string toFrameRaw = args[++i];
+                    var toFrameRaw = args[++i];
                     if (string.Equals(toFrameRaw, "last", StringComparison.OrdinalIgnoreCase))
                     {
                         parsed.ToLastFrame = true;
                     }
                     else if (uint.TryParse(toFrameRaw, System.Globalization.CultureInfo.InvariantCulture,
-                                 out uint toFrame))
+                                 out var toFrame))
                     {
                         parsed.ToFrame = toFrame;
                     }
@@ -536,7 +536,7 @@ public static class SeekableCli
                     }
 
                     if (!uint.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture,
-                            out uint numFrames) ||
+                            out var numFrames) ||
                         numFrames == 0)
                     {
                         error = $"Invalid frame count '{args[i]}': frame number must be greater than 0.";
@@ -568,7 +568,7 @@ public static class SeekableCli
                         return false;
                     }
 
-                    string formatRaw = args[++i];
+                    var formatRaw = args[++i];
                     if (string.Equals(formatRaw, "head", StringComparison.OrdinalIgnoreCase))
                     {
                         parsed.ListHeadFormat = true;
@@ -764,23 +764,23 @@ public static class SeekableCli
     {
         if (!job.Quiet)
         {
-            string tableSuffix = job.SeekTablePath is null ? string.Empty : $" +table {job.SeekTablePath}";
+            var tableSuffix = job.SeekTablePath is null ? string.Empty : $" +table {job.SeekTablePath}";
             log?.Invoke($"Seekable compress {job.InputPath ?? "stdin"} -> {job.OutputPath ?? "stdout"} " +
                         $"(level {job.Level}, {job.FrameSize} {job.Policy.ToString().ToLowerInvariant()} frames{(job.Checksum ? " +checksum" : string.Empty)}{tableSuffix})");
         }
 
-        Stream? input = stdin;
-        bool ownInput = false;
-        Stream? output = stdout;
-        bool ownOutput = false;
+        var input = stdin;
+        var ownInput = false;
+        var output = stdout;
+        var ownOutput = false;
         Stream? tableOutput = null;
-        bool ownTable = false;
+        var ownTable = false;
         var created = new List<string>();
         try
         {
             if (job.InputPath is not null)
             {
-                input = TryOpenInput(job.InputPath, compress: true, error, out int inputCode);
+                input = TryOpenInput(job.InputPath, compress: true, error, out var inputCode);
                 if (input is null)
                 {
                     return inputCode;
@@ -791,7 +791,7 @@ public static class SeekableCli
 
             if (job.OutputPath is not null)
             {
-                output = TryCreateOutput(job, job.OutputPath, compress: true, created, error, out int openCode);
+                output = TryCreateOutput(job, job.OutputPath, compress: true, created, error, out var openCode);
                 if (output is null)
                 {
                     return openCode;
@@ -803,7 +803,7 @@ public static class SeekableCli
             if (job.SeekTablePath is not null)
             {
                 tableOutput = TryCreateOutput(job, job.SeekTablePath, compress: true, created, error,
-                    out int tableCode);
+                    out var tableCode);
                 if (tableOutput is null)
                 {
                     return tableCode;
@@ -1032,21 +1032,21 @@ public static class SeekableCli
             return ZarchiveCli.ExtractionFailed;
         }
 
-        bool partial = offset != 0 || limit != table.TotalDecomp;
+        var partial = offset != 0 || limit != table.TotalDecomp;
         if (!job.Quiet)
         {
-            string rangeSuffix = partial ? $" (bytes {offset}-{limit} of {table.TotalDecomp})" : string.Empty;
+            var rangeSuffix = partial ? $" (bytes {offset}-{limit} of {table.TotalDecomp})" : string.Empty;
             log?.Invoke($"Seekable decompress {job.InputPath ?? "stdin"} -> {job.OutputPath ?? "stdout"}{rangeSuffix}");
         }
 
-        Stream? output = stdout;
-        bool ownOutput = false;
+        var output = stdout;
+        var ownOutput = false;
         var created = new List<string>();
         try
         {
             if (job.OutputPath is not null)
             {
-                output = TryCreateOutput(job, job.OutputPath, compress: false, created, error, out int openCode);
+                output = TryCreateOutput(job, job.OutputPath, compress: false, created, error, out var openCode);
                 if (output is null)
                 {
                     return openCode;
@@ -1127,12 +1127,12 @@ public static class SeekableCli
             return ZarchiveCli.ExtractionFailed;
         }
 
-        int start = job.FromFrame.HasValue ? checked((int)job.FromFrame.Value) : 0;
+        var start = job.FromFrame.HasValue ? checked((int)job.FromFrame.Value) : 0;
         int end;
-        bool bounded = job.ToFrame.HasValue || job.ToLastFrame || job.NumFrames.HasValue;
+        var bounded = job.ToFrame.HasValue || job.ToLastFrame || job.NumFrames.HasValue;
         if (job.NumFrames.HasValue)
         {
-            long wide = (long)start + (job.NumFrames.Value - 1);
+            var wide = (long)start + (job.NumFrames.Value - 1);
             if (wide > int.MaxValue)
             {
                 error("Error: frame range too large.");
@@ -1165,7 +1165,7 @@ public static class SeekableCli
         // Quiet is ignored in list mode, like the oracle: the table is the output.
         if (!job.Detail && !job.FromFrame.HasValue && !bounded)
         {
-            double ratio = table.TotalComp == 0 ? 0 : table.TotalDecomp / (double)table.TotalComp;
+            var ratio = table.TotalComp == 0 ? 0 : table.TotalDecomp / (double)table.TotalComp;
             log?.Invoke(
                 $"{"Frames",-15} {"Compressed",-15} {"Uncompressed",-15} {"Max Frame Size",-15} {"Ratio",-10} {"Filename",-15}");
             log?.Invoke(
@@ -1175,7 +1175,7 @@ public static class SeekableCli
 
         log?.Invoke(
             $"{"Frame Index",-15} {"Compressed",-15} {"Uncompressed",-15} {"Compressed Offset",-20} {"Uncompressed Offset",-20}");
-        for (int n = start; n <= end; n++)
+        for (var n = start; n <= end; n++)
         {
             ct.ThrowIfCancellationRequested();
             log?.Invoke(

@@ -291,21 +291,7 @@ internal static class ZstdOpt
     }
 
     /// <summary>
-    /// Fresh binary-tree tables for one optimal-parser pass
-    /// (<c>hashLog</c>, <c>chainLog</c>, and the 3-byte table when
-    /// <c>minMatch</c> is 3).
-    /// </summary>
-    private static (uint[] Hash, uint[] Bt, uint[] Hash3) NewTables(ZstdCompressionParameters prm)
-    {
-        var hash = new uint[1 << prm.HashLog];
-        var bt = new uint[1 << prm.ChainLog];
-        var hashLog3 = HashLog3For(prm);
-        uint[] hash3 = hashLog3 > 0 ? new uint[1 << hashLog3] : [];
-        return (hash, bt, hash3);
-    }
-
-    /// <summary>
-    /// Pooled <see cref="NewTables"/> equivalent: cleared tables (zeros read
+    /// Pooled tables: cleared tables (zeros read
     /// as empty, exactly like fresh ones, so output is identical). Pair with
     /// <see cref="ReturnTables"/>.
     /// </summary>
@@ -314,7 +300,7 @@ internal static class ZstdOpt
         var hash = ArrayPool<uint>.Shared.Rent(1 << prm.HashLog);
         var bt = ArrayPool<uint>.Shared.Rent(1 << prm.ChainLog);
         var hashLog3 = HashLog3For(prm);
-        uint[] hash3 = hashLog3 > 0 ? ArrayPool<uint>.Shared.Rent(1 << hashLog3) : [];
+        var hash3 = hashLog3 > 0 ? ArrayPool<uint>.Shared.Rent(1 << hashLog3) : [];
         Array.Clear(hash, 0, 1 << prm.HashLog);
         Array.Clear(bt, 0, 1 << prm.ChainLog);
         if (hash3.Length != 0)
@@ -578,7 +564,7 @@ internal static class ZstdOpt
         var btMask = (1 << (chainLog - 1)) - 1;
         var btLow = btMask >= curr ? 0 : curr - btMask;
         int? smallerSlot = 2 * (curr & btMask);
-        int? largerSlot = smallerSlot + 1;
+        var largerSlot = smallerSlot + 1;
         var windowLowT = WindowLow(target, windowLog);
         var matchEndIdx = curr + 8 + 1;
         var bestLength = 8;
@@ -698,7 +684,7 @@ internal static class ZstdOpt
         var windowLow = WindowLow(curr, windowLog);
         var matchLow = windowLow;
         int? smallerSlot = 2 * (curr & btMask);
-        int? largerSlot = smallerSlot + 1;
+        var largerSlot = smallerSlot + 1;
         var matchEndIdx = curr + 8 + 1;
         var mnum = 0u;
         var nbCompares = (uint)(1 << searchLog);

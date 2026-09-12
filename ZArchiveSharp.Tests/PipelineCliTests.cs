@@ -275,7 +275,7 @@ public sealed class PipelineCliTests : IDisposable
         var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
         var text = new char[200_000];
         const string alphabet = "the quick brown fox jumps over the lazy dog 0123456789\n";
-        for (int i = 0; i < text.Length; i++)
+        for (var i = 0; i < text.Length; i++)
         {
             text[i] = alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
@@ -419,6 +419,7 @@ public sealed class PipelineCliTests : IDisposable
     private sealed class SmokeProgress(Action<double> action) : IProgress<double>
     {
         private readonly Action<double> _action = action;
+
         public void Report(double value)
         {
             _action(value);

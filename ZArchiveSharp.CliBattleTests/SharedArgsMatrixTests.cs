@@ -91,18 +91,21 @@ public sealed class SharedArgsMatrixTests : IDisposable
         return dir;
     }
 
-    private static int ExpectedExit(string scenario) => scenario switch
+    private static int ExpectedExit(string scenario)
     {
-        "missing_no_output" or "missing_with_output" => -1,
-        "dir_no_output" or "dir_new_file" => 0,
-        "dir_existing_file" => -11,
-        "dir_existing_dir" => -10,
-        "zar_no_output" or "zar_new_dir" or "zar_existing_dir" => 0,
-        "zar_existing_file" => -3,
-        "garbage_new_dir" => -11,
-        "empty_dir_new_file" => 0,
-        _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
-    };
+        return scenario switch
+        {
+            "missing_no_output" or "missing_with_output" => -1,
+            "dir_no_output" or "dir_new_file" => 0,
+            "dir_existing_file" => -11,
+            "dir_existing_dir" => -10,
+            "zar_no_output" or "zar_new_dir" or "zar_existing_dir" => 0,
+            "zar_existing_file" => -3,
+            "garbage_new_dir" => -11,
+            "empty_dir_new_file" => 0,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenario)),
+        };
+    }
 
     /// <summary>Builds one side's twin state and returns its CLI args.</summary>
     private static string[] Setup(string scenario, string home, Func<string[], CliResult> run)

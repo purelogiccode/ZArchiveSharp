@@ -292,7 +292,7 @@ public sealed class ZstdDecompressionStream : Stream
             }
 
             var skip = ZstdDecompressor.ReadU32Le(_inBuf, _inStart + 4);
-            long need = 8L + skip;
+            var need = 8L + skip;
             if (need > int.MaxValue || !EnsureBuffered((int)need))
             {
                 throw new ZstdException("Truncated skippable frame.");

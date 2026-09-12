@@ -45,7 +45,7 @@ public sealed class ZstdCliTests : IDisposable
         const string alphabet =
             "the quick brown fox jumps over the lazy dog 0123456789\npack my box with five dozen liquor jugs! ";
         var data = new byte[size];
-        for (int i = 0; i < size; i++)
+        for (var i = 0; i < size; i++)
         {
             data[i] = (byte)alphabet[((i * 31) + (i / 7)) % alphabet.Length];
         }
@@ -60,10 +60,10 @@ public sealed class ZstdCliTests : IDisposable
         var rng = new Random(seed);
         var data = CycleBytes(size);
         var chunk = new byte[257];
-        for (int i = 0; i < size; i += 4096)
+        for (var i = 0; i < size; i += 4096)
         {
             rng.NextBytes(chunk);
-            int n = Math.Min(chunk.Length, size - i);
+            var n = Math.Min(chunk.Length, size - i);
             Array.Copy(chunk, 0, data, i, n);
         }
 
@@ -142,7 +142,7 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public void Parse_ModeRequired()
     {
-        Assert.False(ZstdCli.TryParse([], out _, out string? error));
+        Assert.False(ZstdCli.TryParse([], out _, out var error));
         Assert.Contains("-c", error, StringComparison.Ordinal);
         Assert.False(ZstdCli.TryParse(["in", "out"], out _, out error));
         Assert.Contains("-d", error, StringComparison.Ordinal);
@@ -151,7 +151,7 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public void Parse_BothModes_Rejects()
     {
-        Assert.False(ZstdCli.TryParse(["-c", "-d"], out _, out string? error));
+        Assert.False(ZstdCli.TryParse(["-c", "-d"], out _, out var error));
         Assert.Contains("Cannot combine", error, StringComparison.Ordinal);
         Assert.False(ZstdCli.TryParse(["--decompress", "--compress"], out _, out _));
     }
@@ -161,7 +161,7 @@ public sealed class ZstdCliTests : IDisposable
     [InlineData("-z")]
     public void Parse_UnknownOption_Rejects(string flag)
     {
-        Assert.False(ZstdCli.TryParse(["-c", flag], out _, out string? error));
+        Assert.False(ZstdCli.TryParse(["-c", flag], out _, out var error));
         Assert.Contains(flag, error, StringComparison.Ordinal);
     }
 
@@ -172,7 +172,7 @@ public sealed class ZstdCliTests : IDisposable
     [InlineData("")]
     public void Parse_BadLevel_Rejects(string level)
     {
-        Assert.False(ZstdCli.TryParse(["-c", "-l", level], out _, out string? error));
+        Assert.False(ZstdCli.TryParse(["-c", "-l", level], out _, out var error));
         Assert.Contains("level", error, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -181,7 +181,7 @@ public sealed class ZstdCliTests : IDisposable
     {
         Assert.False(ZstdCli.TryParse(["-c", "-l"], out _, out _));
         Assert.False(ZstdCli.TryParse(["-c", "--dict"], out _, out _));
-        Assert.False(ZstdCli.TryParse(["-c", "a", "b", "c"], out _, out string? tooMany));
+        Assert.False(ZstdCli.TryParse(["-c", "a", "b", "c"], out _, out var tooMany));
         Assert.Contains("Too many", tooMany, StringComparison.Ordinal);
     }
 
@@ -227,7 +227,7 @@ public sealed class ZstdCliTests : IDisposable
     [Fact]
     public void Parse_StdoutWithOutputPath_Rejects()
     {
-        Assert.False(ZstdCli.TryParse(["-c", "--stdout", "in", "out"], out _, out string? error));
+        Assert.False(ZstdCli.TryParse(["-c", "--stdout", "in", "out"], out _, out var error));
         Assert.Contains("--stdout", error, StringComparison.Ordinal);
         Assert.True(ZstdCli.TryParse(["-c", "--stdout", "in"], out var job, out _));
         Assert.Null(job!.OutputPath);
@@ -591,14 +591,14 @@ public sealed class ZstdCliTests : IDisposable
         // Each file is one 64 KiB block: 2x boilerplate + unique tail.
         var boilerplate = CycleBytes(8192);
         var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
-        for (int f = 0; f < 8; f++)
+        for (var f = 0; f < 8; f++)
         {
             var content = new byte[(2 * boilerplate.Length) + 256];
             Array.Copy(boilerplate, 0, content, 0, boilerplate.Length);
             Array.Copy(boilerplate, 0, content, boilerplate.Length, boilerplate.Length);
             var tail = HeteroBytes(256, seed: 1000 + f);
             Array.Copy(tail, 0, content, 2 * boilerplate.Length, 256);
-            string name = $"file{f}.bin";
+            var name = $"file{f}.bin";
             File.WriteAllBytes(Path.Combine(src, name), content);
         }
 
@@ -662,7 +662,7 @@ public sealed class ZstdCliTests : IDisposable
             new ZarPipelineOptions { Dictionary = ZstdDictionary.FromRawPrefix(CycleBytes(8192)) });
         foreach (var file in Directory.GetFiles(src))
         {
-            string name = Path.GetFileName(file);
+            var name = Path.GetFileName(file);
             Assert.Equal(File.ReadAllBytes(Path.Combine(destPlain, name)),
                 File.ReadAllBytes(Path.Combine(destDict, name)));
         }
@@ -686,7 +686,7 @@ public sealed class ZstdCliTests : IDisposable
         ZarPipeline.Extract(z19, Path.Combine(root, "o19"), opt);
         foreach (var file in Directory.GetFiles(src))
         {
-            string name = Path.GetFileName(file);
+            var name = Path.GetFileName(file);
             Assert.Equal(
                 File.ReadAllBytes(Path.Combine(root, "o1", name)),
                 File.ReadAllBytes(Path.Combine(root, "o19", name)));

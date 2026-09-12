@@ -771,7 +771,7 @@ internal static class ZstdBlockSplitter
 
         for (var i = 0; i < nbSeq; i++)
         {
-            bits += additionalBits is not null ? additionalBits(codes[i]) : codes[i];
+            bits += additionalBits?.Invoke(codes[i]) ?? codes[i];
         }
 
         return (long)(bits >> 3);

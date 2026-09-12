@@ -118,7 +118,8 @@
             <PublishedSingleFilePath>$(PublishDir)$(PublishedSingleFileName)</PublishedSingleFilePath>
         </PropertyGroup>
         <ItemGroup>
-            <_FilesToBundle Condition="'%(_FilesToBundle.RelativePath)' == '$(AssemblyName)$(_NativeExecutableExtension)'">
+            <_FilesToBundle
+                Condition="'%(_FilesToBundle.RelativePath)' == '$(AssemblyName)$(_NativeExecutableExtension)'">
                 <RelativePath>$(CliExecutableName)$(_NativeExecutableExtension)</RelativePath>
             </_FilesToBundle>
         </ItemGroup>
@@ -154,7 +155,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Meziantou.Analyzer" Version="3.0.250">
+        <PackageReference Include="Meziantou.Analyzer" Version="3.0.253">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>

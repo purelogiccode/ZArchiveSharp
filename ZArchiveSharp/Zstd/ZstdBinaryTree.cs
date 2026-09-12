@@ -122,7 +122,7 @@ internal static class ZstdBinaryTree
         var commonSmaller = 0;
         var commonLarger = 0;
         int? smallerSlot = 2 * (curr & btMask);
-        int? largerSlot = smallerSlot + 1;
+        var largerSlot = smallerSlot + 1;
         var matchIndex = SlotPos(bt[smallerSlot.Value]);
 
         for (; nbCompares > 0 && matchIndex > windowLow; nbCompares--)
@@ -244,7 +244,7 @@ internal static class ZstdBinaryTree
         var commonSmaller = 0;
         var commonLarger = 0;
         int? smallerSlot = 2 * (ip & btMask);
-        int? largerSlot = smallerSlot + 1;
+        var largerSlot = smallerSlot + 1;
         var matchEndIdx = ip + 8 + 1;
         var bestLength = 0;
 

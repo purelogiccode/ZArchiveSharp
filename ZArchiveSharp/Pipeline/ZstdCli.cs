@@ -109,10 +109,10 @@ public static class ZstdCli
         };
 
         bool? mode = null; // true = compress, false = decompress
-        bool stdout = defaultStdout;
+        var stdout = defaultStdout;
         var positional = new List<string>();
 
-        for (int i = 0; i < args.Length; i++)
+        for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
@@ -141,7 +141,7 @@ public static class ZstdCli
                         return false;
                     }
 
-                    if (!int.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out int lv) ||
+                    if (!int.TryParse(args[++i], System.Globalization.CultureInfo.InvariantCulture, out var lv) ||
                         lv < 1 || lv > 22)
                     {
                         error = $"Invalid level '{args[i]}': expected 1-22.";
@@ -271,21 +271,21 @@ public static class ZstdCli
 
         if (!job.Quiet)
         {
-            string dictSuffix = dict is null ? string.Empty : $" (dict 0x{dict.DictId:X8})";
+            var dictSuffix = dict is null ? string.Empty : $" (dict 0x{dict.DictId:X8})";
             log?.Invoke(job.Compress
                 ? $"Compressing {job.InputPath ?? "stdin"} -> {job.OutputPath ?? "stdout"} (level {job.Level}{dictSuffix}{(job.Checksum ? " +checksum" : string.Empty)})"
                 : $"Decompressing {job.InputPath ?? "stdin"} -> {job.OutputPath ?? "stdout"}{dictSuffix}");
         }
 
-        Stream? input = stdin;
-        Stream? output = stdout;
-        bool ownInput = false;
-        bool ownOutput = false;
+        var input = stdin;
+        var output = stdout;
+        var ownInput = false;
+        var ownOutput = false;
         try
         {
             if (job.InputPath is not null)
             {
-                input = TryOpenInput(job, job.InputPath, error, out int inputCode);
+                input = TryOpenInput(job, job.InputPath, error, out var inputCode);
                 if (input is null)
                 {
                     return inputCode;
@@ -296,7 +296,7 @@ public static class ZstdCli
 
             if (job.OutputPath is not null)
             {
-                int openCode = TryOpenOutput(job, job.OutputPath, error, out output);
+                var openCode = TryOpenOutput(job, job.OutputPath, error, out output);
                 if (output is null)
                 {
                     return openCode;

@@ -247,7 +247,8 @@ internal static class ZstdBlockEncoder
             ZstdMatchFinder.FindMatches(srcCopy, store, rep, prm);
             // Standalone block: entropy starts with no previous tables (first-
             // block behavior); the staged next state is discarded.
-            return EncodeStore(store, prm.Strategy, dst, dstOffset, end, new ZstdEntropyState(), new ZstdEntropyState());
+            return EncodeStore(store, prm.Strategy, dst, dstOffset, end, new ZstdEntropyState(),
+                new ZstdEntropyState());
         }
         finally
         {
@@ -412,7 +413,7 @@ internal static class ZstdBlockEncoder
             // Treeless (reused) streams carry no table description; the staged
             // mode and table stay exactly as CompressWithRepeat left them (valid
             // stays valid, check stays check).
-            uint hType = SetCompressed;
+            var hType = SetCompressed;
             if (huffTable is null)
             {
                 hType = SetRepeat;
@@ -514,7 +515,7 @@ internal static class ZstdBlockEncoder
         else
         {
             // litBuf may be a larger rented array: copy exactly litLen bytes.
-            new Span<byte>(litBuf!, 0, litLen).CopyTo(new Span<byte>(dst, pos, litLen));
+            new Span<byte>(litBuf, 0, litLen).CopyTo(new Span<byte>(dst, pos, litLen));
             pos += litLen;
         }
 

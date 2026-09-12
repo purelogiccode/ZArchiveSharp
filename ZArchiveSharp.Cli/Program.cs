@@ -23,25 +23,25 @@ public static class Program
         string? isoPath = null;
         string? inputPath = null;
         string? outputPath = null;
-        int jobs = 4;
-        string policy = "fail";
-        bool policyExplicit = false;
-        int level = 6;
-        bool levelExplicit = false;
-        bool quiet = false;
-        bool noCompress = false;
-        bool batch = false;
+        var jobs = 4;
+        var policy = "fail";
+        var policyExplicit = false;
+        var level = 6;
+        var levelExplicit = false;
+        var quiet = false;
+        var noCompress = false;
+        var batch = false;
         string? dictPath = null;
-        bool stdoutFlag = false;
+        var stdoutFlag = false;
         bool? checksumOverride = null;
-        bool helpRequested = false;
+        var helpRequested = false;
         string? modeRaw = null;
         bool? keepOriginalsOverride = null;
         string? sevenZipRaw = null;
 
         var positional = new List<string>();
 
-        for (int i = 0; i < args.Length; i++)
+        for (var i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
@@ -56,7 +56,11 @@ public static class Program
                     break;
                 case "--jobs" or "-j":
                     if (i + 1 < args.Length && int.TryParse(args[++i],
-                            System.Globalization.CultureInfo.InvariantCulture, out int j)) jobs = j;
+                            System.Globalization.CultureInfo.InvariantCulture, out var j))
+                    {
+                        jobs = j;
+                    }
+
                     break;
                 case "--policy" or "-p":
                     if (i + 1 >= args.Length)
@@ -71,7 +75,7 @@ public static class Program
                     break;
                 case "--level" or "-l":
                     if (i + 1 < args.Length && int.TryParse(args[++i],
-                            System.Globalization.CultureInfo.InvariantCulture, out int lv))
+                            System.Globalization.CultureInfo.InvariantCulture, out var lv))
                     {
                         level = lv;
                         levelExplicit = true;
@@ -231,7 +235,7 @@ public static class Program
             }
         }
 
-        bool deleteSource = keepOriginalsOverride == false;
+        var deleteSource = keepOriginalsOverride == false;
 
         // --mode/--delete-source/--seven-zip/--policy select batch pipeline
         // auto-detects by input type, never deletes sources, and keeps the
@@ -273,7 +277,7 @@ public static class Program
             }
         }
 
-        bool checksum = checksumOverride ?? false;
+        var checksum = checksumOverride ?? false;
 
         IZarBlockCompressor? compressor = noCompress ? new ZarRawCompressor() : null;
 
@@ -322,7 +326,7 @@ public static class Program
     private static int RunZstd(
         string[] zstdArgs, int level, string? dictPath, bool checksum, bool quiet, bool stdoutFlag)
     {
-        if (!ZstdCli.TryParse(zstdArgs, out var job, out string? parseError,
+        if (!ZstdCli.TryParse(zstdArgs, out var job, out var parseError,
                 defaultLevel: level, defaultDictPath: dictPath, defaultChecksum: checksum,
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
@@ -379,7 +383,7 @@ public static class Program
             return ZarchiveCli.BadUsage;
         }
 
-        if (!SeekableCli.TryParse(seekableArgs, out var job, out string? parseError,
+        if (!SeekableCli.TryParse(seekableArgs, out var job, out var parseError,
                 defaultLevel: levelExplicit ? globalLevel : 3, defaultChecksum: checksumOverride,
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
@@ -464,8 +468,8 @@ public static class Program
     {
         try
         {
-            long size = new FileInfo(isoPath).Length;
-            int redumpType = XgdTables.GetRedumpIsoTypeBySize(size);
+            var size = new FileInfo(isoPath).Length;
+            var redumpType = XgdTables.GetRedumpIsoTypeBySize(size);
             if (redumpType < 0)
             {
                 return 0;
@@ -474,7 +478,7 @@ public static class Program
             // Wave-dependent sizes (types 5 and 7) need the PVD at 0x832D;
             // other Redump types map straight through (null stream is fine:
             // GetWave returns -1 without a stream and the switch ignores it).
-            int videoType = -1;
+            var videoType = -1;
             try
             {
                 using FileStream fs = new(isoPath, FileMode.Open, FileAccess.Read, FileShare.Read, 65536);
@@ -485,17 +489,17 @@ public static class Program
                 // ignored: fall back below, like XISOSharp.Cli.
             }
 
-            int vType = videoType >= 0 ? videoType : 0;
-            int xsType = XgdTables.GetXisoTypeFromVideo(vType);
+            var vType = videoType >= 0 ? videoType : 0;
+            var xsType = XgdTables.GetXisoTypeFromVideo(vType);
             if (xsType < 0 || xsType >= XgdTables.XisoOffset.Length)
             {
                 xsType = XgdTables.GetXgdType(redumpType);
             }
 
-            long isoOffset = XgdTables.XisoOffset[xsType];
+            var isoOffset = XgdTables.XisoOffset[xsType];
             if (!quiet)
             {
-                string video =
+                var video =
  videoType >= 0 ? videoType.ToString(System.Globalization.CultureInfo.InvariantCulture) : "unknown (assuming 0)";
                 Console.WriteLine($"Redump ISO detected (type {redumpType}, video {video}); game partition at 0x{isoOffset:X}.");
             }
@@ -536,11 +540,11 @@ public static class Program
         // sits at a wave-dependent offset (XISOSharp.Cli --zar resolves it the
         // same way from the same XgdTables). Packing at offset 0 would archive
         // the video area as garbage, so resolve the game offset first.
-        long isoOffset = ResolveGamePartitionOffset(isoPath, quiet);
+        var isoOffset = ResolveGamePartitionOffset(isoPath, quiet);
 
         if (!quiet) Console.WriteLine($"Converting XISO to ZAR: {isoPath} -> {destZar}");
 
-        IZarBlockCompressor? comp = compressor;
+        var comp = compressor;
         if (comp == null && (level != 6 || dictionary != null))
         {
             comp = new ZstdCompressor(new ZstdCompressionOptions { Level = level, Dictionary = dictionary });
@@ -548,7 +552,7 @@ public static class Program
 
         try
         {
-            bool ok =
+            var ok =
  XisoZarchive.CreateZar(isoPath, destZar, isoOffset, quiet: quiet, compressor: comp, progress: progress);
             if (!quiet) Console.WriteLine();
             if (ok)
@@ -584,7 +588,7 @@ public static class Program
             "Rebuild with XISOSharp enabled (it is omitted only with -p:XisoSharpAvailable=false).");
         return ZarchiveCli.BadUsage;
 #else
-        string output = zarPath ?? DeriveZarPath(isoPath);
+        var output = zarPath ?? DeriveZarPath(isoPath);
 
         if (File.Exists(output))
         {
@@ -596,12 +600,12 @@ public static class Program
         {
             if (p.BytesTotal > 0)
             {
-                double pct = (double)p.BytesCompleted / p.BytesTotal * 100;
+                var pct = (double)p.BytesCompleted / p.BytesTotal * 100;
                 Console.Write($"\r  {pct:F1}% ({p.BytesCompleted / (1024 * 1024)} / {p.BytesTotal / (1024 * 1024)} MiB)");
             }
         });
 
-        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, progress, out string? error))
+        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, progress, out var error))
         {
             return 0;
         }
@@ -621,7 +625,7 @@ public static class Program
             return -1;
         }
 
-        string destDir = outputPath ?? inputPath;
+        var destDir = outputPath ?? inputPath;
 
         var files = ProcessableFiles.Find(inputPath, mode);
         if (files.Count == 0)
@@ -649,7 +653,7 @@ public static class Program
             {
                 if (p.Operation == ZarOperation.Pack)
                 {
-                    double pct = p.Ratio * 100;
+                    var pct = p.Ratio * 100;
                     Console.Write(
                         $"\r  [{p.FilesCompleted}/{p.FilesTotal}] {pct:F1}% {Path.GetFileName(p.SourcePath)}");
                 }
@@ -766,16 +770,16 @@ public static class Program
         int level, IZarBlockCompressor? compressor, ZstdDictionary? dictionary,
         IProgress<ZarProgress>? progress)
     {
-        string dest = Path.Combine(destDir, Path.GetFileName(DeriveZarPath(iso)));
+        var dest = Path.Combine(destDir, Path.GetFileName(DeriveZarPath(iso)));
         try
         {
-            string? resolved = ZarPackEngine.ResolveOutputPath(dest, options.CollisionPolicy);
+            var resolved = ZarPackEngine.ResolveOutputPath(dest, options.CollisionPolicy);
             if (resolved == null)
             {
                 return new ZarItemResult(iso, dest, ZarItemStatus.Skipped, "Output already exists.");
             }
 
-            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, progress, out string? error))
+            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, progress, out var error))
             {
                 if (options.DeleteSourceOnSuccess)
                 {
@@ -831,8 +835,8 @@ public static class Program
         ZarProcessMode mode, int level, bool quiet, IZarBlockCompressor? compressor,
         ZstdDictionary? dictionary, string? sevenZipPath, IProgress<ZarProgress>? progress)
     {
-        string stem = Path.GetFileNameWithoutExtension(archive);
-        string? temp = Path.Combine(destDir, $"temp_{stem}");
+        var stem = Path.GetFileNameWithoutExtension(archive);
+        var temp = Path.Combine(destDir, $"temp_{stem}");
         try
         {
             if (Directory.Exists(temp))
@@ -842,7 +846,7 @@ public static class Program
 
             Directory.CreateDirectory(temp);
 
-            string? tool = !string.IsNullOrWhiteSpace(sevenZipPath) ? sevenZipPath : SevenZip.FindTool();
+            var tool = !string.IsNullOrWhiteSpace(sevenZipPath) ? sevenZipPath : SevenZip.FindTool();
             if (tool == null)
             {
                 return new ZarItemResult(archive, null, ZarItemStatus.Failed,
@@ -860,10 +864,10 @@ public static class Program
             var extracted = Directory.EnumerateFileSystemEntries(temp, "*", SearchOption.AllDirectories).ToList();
             string? current;
             bool isIso;
-            string? iso = SevenZip.PickIsoCandidate(extracted.Where(File.Exists));
+            var iso = SevenZip.PickIsoCandidate(extracted.Where(File.Exists));
             if (iso != null)
             {
-                string? moved = ZarPackEngine.ResolveOutputPath(
+                var moved = ZarPackEngine.ResolveOutputPath(
                     Path.Combine(destDir, stem + ".iso"), options.CollisionPolicy);
                 if (moved == null)
                 {
@@ -881,7 +885,7 @@ public static class Program
                     return new ZarItemResult(archive, null, ZarItemStatus.Failed, "Archive yielded no files.");
                 }
 
-                string? moved = ZarPackEngine.ResolveOutputPath(
+                var moved = ZarPackEngine.ResolveOutputPath(
                     Path.Combine(destDir, stem), options.CollisionPolicy);
                 if (moved == null)
                 {
@@ -960,14 +964,14 @@ public static class Program
         }
 
         // MinVer stamps e.g. "1.0.0+githash" ("0.0.0-alpha.0.N+githash" with no tag); keep the version core.
-        int plus = info.IndexOf('+');
+        var plus = info.IndexOf('+');
         return plus >= 0 ? info[..plus] : info;
     }
 
     private static string DeriveZarPath(string isoPath)
     {
-        string dir = Path.GetDirectoryName(isoPath) ?? "";
-        string name = Path.GetFileNameWithoutExtension(isoPath);
+        var dir = Path.GetDirectoryName(isoPath) ?? "";
+        var name = Path.GetFileNameWithoutExtension(isoPath);
         if (name.EndsWith(".redump", StringComparison.OrdinalIgnoreCase))
             name = name[..^".redump".Length];
         return Path.Combine(dir, $"{name}.zar");

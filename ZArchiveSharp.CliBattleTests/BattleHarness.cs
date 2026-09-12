@@ -7,13 +7,18 @@ public sealed record CliResult(int ExitCode, string StdOut, string StdErr)
 {
     public string Combined => StdOut + StdErr;
 
-    public List<string> StdOutLines() => SplitLines(StdOut);
+    public List<string> StdOutLines()
+    {
+        return SplitLines(StdOut);
+    }
 
-    public static List<string> SplitLines(string text) =>
-        text.Split(["\r\n", "\n"], StringSplitOptions.None)
+    public static List<string> SplitLines(string text)
+    {
+        return text.Split(["\r\n", "\n"], StringSplitOptions.None)
             .Select(l => l.TrimEnd('\r'))
             .Where(l => l.Length != 0)
             .ToList();
+    }
 }
 
 /// <summary>
@@ -77,7 +82,7 @@ public static class BinaryLocator
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        for (int i = 0; i < 12 && dir != null; i++, dir = dir.Parent)
+        for (var i = 0; i < 12 && dir != null; i++, dir = dir.Parent)
         {
             if (File.Exists(Path.Combine(dir.FullName, "CSharp_ZArchiveSharp.sln")))
             {
@@ -96,11 +101,15 @@ public static class CliRunner
 {
     private const int TimeoutMilliseconds = 120_000;
 
-    public static CliResult RunOracle(params string[] args) =>
-        Run(BinaryLocator.OracleExe(), args);
+    public static CliResult RunOracle(params string[] args)
+    {
+        return Run(BinaryLocator.OracleExe(), args);
+    }
 
-    public static CliResult RunMine(params string[] args) =>
-        Run(BinaryLocator.UnderTestExe(), args);
+    public static CliResult RunMine(params string[] args)
+    {
+        return Run(BinaryLocator.UnderTestExe(), args);
+    }
 
     public static CliResult Run(string exe, params string[] args)
     {
@@ -114,7 +123,8 @@ public static class CliRunner
             CreateNoWindow = true,
         };
 
-        using var process = new Process { StartInfo = psi };
+        using var process = new Process();
+        process.StartInfo = psi;
         process.Start();
         var outTask = process.StandardOutput.ReadToEndAsync();
         var errTask = process.StandardError.ReadToEndAsync();

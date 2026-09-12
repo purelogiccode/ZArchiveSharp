@@ -169,13 +169,17 @@ public sealed class PackExtractParityTests : IDisposable
         Assert.Equal(0, packOracle.ExitCode);
         Assert.Equal(0, packMine.ExitCode);
 
-        List<string> AddingLines(CliResult r) => r.StdOutLines()
-            .Where(l => l.StartsWith("Adding ", StringComparison.Ordinal))
-            .Select(ZarLog.SlashToForward)
-            .OrderBy(l => l, StringComparer.Ordinal)
-            .ToList();
-
         Assert.Equal(AddingLines(packOracle), AddingLines(packMine));
+        return;
+
+        static List<string> AddingLines(CliResult r)
+        {
+            return r.StdOutLines()
+                .Where(l => l.StartsWith("Adding ", StringComparison.Ordinal))
+                .Select(ZarLog.SlashToForward)
+                .OrderBy(l => l, StringComparer.Ordinal)
+                .ToList();
+        }
     }
 
     [Fact]
@@ -202,11 +206,6 @@ public sealed class PackExtractParityTests : IDisposable
         Assert.Equal(0, extractOracle.ExitCode);
         Assert.Equal(0, extractMine.ExitCode);
 
-        List<string> EntryLines(CliResult r) => r.StdOutLines()
-            .Where(l => !l.StartsWith("Extracting to:", StringComparison.Ordinal))
-            .Select(ZarLog.SlashToForward)
-            .ToList();
-
         var oracleLines = EntryLines(extractOracle);
         var mineLines = EntryLines(extractMine);
 
@@ -220,10 +219,21 @@ public sealed class PackExtractParityTests : IDisposable
         Assert.Contains("sub/b.txt", mineLines);
         Assert.Contains("/sub/deep/c.txt", oracleLines);
         Assert.Contains("sub/deep/c.txt", mineLines);
+        return;
+
+        static List<string> EntryLines(CliResult r)
+        {
+            return r.StdOutLines()
+                .Where(l => !l.StartsWith("Extracting to:", StringComparison.Ordinal))
+                .Select(ZarLog.SlashToForward)
+                .ToList();
+        }
     }
 
-    private static bool IsFilelessFixture(string fixtureName) =>
-        string.Equals(fixtureName, "empty_dir", StringComparison.Ordinal);
+    private static bool IsFilelessFixture(string fixtureName)
+    {
+        return string.Equals(fixtureName, "empty_dir", StringComparison.Ordinal);
+    }
 
     private static void AssertExtractRefused(CliResult result)
     {
