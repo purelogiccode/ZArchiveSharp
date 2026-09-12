@@ -26,12 +26,12 @@ internal static class BugReportFormatter
         var environment = BuildEnvironmentSection();
         var stack = ex?.StackTrace ?? "(none)";
         var @fixed = environment + Environment.NewLine + Environment.NewLine
-            + "=== Error Details ===" + Environment.NewLine + error + Environment.NewLine + Environment.NewLine
-            + "=== Exception Details ===" + Environment.NewLine
-            + $"Type: {ex?.GetType().FullName ?? "(none)"}" + Environment.NewLine
-            + $"Message: {ex?.Message ?? "(none)"}" + Environment.NewLine
-            + $"Source: {ex?.Source ?? "(none)"}" + Environment.NewLine
-            + "StackTrace: ";
+                     + "=== Error Details ===" + Environment.NewLine + error + Environment.NewLine + Environment.NewLine
+                     + "=== Exception Details ===" + Environment.NewLine
+                     + $"Type: {ex?.GetType().FullName ?? "(none)"}" + Environment.NewLine
+                     + $"Message: {ex?.Message ?? "(none)"}" + Environment.NewLine
+                     + $"Source: {ex?.Source ?? "(none)"}" + Environment.NewLine
+                     + "StackTrace: ";
         var budget = MaxMessage - @fixed.Length - Environment.NewLine.Length;
         if (budget < 0)
         {

@@ -98,7 +98,7 @@ public static class ProcessRunner
         // BeginErrorReadLine is asynchronous: give the stderr pump a
         // bounded moment to drain so a late-only failure line is not
         // reported as "no output".
-        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5));
+        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5), cancellationToken);
         var lastLine = lastOut ?? lastErr;
         ThrowIfFailed(process.ExitCode, lastLine, fileName);
         return new ProcessResult(process.ExitCode, lastLine);

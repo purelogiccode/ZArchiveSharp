@@ -20,7 +20,7 @@ internal sealed class CliConsoleSink : ILogEventSink
         }
 
         var stderr = logEvent.Properties.TryGetValue(CliLog.StderrProperty, out var raw)
-            && raw is ScalarValue { Value: true };
+                     && raw is ScalarValue { Value: true };
         var text = logEvent.RenderMessage();
         // Fatal events are the "unhandled exception" safety net: append the
         // exception so a crash shows its type, message and stack trace.

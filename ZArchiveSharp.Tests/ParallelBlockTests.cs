@@ -229,9 +229,9 @@ public sealed class ParallelBlockTests : IDisposable
 
         using (var output = File.Create(zar))
         using (var writer = new ZArchiveWriter(
-            output,
-            compressorFactory: probe.CreateWorker,
-            maxDegreeOfParallelism: 4))
+                   output,
+                   maxDegreeOfParallelism: 4,
+                   compressorFactory: probe.CreateWorker))
         {
             var block = new byte[ZArchiveCommon.CompressedBlockSize];
             new Random(424242).NextBytes(block);

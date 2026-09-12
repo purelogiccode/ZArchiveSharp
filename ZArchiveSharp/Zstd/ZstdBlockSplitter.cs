@@ -317,6 +317,7 @@ internal static class ZstdBlockSplitter
                     : chunk.Count;
                 ZstdSeq.ResolveOffCodes(dRep, cRep, chunk, chunk.Count, longLitIdx);
             }
+
             int payload;
             try
             {

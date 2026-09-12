@@ -35,22 +35,22 @@ internal static class UpdateChecker
     /// Starts the background release lookup; the task carries
     /// <see langword="null"/> when the master telemetry switch disabled it.
     /// </summary>
-    internal static Task<ReleaseInfo?> Begin()
+    internal static async Task<ReleaseInfo?> Begin()
     {
         if (BugReportSink.TelemetryDisabled)
         {
-            return Task.FromResult<ReleaseInfo?>(null);
+            return await Task.FromResult<ReleaseInfo?>(null);
         }
 
         try
         {
-            return Task.Run(CheckAsync);
+            return await Task.Run(CheckAsync);
         }
         catch (Exception beginEx)
         {
             // Update checks must never affect the CLI.
             _ = beginEx;
-            return Task.FromResult<ReleaseInfo?>(null);
+            return await Task.FromResult<ReleaseInfo?>(null);
         }
     }
 
@@ -193,8 +193,7 @@ internal static class UpdateChecker
                 }
 
                 var name = nameProperty.GetString();
-                if (name is null
-                    || !name.StartsWith("release_", StringComparison.OrdinalIgnoreCase)
+                if (name?.StartsWith("release_", StringComparison.OrdinalIgnoreCase) != true
                     || !name.EndsWith($"_{suffix}.zip", StringComparison.OrdinalIgnoreCase))
                 {
                     continue;
@@ -247,8 +246,8 @@ internal static class UpdateChecker
     internal static bool IsWebUrl(string? url)
     {
         return Uri.TryCreate(url, UriKind.Absolute, out var uri)
-            && (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
-                || string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal));
+               && (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.Ordinal)
+                   || string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.Ordinal));
     }
 
     private static void OpenBrowser(string url)

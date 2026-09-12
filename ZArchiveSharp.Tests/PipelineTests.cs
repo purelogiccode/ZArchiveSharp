@@ -357,7 +357,7 @@ public sealed class PipelineTests : IDisposable
     public void Extract_CorruptLaterBlock_LeavesNoPartialFile(int workers)
     {
         var root = NewTempDir($"pipe_partial{workers}");
-        var blockSize = ZArchiveCommon.CompressedBlockSize;
+        const int blockSize = ZArchiveCommon.CompressedBlockSize;
         var first = new byte[blockSize];
         new Random(20260913).NextBytes(first);
         var data = new byte[blockSize * 2];
@@ -395,7 +395,7 @@ public sealed class PipelineTests : IDisposable
     public void Extract_DeeplyNestedArchive_FailsCatchably()
     {
         var root = NewTempDir("pipe_deep");
-        var depth = ZarPackEngine.MaxExtractDepth + 10;
+        const int depth = ZarPackEngine.MaxExtractDepth + 10;
         var nested = string.Join('/', Enumerable.Repeat("d", depth));
 
         var zar = Path.Combine(root, "deep.zar");
@@ -899,7 +899,7 @@ public sealed class PipelineTests : IDisposable
     {
         var source = new PauseTokenSource();
         source.Pause();
-        Assert.IsAssignableFrom<IDisposable>(source);
+        Assert.IsType<IDisposable>(source, exactMatch: false);
         ((IDisposable)(object)source).Dispose();
 
         // A disposed source must not silently keep a released wait handle

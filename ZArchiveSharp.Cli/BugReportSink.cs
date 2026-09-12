@@ -186,7 +186,8 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
     {
         var sb = new StringBuilder();
         sb.Append("{\"message\":");
-        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.Sanitize(BugReportFormatter.FormatMessage(error, ex)));
+        BugReportFormatter.AppendJsonString(sb,
+            BugReportFormatter.Sanitize(BugReportFormatter.FormatMessage(error, ex)));
         sb.Append(",\"applicationName\":");
         BugReportFormatter.AppendJsonString(sb, BugReportFormatter.ApplicationName);
         sb.Append(",\"version\":");

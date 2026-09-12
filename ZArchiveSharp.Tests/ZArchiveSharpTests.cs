@@ -236,7 +236,7 @@ public sealed class ZArchiveSharpTests
         // the archive); block 1 is compressible (stored as a zstd frame).
         // Corrupting block 1's frame must not make a read that already copied
         // block 0 look like EOF.
-        var blockSize = ZArchiveCommon.CompressedBlockSize;
+        const int blockSize = ZArchiveCommon.CompressedBlockSize;
         var first = new byte[blockSize];
         new Random(20260912).NextBytes(first);
         var data = new byte[blockSize * 2];

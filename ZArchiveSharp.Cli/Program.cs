@@ -570,7 +570,7 @@ public static class Program
     {
         var first = positional.Count > 0 ? positional[0] : null;
         return string.Equals(first, "zstd", StringComparison.Ordinal)
-            || string.Equals(first, "seekable", StringComparison.Ordinal);
+               || string.Equals(first, "seekable", StringComparison.Ordinal);
     }
 
     /// <summary>

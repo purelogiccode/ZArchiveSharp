@@ -89,7 +89,7 @@ public sealed class ZstdDecoderTests
         var dst = new byte[input.Length];
         Assert.Throws<ArgumentNullException>(() => ZstdDecompressor.DecompressExact(null!, 0, 0, dst, 0, dst.Length));
         Assert.Throws<ArgumentOutOfRangeException>(() => ZstdDecompressor.DecompressExact(
-                frame, 0, frame.Length, new byte[input.Length - 1], 0, input.Length));
+            frame, 0, frame.Length, new byte[input.Length - 1], 0, input.Length));
     }
 
     [Theory]

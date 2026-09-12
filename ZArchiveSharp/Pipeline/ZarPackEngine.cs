@@ -650,10 +650,10 @@ public static class ZarPackEngine
     private static void ValidateEntryName(string name)
     {
         if (name.Length == 0 || name is "." or ".."
-            || name.Contains('/') || name.Contains('\\')
-            || Path.IsPathRooted(name)
-            || (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]))
-            || IsReservedDeviceName(name))
+                             || name.Contains('/') || name.Contains('\\')
+                             || Path.IsPathRooted(name)
+                             || (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]))
+                             || IsReservedDeviceName(name))
         {
             throw new InvalidOperationException($"Archive entry name is not safe to extract: '{name}'.");
         }
