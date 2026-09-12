@@ -202,6 +202,18 @@ public static class Program
             return 0;
         }
 
+        // zarchive.exe parity (main.cpp): the shared command args list is
+        // exactly `input_path [output_path]`; a third positional is a usage
+        // error, never a silently ignored extra. Subcommands above already
+        // consumed their own positionals, so this only guards the
+        // pack/extract/batch paths below (same message and stdout channel
+        // as the oracle and ZarchiveCli).
+        if (positional.Count > 2)
+        {
+            Console.WriteLine("Too many paths specified");
+            return ZarchiveCli.BadUsage;
+        }
+
         if (stdoutFlag)
         {
             Console.Error.WriteLine("Error: --stdout is only supported with 'zar zstd'.");
