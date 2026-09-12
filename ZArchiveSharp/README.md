@@ -4,6 +4,12 @@ Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive
 library: directory-tree archives with per-block zstd compression. No native
 dependencies, BCL only; trimmable and AOT-compatible (`net8.0`/`net9.0`/`net10.0`).
 
+## Install
+
+```bash
+dotnet add package ZArchiveSharp
+```
+
 ## Layout
 
 ```csharp
@@ -83,6 +89,30 @@ a bug: an unopenable extract output throws (native writes into the dead
 stream), a mid-file input read error fails the pack with `-16` (native packs
 a silent truncation), and error-string paths use `/` on every OS.
 
+## What's new in v1.2.0
+
+- **Hardened extraction** — entry names must be single plain components
+  (traversal, absolute, drive-qualified and reserved device names are
+  rejected), the resolved path is re-validated against the destination root,
+  nesting is capped at `ZarPackEngine.MaxExtractDepth` (1024), and files are
+  written through scratch files moved into place after the size check.
+- **Safer pack walking** — `DirectoryPackSource` never descends directory
+  symlinks/junctions; the link stays as an empty directory entry.
+- **New decoder cap** — `ZstdDecoderOptions.MaxTotalOutputSize` (1 GiB
+  default) bounds concatenated frames cumulatively; `ZstdCompressor.DecompressFrame`
+  enforces its cap during decode.
+- **New engine helpers** — `ZarPackEngine.MoveIntoPlace`,
+  `OutputExistsMessage` and `MaxExtractDepth`; `PackEntries` returns the path
+  actually written and takes an optional collision policy.
+- **Contract changes** — `SeekableReader` range errors are now
+  `ArgumentOutOfRangeException`; `ZArchiveReader.TryOpen(Stream)` disposes a
+  failed non-`leaveOpen` stream; `PauseTokenSource` is `IDisposable`.
+- **Native-parity fixes** — Windows-1252 byte identity/order for name tables,
+  splitter repeat-offset history, stream header rebasing and wrap-safe
+  bounds checks.
+
+Full notes: [WhatsNew.md](../WhatsNew.md) · [docs](../docs/README.md).
+
 ## Limits
 
 - No zstd dictionary *training*, LDM, legacy frames, or multithreading
@@ -90,7 +120,7 @@ a silent truncation), and error-string paths use `/` on every OS.
   packs/extracts parallelize across blocks, byte-identical).
   Dictionary *use* (`ZstdDictionary`, `--dict`) is supported.
 - Decoder caps (configurable via `ZstdDecoderOptions`): 512 MiB window,
-  512 MiB frame content.
+  512 MiB frame content, 1 GiB total output across one `Decompress` call.
 - Corrupt archives throw documented exceptions (`ZarArchiveOpenException`,
   `ZarInputOpenException`, `ZarEntryCreateException`, `ZstdException`,
   `IOException`); truncations always fail the open. Neither implementation
