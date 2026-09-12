@@ -22,8 +22,7 @@ public static class Program
             .WriteTo.Sink(new CliConsoleSink())
             .WriteTo.Sink(bugSink, LogEventLevel.Warning)
             .CreateLogger();
-        var quiet = Array.Exists(args, static arg => arg is "-q" or "--quiet");
-        var informational = IsInformationalLaunch(args);
+        var (quiet, informational) = ScanGlobalFlags(args);
         if (HasOptionBeforeTerminator(args, "--no-telemetry"))
         {
             BugReportSink.DisableTelemetry();
@@ -51,7 +50,11 @@ public static class Program
         }
         finally
         {
-            bugSink.Flush(TimeSpan.FromSeconds(6));
+            // Bounded best-effort telemetry flush: a slow/unreachable
+            // endpoint must not delay exit (the senders are background
+            // tasks, so the process is free to go once the budget is spent).
+            bugSink.Flush(TimeSpan.FromMilliseconds(500));
+            UsageTracker.WaitForPendingSend(TimeSpan.FromMilliseconds(250));
             Log.CloseAndFlush();
             UpdateChecker.Notify(updateCheck, quiet);
             ConsoleWindow.KeepOpenIfOwned(quiet);
@@ -90,6 +93,13 @@ public static class Program
         string? sevenZipRaw = null;
 
         var positional = new List<string>();
+        // -c is resolved after parsing: it means --compress when the first
+        // positional is a real (pre-terminator) zstd subcommand token, and
+        // the global --stdout everywhere else.
+        var dashC = false;
+        var sawTerminator = false;
+        var terminatorAt = -1;
+        var firstPositionalEligible = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -131,14 +141,12 @@ public static class Program
                     jobs = j;
                     break;
                 case "--policy" or "-p":
-                    if (i + 1 >= args.Length)
+                    if (!TryTakeValue(args, ref i, args[i], "fail, skip, overwrite, auto-rename", out var policyValue))
                     {
-                        CliLog.Err(
-                            "Error: missing value for --policy (expected fail, skip, overwrite, auto-rename).");
                         return ZarchiveCli.BadUsage;
                     }
 
-                    policy = args[++i];
+                    policy = policyValue;
                     policyExplicit = true;
                     break;
                 case "--level" or "-l":
@@ -159,30 +167,21 @@ public static class Program
                     levelOption = args[i];
                     break;
                 case "--dict":
-                    if (i + 1 >= args.Length)
+                    if (!TryTakeValue(args, ref i, args[i], "a dictionary file", out var dictValue))
                     {
-                        CliLog.Err("Error: missing value for --dict (expected a dictionary file).");
                         return ZarchiveCli.BadUsage;
                     }
 
-                    dictPath = args[++i];
+                    dictPath = dictValue;
                     break;
                 case "--stdout":
                     stdoutFlag = true;
                     break;
                 case "-c":
-                    // Inside `zar zstd`, -c is the subcommand's --compress
-                    // (forwarded to its parser, which owns mode conflicts);
-                    // everywhere else it aliases the global --stdout.
-                    if (string.Equals(positional.FirstOrDefault(), "zstd", StringComparison.Ordinal))
-                    {
-                        zstdCompressFlag = true;
-                    }
-                    else
-                    {
-                        stdoutFlag = true;
-                    }
-
+                    // Resolved after the loop (the subcommand token may not
+                    // have been seen yet): compress inside `zar zstd`, the
+                    // global --stdout everywhere else.
+                    dashC = true;
                     break;
                 case "--check":
                     checksumOverride = true;
@@ -196,14 +195,13 @@ public static class Program
                     quiet = true;
                     break;
                 case "--mode":
-                    if (i + 1 >= args.Length)
+                    if (!TryTakeValue(args, ref i, args[i], "auto, extract-archive, extract-iso, compress",
+                            out var modeValue))
                     {
-                        CliLog.Err(
-                            "Error: missing value for --mode (expected auto, extract-archive, extract-iso, compress).");
                         return ZarchiveCli.BadUsage;
                     }
 
-                    modeRaw = args[++i];
+                    modeRaw = modeValue;
                     break;
                 case "--keep-originals":
                     keepOriginalsOverride = true;
@@ -212,13 +210,12 @@ public static class Program
                     keepOriginalsOverride = false;
                     break;
                 case "--seven-zip":
-                    if (i + 1 >= args.Length)
+                    if (!TryTakeValue(args, ref i, args[i], "a 7z binary path", out var sevenZipValue))
                     {
-                        CliLog.Err("Error: missing value for --seven-zip (expected a 7z binary path).");
                         return ZarchiveCli.BadUsage;
                     }
 
-                    sevenZipRaw = args[++i];
+                    sevenZipRaw = sevenZipValue;
                     break;
                 case "--no-compress":
                     noCompress = true;
@@ -235,23 +232,48 @@ public static class Program
                     return 0;
                 case "--":
                     // End of options: everything after is positional, so
-                    // paths that begin with '-' stay reachable.
+                    // paths that begin with '-' stay reachable. The position
+                    // is recorded so subcommand dispatch can forward the
+                    // terminator to the subcommand's own parser as well.
+                    sawTerminator = true;
+                    terminatorAt = positional.Count;
                     positional.AddRange(args[(i + 1)..]);
                     i = args.Length;
                     break;
                 default:
                     // Unknown options are usage errors for the plain
                     // pack/extract shape instead of silently becoming paths.
-                    // After a zstd/seekable token they are forwarded to that
-                    // subcommand's own parser (which owns its option set).
-                    if (args[i].StartsWith('-') && args[i].Length > 1 && !InSubcommandArguments(positional))
+                    // After a (pre-terminator) zstd/seekable token they are
+                    // forwarded to that subcommand's own parser (which owns
+                    // its option set).
+                    if (args[i].StartsWith('-') && args[i].Length > 1
+                        && !InSubcommandArguments(positional, firstPositionalEligible))
                     {
                         CliLog.Err($"Error: unknown option '{args[i]}'.");
                         return ZarchiveCli.BadUsage;
                     }
 
+                    if (positional.Count == 0 && !sawTerminator)
+                    {
+                        firstPositionalEligible = true;
+                    }
+
                     positional.Add(args[i]);
                     break;
+            }
+        }
+
+        // -c is --compress inside a real `zar zstd` invocation and the global
+        // --stdout otherwise (the subcommand token may appear after -c).
+        if (dashC)
+        {
+            if (firstPositionalEligible && string.Equals(positional.FirstOrDefault(), "zstd", StringComparison.Ordinal))
+            {
+                zstdCompressFlag = true;
+            }
+            else
+            {
+                stdoutFlag = true;
             }
         }
 
@@ -351,44 +373,30 @@ public static class Program
 
         // New subcommand (additive; the positional pack/extract path below is
         // untouched). To pack/extract a path literally named "zstd", spell it
-        // ./zstd so it is not taken for the subcommand.
-        if (string.Equals(positional.FirstOrDefault(), "zstd", StringComparison.Ordinal))
+        // ./zstd (or put it after --) so it is not taken for the subcommand.
+        if (firstPositionalEligible && string.Equals(positional.FirstOrDefault(), "zstd", StringComparison.Ordinal))
         {
             if (policyExplicit && collisionPolicy != ZarCollisionPolicy.Fail)
             {
                 return RejectNonBatchPolicy(policy);
             }
 
-            var sub = positional.Skip(1).ToList();
-            if (zstdCompressFlag)
-            {
-                sub.Insert(0, "-c");
-            }
-
-            if (helpRequested)
-            {
-                sub.Add("--help");
-            }
-
-            return RunZstd(sub.ToArray(), level, dictPath, checksumOverride, quiet, stdoutFlag);
+            var sub = BuildSubcommandArgs(positional, sawTerminator, terminatorAt, zstdCompressFlag, helpRequested);
+            return RunZstd(sub, level, dictPath, checksumOverride, quiet, stdoutFlag);
         }
 
         // Seekable zstd files (zeekstd framing). A path literally named
-        // "seekable" must be spelled ./seekable to pack/extract it.
-        if (string.Equals(positional.FirstOrDefault(), "seekable", StringComparison.Ordinal))
+        // "seekable" must be spelled ./seekable (or put it after --) to
+        // pack/extract it.
+        if (firstPositionalEligible && string.Equals(positional.FirstOrDefault(), "seekable", StringComparison.Ordinal))
         {
             if (policyExplicit && collisionPolicy != ZarCollisionPolicy.Fail)
             {
                 return RejectNonBatchPolicy(policy);
             }
 
-            var sub = positional.Skip(1).ToList();
-            if (helpRequested)
-            {
-                sub.Add("--help");
-            }
-
-            return RunSeekable(sub.ToArray(), level, levelExplicit, levelOption, dictPath, checksumOverride,
+            var sub = BuildSubcommandArgs(positional, sawTerminator, terminatorAt, insertCompress: false, helpRequested);
+            return RunSeekable(sub, level, levelExplicit, levelOption, dictPath, checksumOverride,
                 checksumOption, quiet, stdoutFlag);
         }
 
@@ -541,46 +549,96 @@ public static class Program
     }
 
     /// <summary>
-    /// True when the launch only prints <c>--help</c>/<c>--version</c>
-    /// (informational launches skip usage stats and the update check).
+    /// Detects the launch-level flags (<c>--quiet</c>, <c>--help</c>/
+    /// <c>--version</c>) the way the parser does: value-taking options are
+    /// skipped with their values and <c>--</c> ends the scan, so an option
+    /// value that happens to look like <c>-q</c>/<c>-v</c> is not
+    /// misclassified as a launch flag.
     /// </summary>
-    private static bool IsInformationalLaunch(string[] args)
+    private static (bool Quiet, bool Informational) ScanGlobalFlags(string[] args)
     {
-        foreach (var arg in args)
+        var quiet = false;
+        var informational = false;
+        for (var i = 0; i < args.Length; i++)
         {
+            var arg = args[i];
             if (string.Equals(arg, "--", StringComparison.Ordinal))
             {
-                return false;
+                break;
             }
 
-            if (arg is "--help" or "-h" or "--version" or "-v")
+            switch (arg)
             {
-                return true;
+                case "--help" or "-h" or "--version" or "-v":
+                    informational = true;
+                    break;
+                case "--quiet" or "-q":
+                    quiet = true;
+                    break;
+                case "--iso" or "-i" or "--output" or "-o" or "--jobs" or "-j" or "--policy" or "-p"
+                    or "--level" or "-l" or "--dict" or "--mode" or "--seven-zip":
+                    i++; // Skip the option's value.
+                    break;
             }
         }
 
-        return false;
+        return (quiet, informational);
     }
 
     /// <summary>
-    /// True once the first positional is a zstd/seekable subcommand: unknown
-    /// dashed tokens are forwarded to that subcommand's parser from then on.
+    /// True once the first positional is a zstd/seekable subcommand token
+    /// (not a path after <c>--</c>): unknown dashed tokens are forwarded to
+    /// that subcommand's parser from then on.
     /// </summary>
-    private static bool InSubcommandArguments(List<string> positional)
+    private static bool InSubcommandArguments(List<string> positional, bool firstPositionalEligible)
     {
-        var first = positional.Count > 0 ? positional[0] : null;
-        return string.Equals(first, "zstd", StringComparison.Ordinal)
-               || string.Equals(first, "seekable", StringComparison.Ordinal);
+        if (!firstPositionalEligible || positional.Count == 0)
+        {
+            return false;
+        }
+
+        return string.Equals(positional[0], "zstd", StringComparison.Ordinal)
+               || string.Equals(positional[0], "seekable", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Builds the argument list forwarded to a zstd/seekable subcommand:
+    /// drops the subcommand token, re-inserts the <c>--</c> terminator at its
+    /// original relative position (so dashed paths after it stay reachable),
+    /// and prepends <c>-c</c>/<c>--help</c> before the terminator so they are
+    /// still parsed as options.
+    /// </summary>
+    private static string[] BuildSubcommandArgs(
+        List<string> positional, bool sawTerminator, int terminatorAt, bool insertCompress, bool helpRequested)
+    {
+        var sub = positional.Skip(1).ToList();
+        if (sawTerminator && terminatorAt >= 1)
+        {
+            sub.Insert(terminatorAt - 1, "--");
+        }
+
+        if (insertCompress)
+        {
+            sub.Insert(0, "-c");
+        }
+
+        if (helpRequested)
+        {
+            sub.Insert(0, "--help");
+        }
+
+        return sub.ToArray();
     }
 
     /// <summary>
     /// Reads the value of a value-taking global option. A missing value or a
-    /// following option (<c>zar --jobs --quiet in out</c>) is a usage error
-    /// instead of silently swallowing the next flag.
+    /// following known option (<c>zar --jobs --quiet in out</c>) is a usage
+    /// error instead of silently swallowing the next flag; other
+    /// dash-prefixed values (paths like <c>-game.iso</c>) stay reachable.
     /// </summary>
     private static bool TryTakeValue(string[] args, ref int index, string option, string expected, out string value)
     {
-        if (index + 1 >= args.Length || args[index + 1].StartsWith('-'))
+        if (index + 1 >= args.Length || IsKnownGlobalOption(args[index + 1]))
         {
             CliLog.Err($"Error: missing value for {option} (expected {expected}).");
             value = string.Empty;
@@ -590,6 +648,16 @@ public static class Program
         value = args[index + 1];
         index++;
         return true;
+    }
+
+    /// <summary>True for every option token the global parser understands.</summary>
+    private static bool IsKnownGlobalOption(string token)
+    {
+        return token is "--iso" or "-i" or "--batch" or "-b" or "--output" or "-o" or "--jobs" or "-j"
+            or "--policy" or "-p" or "--level" or "-l" or "--dict" or "--stdout" or "-c" or "--check"
+            or "--no-check" or "--quiet" or "-q" or "--mode" or "--keep-originals" or "--delete-source"
+            or "--seven-zip" or "--no-compress" or "--no-telemetry" or "--help" or "-h" or "--version"
+            or "-v" or "--";
     }
 
     private static int RunZstd(

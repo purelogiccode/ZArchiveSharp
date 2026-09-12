@@ -24,6 +24,8 @@ internal static class UsageTracker
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(5) };
 
+    private static Task? _pendingSend;
+
     /// <summary>Queues one launch hit on the thread pool; returns immediately.</summary>
     public static void TrackLaunch()
     {
@@ -34,12 +36,30 @@ internal static class UsageTracker
 
         try
         {
-            _ = Task.Run(SendAsync);
+            _pendingSend = Task.Run(SendAsync);
         }
         catch (Exception launchEx)
         {
             // Telemetry must never affect the CLI.
             _ = launchEx;
+        }
+    }
+
+    /// <summary>
+    /// Gives a queued launch hit up to <paramref name="timeout"/> to finish
+    /// after the command ran, so short-lived commands are not guaranteed to
+    /// drop it. Best effort: never throws and never blocks beyond the budget.
+    /// </summary>
+    internal static void WaitForPendingSend(TimeSpan timeout)
+    {
+        try
+        {
+            _pendingSend?.Wait(timeout);
+        }
+        catch (Exception waitEx)
+        {
+            // Offline, throttled, or canceled: best effort only.
+            _ = waitEx;
         }
     }
 

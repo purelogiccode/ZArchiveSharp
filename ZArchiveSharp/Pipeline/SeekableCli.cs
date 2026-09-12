@@ -302,11 +302,22 @@ public static class SeekableCli
         var fromSet = false;
         var fromFrameSet = false;
         var positional = new List<string>();
+        var endOfOptions = false;
 
         for (var i = 1; i < args.Length; i++)
         {
+            if (endOfOptions)
+            {
+                positional.Add(args[i]);
+                continue;
+            }
+
             switch (args[i])
             {
+                case "--":
+                    // Everything after is a path, even when it starts with '-'.
+                    endOfOptions = true;
+                    break;
                 case "-l" or "--level":
                     if (command != SeekableCommand.Compress)
                     {
@@ -1021,8 +1032,10 @@ public static class SeekableCli
         {
             decoded = reader.DecompressRange(checked((long)offset), checked((long)(limit - offset)));
         }
-        catch (ZstdException ex)
+        catch (Exception ex) when (ex is ZstdException or ArgumentOutOfRangeException)
         {
+            // SeekableReader reports caller range errors (past-end, >2 GiB)
+            // as ArgumentOutOfRangeException; map them like decode failures.
             error($"Error: decompression failed: {ex.Message}");
             return ZarchiveCli.ExtractionFailed;
         }

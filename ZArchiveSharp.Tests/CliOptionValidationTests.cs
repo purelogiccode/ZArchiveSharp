@@ -392,6 +392,143 @@ public sealed class CliOptionValidationTests : IDisposable
     }
 
     [Fact]
+    public void EndOfOptions_IsForwardedToTheZstdSubcommand()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_dashdashzstd");
+        File.WriteAllText(Path.Combine(work, "-in.bin"), "dashed input");
+        var output = Path.Combine(work, "out.zst");
+
+        // Pre-fix the terminator was consumed by the global parser and the
+        // subcommand re-parsed -in.bin as an option ("Unknown option").
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            ["zstd", "-c", "--", "-in.bin", "out.zst"]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(output));
+    }
+
+    [Fact]
+    public void CompressFlagBeforeZstd_MeansCompress()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_czstd");
+        var input = Path.Combine(work, "in.bin");
+        File.WriteAllBytes(input, Payload(2048, 11));
+
+        // -c is resolved after the loop: before the zstd token it must still
+        // mean --compress (pre-fix it became the global --stdout and the run
+        // failed with "Cannot combine --stdout with an output path").
+        var (started, exit, _, stderr) =
+            RedumpIsoTests.TryRunCli(cli, work, ["-c", "zstd", input, Path.Combine(work, "out.zst")]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(Path.Combine(work, "out.zst")));
+    }
+
+    [Fact]
+    public void EndOfOptions_BeforeZstd_PacksThePathInsteadOfDispatch()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_dashdashsub");
+        var src = Directory.CreateDirectory(Path.Combine(work, "zstd")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+        var output = Path.Combine(work, "out.zar");
+
+        // After --, "zstd" is a path, not the subcommand token.
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            ["--", "zstd", Path.GetFileName(output)]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(output));
+    }
+
+    [Fact]
+    public void DashedValueForOutputOption_IsAccepted()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_dashvalue");
+        var src = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+
+        // Pre-fix TryTakeValue rejected any '-'-prefixed value outright.
+        var (started, exit, _, stderr) =
+            RedumpIsoTests.TryRunCli(cli, work, ["-o", "-out.zar", src]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(Path.Combine(work, "-out.zar")));
+    }
+
+    [Fact]
+    public void SeekableDecompress_ToPastEnd_ReportsExtractionFailure()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_seekto");
+        var seekable = CreateSeekable(cli, work, "in.zst");
+        if (seekable is null)
+        {
+            return;
+        }
+
+        var output = Path.Combine(work, "out.bin");
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            ["seekable", "decompress", seekable, "--to", "50K", output]);
+        if (!started)
+        {
+            return;
+        }
+
+        // Regression: SeekableReader's ArgumentOutOfRangeException escaped
+        // the CLI's ZstdException/OverflowException catches and surfaced as
+        // an unhandled crash (-13 + stack trace) instead of -12.
+        Assert.Equal(Pipeline.ZarchiveCli.ExtractionFailed, exit);
+        Assert.Contains("decompression failed", stderr, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unhandled exception", stderr, StringComparison.Ordinal);
+        Assert.False(File.Exists(output), "A rejected range must not create output.");
+    }
+
+    [Fact]
     public void Help_DocumentsTelemetrySeekableStdoutAndTerminator()
     {
         var cli = Cli;
@@ -457,6 +594,14 @@ public sealed class CliOptionValidationTests : IDisposable
         if (!SetDirectoryDenyAce(locked, deny: true))
         {
             return; // ACLs unavailable here: vacuous pass.
+        }
+
+        if (CanStillEnumerate(locked))
+        {
+            // The deny ACE did not restrict enumeration (elevated/owner
+            // context): the failure path cannot be exercised here.
+            SetDirectoryDenyAce(locked, deny: false);
+            return;
         }
 
         try
@@ -530,6 +675,19 @@ public sealed class CliOptionValidationTests : IDisposable
         Assert.Equal(-1, exit);
         Assert.Contains("access denied", stderr, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("dictionary file not found", stderr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool CanStillEnumerate(string directory)
+    {
+        try
+        {
+            _ = Directory.EnumerateFileSystemEntries(directory).Any();
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static bool SetDirectoryDenyAce(string directory, bool deny)

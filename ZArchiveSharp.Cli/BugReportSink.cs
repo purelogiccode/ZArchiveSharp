@@ -86,7 +86,12 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
         }
     }
 
-    /// <summary>Stops accepting reports and waits up to <paramref name="timeout"/> for the backlog to send.</summary>
+    /// <summary>
+    /// Stops accepting reports and waits up to <paramref name="timeout"/> for
+    /// the backlog to send. The wait is deliberately caller-bounded: reports
+    /// are best-effort, so a slow endpoint must never delay process exit
+    /// beyond this budget (the sender keeps running as a background task).
+    /// </summary>
     public void Flush(TimeSpan timeout)
     {
         try
@@ -119,17 +124,21 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
             _ = disposeEx;
         }
 
+        // Never block shutdown on an in-flight POST (the sender is a
+        // background task). The queue is only disposed once the sender has
+        // finished draining it, so no consumer races the disposal.
         try
         {
-            _sender.Wait(TimeSpan.FromSeconds(2));
+            if (_sender.Wait(TimeSpan.Zero))
+            {
+                _queue.Dispose();
+            }
         }
         catch (Exception waitEx)
         {
             // Best effort only; the sender thread is background.
             _ = waitEx;
         }
-
-        _queue.Dispose();
     }
 
     private async Task SendLoopAsync()

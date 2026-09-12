@@ -93,16 +93,52 @@ internal static class BugReportFormatter
             }
         }
 
-        // Usernames as short as "user" would otherwise corrupt the marker
-        // (case-insensitive match inside %USERPROFILE%), so mask it first.
-        if (userName.Length >= 3)
+        // The marker is masked first so a username like "user" or
+        // "userprofile" can never rewrite it. Username replacement is
+        // whole-token: it must not mangle ordinary words that merely contain
+        // the account name (user "app" leaves "application" alone), and it
+        // must work for account names shorter than 3 characters too.
+        if (userName.Length > 0)
         {
             value = value.Replace(marker, "\0", StringComparison.Ordinal);
-            value = value.Replace(userName, "[user]", StringComparison.OrdinalIgnoreCase);
+            value = ReplaceWholeToken(value, userName, "[user]");
             value = value.Replace("\0", marker, StringComparison.Ordinal);
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Case-insensitively replaces <paramref name="token"/> only where it is
+    /// bounded by non-alphanumerics (or the string ends), so substrings of
+    /// longer words are left intact.
+    /// </summary>
+    private static string ReplaceWholeToken(string value, string token, string replacement)
+    {
+        var start = 0;
+        var sb = new StringBuilder(value.Length);
+        while (true)
+        {
+            var index = value.IndexOf(token, start, StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+            {
+                sb.Append(value, start, value.Length - start);
+                return sb.ToString();
+            }
+
+            var before = index == 0 || !char.IsLetterOrDigit(value[index - 1]);
+            var after = index + token.Length >= value.Length || !char.IsLetterOrDigit(value[index + token.Length]);
+            if (before && after)
+            {
+                sb.Append(value, start, index - start).Append(replacement);
+                start = index + token.Length;
+            }
+            else
+            {
+                sb.Append(value, start, index - start + 1);
+                start = index + 1;
+            }
+        }
     }
 
     /// <summary>Escapes <paramref name="value"/> as a JSON string literal.</summary>

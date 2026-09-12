@@ -111,11 +111,22 @@ public static class ZstdCli
         bool? mode = null; // true = compress, false = decompress
         var stdout = defaultStdout;
         var positional = new List<string>();
+        var endOfOptions = false;
 
         for (var i = 0; i < args.Length; i++)
         {
+            if (endOfOptions)
+            {
+                positional.Add(args[i]);
+                continue;
+            }
+
             switch (args[i])
             {
+                case "--":
+                    // Everything after is a path, even when it starts with '-'.
+                    endOfOptions = true;
+                    break;
                 case "-c" or "--compress":
                     if (mode == false)
                     {

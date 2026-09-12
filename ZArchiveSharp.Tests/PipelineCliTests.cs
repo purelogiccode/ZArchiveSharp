@@ -144,7 +144,7 @@ public sealed class PipelineCliTests : IDisposable
     }
 
     [Fact]
-    public void Runner_HungChildAfterStdoutClose_CancellationKillsIt()
+    public async Task Runner_HungChildAfterStdoutClose_CancellationKillsIt()
     {
         var python = FindPython();
         if (python is null)
@@ -152,14 +152,51 @@ public sealed class PipelineCliTests : IDisposable
             return; // no Python on this host: nothing to run.
         }
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        Assert.ThrowsAny<OperationCanceledException>(() => ProcessRunner.Run(
-            python,
-            "-c \"import os,time; os.close(1); time.sleep(30)\"",
-            cancellationToken: cts.Token));
-        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(20),
-            $"cancellation took {clock.Elapsed}: the hung child was not killed.");
+        // The child closes stdout then heartbeats into a marker file for up
+        // to 30 s. After cancellation we prove it really stopped writing:
+        // asserting only the parent's return time would let a leaked child
+        // pass.
+        var marker = Path.Combine(Path.GetTempPath(), "zar_hung_" + Guid.NewGuid().ToString("N") + ".txt");
+        var script = "import os,time,sys; os.close(1); f=open(sys.argv[1],'a'); " +
+                     "[(f.write('x'), f.flush(), time.sleep(0.2)) for _ in range(150)]";
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        try
+        {
+            var runner = Task.Run(() => Assert.ThrowsAny<OperationCanceledException>(() => ProcessRunner.Run(
+                python,
+                "-c \"" + script + "\" \"" + marker + "\"",
+                cancellationToken: cts.Token)));
+
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            while (clock.Elapsed < TimeSpan.FromSeconds(10) &&
+                   (!File.Exists(marker) || new FileInfo(marker).Length == 0))
+            {
+                Thread.Sleep(50);
+            }
+
+            Assert.True(File.Exists(marker) && new FileInfo(marker).Length > 0,
+                "The child never started heartbeating.");
+            cts.Cancel();
+            await runner;
+
+            // A killed child stops appending; a leaked one would add ~5
+            // heartbeats during the observation second.
+            var stopped = new FileInfo(marker).Length;
+            Thread.Sleep(TimeSpan.FromSeconds(1));
+            Assert.Equal(stopped, new FileInfo(marker).Length);
+        }
+        finally
+        {
+            cts.Cancel();
+            try
+            {
+                File.Delete(marker);
+            }
+            catch (IOException)
+            {
+                // Best effort; the child's last write may race the delete.
+            }
+        }
     }
 
     [Fact]

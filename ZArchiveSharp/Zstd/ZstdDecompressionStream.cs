@@ -28,7 +28,10 @@ public sealed class ZstdDecompressionStream : Stream
     private readonly bool _leaveOpen;
 
     // Compressed-input staging: valid bytes are [_inStart, _inEnd).
-    private byte[] _inBuf = new byte[8192];
+    /// <summary>Default staging-buffer size (the 8 KiB read granularity).</summary>
+    internal const int DefaultInputBufferSize = 8192;
+
+    private byte[] _inBuf = new byte[DefaultInputBufferSize];
     private int _inStart;
     private int _inEnd;
     private bool _eof;

@@ -24,6 +24,9 @@ internal static class UpdateChecker
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(3) };
 
+    /// <summary>How long the interactive browser prompt waits for an answer.</summary>
+    private static readonly TimeSpan PromptTimeout = TimeSpan.FromSeconds(15);
+
     /// <summary>A release as needed for the update notice.</summary>
     /// <param name="Tag">Release tag, e.g. <c>v1.1.0</c>.</param>
     /// <param name="PageUrl">Release page on GitHub.</param>
@@ -120,10 +123,7 @@ internal static class UpdateChecker
                 ? $"Download {release.AssetName} in your browser? [y/N] "
                 : "Open the release page in your browser? [y/N] ";
             Console.Error.Write(prompt);
-            var answer = Console.ReadLine()?.Trim();
-            if (answer is not null
-                && (answer.Equals("y", StringComparison.OrdinalIgnoreCase)
-                    || answer.Equals("yes", StringComparison.OrdinalIgnoreCase)))
+            if (ReadYesNo(PromptTimeout))
             {
                 OpenBrowser(target);
             }
@@ -133,6 +133,32 @@ internal static class UpdateChecker
             // A broken console must never change the exit code.
             _ = ioEx;
         }
+    }
+
+    /// <summary>
+    /// Reads a one-key y/N answer with a hard deadline, so a console without
+    /// a human at it (launcher, inherited terminal) cannot park the process
+    /// forever. Polling <see cref="Console.KeyAvailable"/> leaves no blocked
+    /// reader behind for the subsequent "press any key" hold.
+    /// </summary>
+    private static bool ReadYesNo(TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(50);
+                continue;
+            }
+
+            var key = Console.ReadKey(intercept: true);
+            Console.Error.WriteLine();
+            return key.KeyChar is 'y' or 'Y';
+        }
+
+        Console.Error.WriteLine();
+        return false;
     }
 
     private static async Task<ReleaseInfo?> CheckAsync()

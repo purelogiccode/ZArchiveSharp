@@ -240,8 +240,12 @@ public sealed class ZstdStreamTests
         combined[4] = (byte)payload.Length;
         combined[5] = (byte)(payload.Length >> 8);
         combined.AddRange(payload);
-        combined.AddRange(second);
 
+        // The regression only exists while the next frame's 5 header bytes
+        // land exactly at the staging-buffer boundary; fail loudly if buffer
+        // sizing ever drifts instead of silently losing the coverage.
+        Assert.Equal(ZstdDecompressionStream.DefaultInputBufferSize, combined.Count + 5);
+        combined.AddRange(second);
         Assert.Equal(content, DecompressViaStream([.. combined]));
     }
 

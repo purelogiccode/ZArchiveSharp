@@ -76,6 +76,31 @@ public sealed class CliLogTests
     }
 
     [Theory]
+    [InlineData("C:\\Users\\bob\\game.zar", "bob", "C:\\Users\\bob", "%USERPROFILE%\\game.zar")]
+    [InlineData("run application now", "app", "", "run application now")]
+    [InlineData("run app now", "app", "", "run [user] now")]
+    [InlineData("abacus and ab", "ab", "", "abacus and [user]")]
+    [InlineData("u is short", "u", "", "[user] is short")]
+    [InlineData("%USERPROFILE%\\x", "userprofile", "", "%USERPROFILE%\\x")]
+    public void BugReportFormatter_SanitizeMasksWholeUserName(
+        string value, string userName, string profilePath, string expected)
+    {
+        var formatter = LoadCliType("ZArchiveSharp.Cli.BugReportFormatter");
+        if (formatter is null)
+        {
+            return;
+        }
+
+        // Pre-fix usernames shorter than 3 chars were never masked and any
+        // 3+ char username was replaced as a plain substring ("app" broke
+        // "application"), so this is both an under- and over-redaction fix.
+        var method = formatter.GetMethod("Sanitize", BindingFlags.NonPublic | BindingFlags.Static, null,
+            [typeof(string), typeof(string), typeof(string)], null);
+        Assert.NotNull(method);
+        Assert.Equal(expected, (string)method.Invoke(null, [value, userName, profilePath])!);
+    }
+
+    [Theory]
     [InlineData("https://github.com/purelogiccode/ZArchiveSharp", true)]
     [InlineData("http://example.com/asset.zip", true)]
     [InlineData("file:///C:/Windows/System32/calc.exe", false)]
