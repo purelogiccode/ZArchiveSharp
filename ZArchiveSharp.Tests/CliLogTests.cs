@@ -76,7 +76,7 @@ public sealed class CliLogTests
     }
 
     [Theory]
-    [InlineData("C:\\Users\\bob\\game.zar", "bob", "C:\\Users\\bob", "%USERPROFILE%\\game.zar")]
+    [InlineData(@"C:\Users\bob\game.zar", "bob", @"C:\Users\bob", "%USERPROFILE%\\game.zar")]
     [InlineData("run application now", "app", "", "run application now")]
     [InlineData("run app now", "app", "", "run [user] now")]
     [InlineData("abacus and ab", "ab", "", "abacus and [user]")]

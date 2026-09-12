@@ -165,6 +165,7 @@ public sealed class PipelineCliTests : IDisposable
             var runner = Task.Run(() => Assert.ThrowsAny<OperationCanceledException>(() => ProcessRunner.Run(
                 python,
                 "-c \"" + script + "\" \"" + marker + "\"",
+                // ReSharper disable once AccessToDisposedClosure
                 cancellationToken: cts.Token)));
 
             var clock = System.Diagnostics.Stopwatch.StartNew();
