@@ -171,10 +171,8 @@ public struct OffsetInfo
     /// <summary>True when the section lies fully inside a file of <paramref name="fileSize"/> bytes.</summary>
     public readonly bool IsWithinValidRange(ulong fileSize)
     {
-        unchecked
-        {
-            return (Offset + Size) <= fileSize;
-        }
+        // Subtraction form: Offset + Size can wrap (e.g. Offset = ulong.MaxValue).
+        return Offset <= fileSize && Size <= fileSize - Offset;
     }
 }
 

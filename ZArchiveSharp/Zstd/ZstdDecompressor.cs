@@ -254,6 +254,10 @@ public static class ZstdDecompressor
     {
         ArgumentNullException.ThrowIfNull(src);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfNegative(offset);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(offset, src.Length);
+        ArgumentOutOfRangeException.ThrowIfNegative(length);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(length, src.Length - offset);
 
         var output = new List<byte>();
         var pos = DecompressFrames(src, offset, length, output, null, options, dict);
@@ -330,7 +334,18 @@ public static class ZstdDecompressor
         byte[] src, int srcOffset, int srcLength,
         byte[] dst, int dstOffset, int dstLength, ZstdDictionary? dict, ZstdDecoderOptions options)
     {
+        ArgumentNullException.ThrowIfNull(src);
+        ArgumentNullException.ThrowIfNull(dst);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentOutOfRangeException.ThrowIfNegative(srcOffset);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(srcOffset, src.Length);
+        ArgumentOutOfRangeException.ThrowIfNegative(srcLength);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(srcLength, src.Length - srcOffset);
+        ArgumentOutOfRangeException.ThrowIfNegative(dstOffset);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(dstOffset, dst.Length);
+        ArgumentOutOfRangeException.ThrowIfNegative(dstLength);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(dstLength, dst.Length - dstOffset);
+
         var output = new List<byte>(dstLength);
         var pos = DecompressFrame(src, srcOffset, srcLength, output, (ulong)dstLength, options, dict);
         if (pos != srcOffset + srcLength)

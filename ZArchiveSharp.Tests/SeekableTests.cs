@@ -377,16 +377,32 @@ public sealed class SeekableTests
         var input = MakeInput("text", 1000, 3);
         var file = WriteAll(input, new SeekableOptions { Level = 3, FrameSize = 500 }).Finish();
         var reader = new SeekableReader(file);
-        Assert.Throws<ZstdException>(() => reader.DecompressRange(0, 1001));
-        Assert.Throws<ZstdException>(() => reader.DecompressRange(1000, 1));
-        Assert.Throws<ZstdException>(() => reader.DecompressFrames(0, 2));
-        Assert.Throws<ZstdException>(() => reader.DecompressFrames(2, 2));
-        Assert.Throws<ZstdException>(() => reader.DecompressFrames(1, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressRange(0, 1001));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressRange(1000, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressFrames(0, 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressFrames(2, 2));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressFrames(1, 0));
 
         // Corrupt frame payload surfaces as a decode error.
         var corrupt = (byte[])file.Clone();
         corrupt[20] ^= 0xFF;
         Assert.ThrowsAny<Exception>(() => new SeekableReader(corrupt).DecompressAll());
+    }
+
+    [Fact]
+    public void Reader_ValidatesArguments()
+    {
+        var input = MakeInput("text", 500, 1);
+        var file = WriteAll(input, new SeekableOptions { Level = 3, FrameSize = 250 }).Finish();
+
+        // A null table must not surface as NullReferenceException.
+        Assert.Throws<ArgumentNullException>(() => new SeekableReader(file, (SeekTable)null!));
+
+        var reader = new SeekableReader(file);
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressRange(-1, 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressRange(0, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressFrames(-1, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.DecompressFrames(0, -1));
     }
 
     [Fact]

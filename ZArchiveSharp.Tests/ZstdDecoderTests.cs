@@ -74,6 +74,24 @@ public sealed class ZstdDecoderTests
         Assert.Equal(input, dst);
     }
 
+    [Fact]
+    public void PublicOverloads_ValidateArgumentRanges()
+    {
+        var input = Text(64);
+        var frame = new ZstdCompressor().CompressBlock(input);
+
+        // A range that runs past the buffer must be a range error, not a
+        // corrupt-frame ZstdException from the decoder internals.
+        Assert.Throws<ArgumentOutOfRangeException>(() => ZstdDecompressor.Decompress(frame, 1, frame.Length));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ZstdDecompressor.Decompress(frame, frame.Length + 1, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ZstdDecompressor.Decompress(frame, 0, frame.Length + 1));
+
+        var dst = new byte[input.Length];
+        Assert.Throws<ArgumentNullException>(() => ZstdDecompressor.DecompressExact(null!, 0, 0, dst, 0, dst.Length));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ZstdDecompressor.DecompressExact(
+                frame, 0, frame.Length, new byte[input.Length - 1], 0, input.Length));
+    }
+
     [Theory]
     [InlineData(17)] // as emitted (explicit form rebuilt below)
     [InlineData(24)] // 16 MiB foreign-style window

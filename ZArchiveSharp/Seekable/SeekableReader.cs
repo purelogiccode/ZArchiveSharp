@@ -32,6 +32,7 @@ public sealed class SeekableReader
     public SeekableReader(byte[] data, SeekTable table)
     {
         ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(table);
         _data = data;
         Table = table;
         if (Table.TotalComp > (ulong)data.Length)
@@ -96,13 +97,17 @@ public sealed class SeekableReader
     /// (mid-frame starts decompress from the frame start, like the oracle's
     /// dummy decompression up to the offset).
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// When a negative, past-the-end, or non-materializable (larger than
+    /// <see cref="int.MaxValue"/>) range is requested.
+    /// </exception>
     public byte[] DecompressRange(long offset, long length)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(offset);
         ArgumentOutOfRangeException.ThrowIfNegative(length);
         if ((ulong)offset + (ulong)length > Table.TotalDecomp)
         {
-            throw new ZstdException("Decompression range out of bounds.");
+            throw new ArgumentOutOfRangeException(nameof(length), "Decompression range out of bounds.");
         }
 
         if (length == 0)
@@ -110,9 +115,15 @@ public sealed class SeekableReader
             return [];
         }
 
+        if (length > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length), "Decompression range is too large to materialize.");
+        }
+
         var first = Table.FrameIndexAtDecomp((ulong)offset);
         var last = Table.FrameIndexAtDecomp((ulong)(offset + length - 1));
-        var result = new byte[length];
+        var result = new byte[(int)length];
         var pos = 0;
         for (var f = first; f <= last; f++)
         {
@@ -140,12 +151,23 @@ public sealed class SeekableReader
     /// <paramref name="lastInclusive"/> concatenated
     /// (<c>set_lower_frame</c> / <c>set_upper_frame</c>).
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// When either frame index is negative or past the table (caller errors,
+    /// like the range checks in <see cref="DecompressRange"/>).
+    /// </exception>
     public byte[] DecompressFrames(int first, int lastInclusive)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(first);
-        if (lastInclusive < first || lastInclusive >= Table.FrameCount)
+        ArgumentOutOfRangeException.ThrowIfNegative(lastInclusive);
+        if (lastInclusive < first)
         {
-            throw new ZstdException("Frame index too large.");
+            throw new ArgumentOutOfRangeException(
+                nameof(lastInclusive), "The last frame must not precede the first.");
+        }
+
+        if (lastInclusive >= Table.FrameCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(lastInclusive), "Frame index too large.");
         }
 
         var start = (long)Table.FrameStartDecomp(first);

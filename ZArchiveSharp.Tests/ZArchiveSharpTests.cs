@@ -287,6 +287,58 @@ public sealed class ZArchiveSharpTests
     }
 
     [Fact]
+    public void Format_OffsetInfoRejectsWrappingRange()
+    {
+        // Offset + Size wraps: the old unchecked sum accepted this section.
+        Assert.False(new OffsetInfo { Offset = ulong.MaxValue, Size = 10 }.IsWithinValidRange(100));
+        Assert.False(new OffsetInfo { Offset = 101, Size = 0 }.IsWithinValidRange(100));
+        Assert.False(new OffsetInfo { Offset = 90, Size = 11 }.IsWithinValidRange(100));
+        Assert.True(new OffsetInfo { Offset = 100, Size = 0 }.IsWithinValidRange(100));
+        Assert.True(new OffsetInfo { Offset = 90, Size = 10 }.IsWithinValidRange(100));
+    }
+
+    [Fact]
+    public void Writer_NamesSharingCp1252Bytes_AreOneEntry()
+    {
+        // 日本 and 中文 both encode to "??.txt": the C++ writer sees the
+        // second as the same name, so the port must too (no duplicate nodes
+        // that extraction would silently overwrite).
+        var zar = BuildArchive(w =>
+        {
+            Assert.True(w.MakeDir("d"));
+            Assert.True(w.StartNewFile("d/日本.txt"));
+            w.AppendData([1]);
+            Assert.False(w.StartNewFile("d/中文.txt"));
+        });
+
+        using var reader = ZArchiveReader.TryOpen(zar);
+        Assert.NotNull(reader);
+        Assert.Equal(1u, reader.GetDirEntryCount(reader.LookUp("d")));
+    }
+
+    [Fact]
+    public void Writer_FileTreeSortsByEncodedBytes()
+    {
+        // CP1252 byte order (€ 0x80 < ž 0x9E) differs from UTF-16 order
+        // (ž U+017E < € U+20AC): the tree must follow the bytes, like C++.
+        var zar = BuildArchive(w =>
+        {
+            Assert.True(w.StartNewFile("ž.txt"));
+            w.AppendData([1]);
+            Assert.True(w.StartNewFile("€.txt"));
+            w.AppendData([2]);
+        });
+
+        using var reader = ZArchiveReader.TryOpen(zar);
+        Assert.NotNull(reader);
+        var root = reader.LookUp("/");
+        Assert.True(reader.GetDirEntry(root, 0, out var first));
+        Assert.True(reader.GetDirEntry(root, 1, out var second));
+        Assert.Equal("€.txt", first.Name);
+        Assert.Equal("ž.txt", second.Name);
+    }
+
+    [Fact]
     public void Common_PathHelpersMatchCpp()
     {
         var p = "//a\\b/c".AsSpan();

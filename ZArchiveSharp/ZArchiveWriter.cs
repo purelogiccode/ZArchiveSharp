@@ -64,7 +64,7 @@ public sealed class ZArchiveWriter : IDisposable
 
     private readonly PathNode _rootNode = new();
     private PathNode? _currentFileNode;
-    private readonly List<string> _nodeNames = [];
+    private readonly List<byte[]> _nodeNameBytes = [];
     private uint[] _nodeNameOffsets = [];
     private readonly Dictionary<string, uint> _nodeNameLookup = new(StringComparer.Ordinal);
 
@@ -198,9 +198,10 @@ public sealed class ZArchiveWriter : IDisposable
 
     private PathNode? FindSubnodeByName(PathNode parent, ReadOnlySpan<char> nodeName)
     {
+        var encoded = EncodeNodeName(nodeName);
         foreach (var child in parent.Subnodes)
         {
-            if (ZArchiveCommon.CompareNodeNameBool(_nodeNames[child.NameIndex].AsSpan(), nodeName))
+            if (ZArchiveCommon.CompareNodeNameBool(_nodeNameBytes[child.NameIndex], encoded))
             {
                 return child;
             }
@@ -209,16 +210,36 @@ public sealed class ZArchiveWriter : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Encodes a node name to its on-disk Windows-1252 bytes, truncated to
+    /// <see cref="ZArchiveCommon.MaxNameLength"/> characters first (matching
+    /// the C++ <c>substr(0, 0x7FFF)</c> before encoding). All name identity
+    /// decisions use these bytes, so names that differ only in characters
+    /// CP1252 cannot represent collide here exactly like they collide on disk.
+    /// </summary>
+    private static byte[] EncodeNodeName(ReadOnlySpan<char> name)
+    {
+        if (name.Length > ZArchiveCommon.MaxNameLength)
+        {
+            name = name.Slice(0, ZArchiveCommon.MaxNameLength);
+        }
+
+        return ZArchiveCommon.Encode1252(name);
+    }
+
     private uint CreateNameEntry(ReadOnlySpan<char> name)
     {
-        var key = name.ToString();
+        var encoded = EncodeNodeName(name);
+        // Decode1252 is injective, so the decoded string is a faithful
+        // ordinal key over the encoded bytes.
+        var key = ZArchiveCommon.Decode1252(encoded);
         if (_nodeNameLookup.TryGetValue(key, out var existing))
         {
             return existing;
         }
 
-        var index = (uint)_nodeNames.Count;
-        _nodeNames.Add(key);
+        var index = (uint)_nodeNameBytes.Count;
+        _nodeNameBytes.Add(encoded);
         _nodeNameLookup.Add(key, index);
         return index;
     }
@@ -686,21 +707,16 @@ public sealed class ZArchiveWriter : IDisposable
     private void WriteNameTable()
     {
         var start = GetCurrentOutputOffset();
-        _nodeNameOffsets = new uint[_nodeNames.Count];
+        _nodeNameOffsets = new uint[_nodeNameBytes.Count];
         uint tableOffset = 0;
         Span<byte> header = stackalloc byte[2];
-        for (var i = 0; i < _nodeNames.Count; i++)
+        for (var i = 0; i < _nodeNameBytes.Count; i++)
         {
             _nodeNameOffsets[i] = tableOffset;
-            // Match C++: truncate the name to 0x7FFF *characters* before
-            // encoding (substr(0, 0x7FFF)), not post-encode bytes.
-            var nameSpan = _nodeNames[i].AsSpan();
-            if (nameSpan.Length > ZArchiveCommon.MaxNameLength)
-            {
-                nameSpan = nameSpan.Slice(0, ZArchiveCommon.MaxNameLength);
-            }
-
-            var nameBytes = ZArchiveCommon.Encode1252(nameSpan);
+            // Truncation to MaxNameLength happened when the entry was
+            // created (EncodeNodeName), matching C++'s substr before
+            // encoding, not post-encode bytes.
+            var nameBytes = _nodeNameBytes[i];
 
             if (nameBytes.Length >= 0x80)
             {
@@ -744,10 +760,12 @@ public sealed class ZArchiveWriter : IDisposable
 
             // Ascending sort using the reversed-sign comparator (> 0 predicate).
             // C# Comparison needs negative when x < y, i.e. -Compare(x, y).
+            // The byte comparator matches the C++ byte-order comparator; the
+            // UTF-16 form would order names by their Unicode code points.
             node.Subnodes.Sort((a, b) =>
                 -ZArchiveCommon.CompareNodeName(
-                    _nodeNames[a.NameIndex].AsSpan(),
-                    _nodeNames[b.NameIndex].AsSpan()));
+                    _nodeNameBytes[a.NameIndex],
+                    _nodeNameBytes[b.NameIndex]));
             node.NodeStartIndex = currentIndex;
             currentIndex += (uint)node.Subnodes.Count;
             foreach (var child in node.Subnodes)

@@ -47,8 +47,14 @@ public static class ZarPipeline
             return null;
         }
 
-        return ZarPackEngine.PackEntries(
+        var written = ZarPackEngine.PackEntries(
             entries, sourceDirectory, resolved, options, progress, cancellationToken, options.CollisionPolicy);
+        if (options.DeleteSourceOnSuccess)
+        {
+            Directory.Delete(sourceDirectory, recursive: true);
+        }
+
+        return written;
     }
 
     /// <summary>Packs an arbitrary <see cref="IZarPackSource"/> (directory tree, XISO walk, ...).</summary>
@@ -63,8 +69,22 @@ public static class ZarPipeline
         ArgumentNullException.ThrowIfNull(zarPath);
         options ??= new ZarPipelineOptions();
         var entries = source.Collect(cancellationToken);
+        var directory = Path.GetDirectoryName(Path.GetFullPath(zarPath));
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        // Honor the collision policy exactly like Pack: Skip writes nothing,
+        // AutoRename picks the next free sibling, Overwrite replaces.
+        var resolved = ZarPackEngine.ResolveOutputPath(zarPath, options.CollisionPolicy);
+        if (resolved == null)
+        {
+            return;
+        }
+
         ZarPackEngine.PackEntries(
-            entries, source.DisplayPath, zarPath, options, progress, cancellationToken, options.CollisionPolicy);
+            entries, source.DisplayPath, resolved, options, progress, cancellationToken, options.CollisionPolicy);
     }
 
     /// <summary>
@@ -173,6 +193,26 @@ public static class ZarPipeline
         var completed = 0;
         var progressLock = new ProgressGate();
         var results = new ZarItemResult?[items.Count];
+
+        // Same-stem archives (a\game.zar, b\game.zar) would otherwise extract
+        // into the same destDir/<stem>_extracted and race on every file. Give
+        // each item its own destination within this batch.
+        var destinations = new string[items.Count];
+        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < items.Count; i++)
+        {
+            var wanted = items.Count == 1
+                ? destDir
+                : Path.Combine(destDir, DefaultExtractName(items[i]));
+            var candidate = wanted;
+            for (var n = 1; !used.Add(candidate); n++)
+            {
+                candidate = $"{wanted}_{n}";
+            }
+
+            destinations[i] = candidate;
+        }
+
         try
         {
             Parallel.For(0, items.Count,
@@ -181,10 +221,7 @@ public static class ZarPipeline
                     MaxDegreeOfParallelism = snapshot.ClampedWorkers(items.Count),
                     CancellationToken = cancellationToken,
                 },
-                i => results[i] = ExtractOne(items[i], items.Count == 1
-                        ? destDir
-                        : Path.Combine(destDir, DefaultExtractName(items[i])),
-                    snapshot, items.Count, progress, progressLock,
+                i => results[i] = ExtractOne(items[i], destinations[i], snapshot, items.Count, progress, progressLock,
                     () => Volatile.Read(ref completed),
                     () => Interlocked.Increment(ref completed),
                     cancellationToken));
@@ -238,11 +275,6 @@ public static class ZarPipeline
             if (written == null)
             {
                 return new ZarItemResult(source, dest, ZarItemStatus.Skipped, "Output already exists.");
-            }
-
-            if (options.DeleteSourceOnSuccess)
-            {
-                Directory.Delete(source, recursive: true);
             }
 
             return new ZarItemResult(source, written, ZarItemStatus.Completed);

@@ -22,6 +22,16 @@ internal sealed class CliConsoleSink : ILogEventSink
         var stderr = logEvent.Properties.TryGetValue(CliLog.StderrProperty, out var raw)
             && raw is ScalarValue { Value: true };
         var text = logEvent.RenderMessage();
+        // Fatal events are the "unhandled exception" safety net: append the
+        // exception so a crash shows its type, message and stack trace.
+        // Ordinary error events intentionally stay one line (the message
+        // already carries whatever the CLI wants shown; the full exception
+        // still reaches the bug-report sink).
+        if (logEvent.Level == LogEventLevel.Fatal && logEvent.Exception is { } fatal)
+        {
+            text = $"{text}{Environment.NewLine}{fatal}";
+        }
+
         if (stderr)
         {
             Console.Error.WriteLine(text);

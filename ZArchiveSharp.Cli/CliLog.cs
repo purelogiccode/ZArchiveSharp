@@ -84,14 +84,14 @@ internal static class CliLog
         try
         {
             Log.ForContext(SilentProperty, true).Debug("{Msg:l}", text);
+            Console.Write(text);
         }
         catch (Exception progressEx)
         {
-            // Logging must never crash the CLI; there is nowhere to report a logging failure to.
+            // Logging must never crash the CLI (a broken stdout pipe would
+            // otherwise abort the pack whose progress callback is running).
             _ = progressEx;
         }
-
-        Console.Write(text);
     }
 
     private static void Emit(LogEventLevel level, bool stderr, string message, Exception? ex = null)

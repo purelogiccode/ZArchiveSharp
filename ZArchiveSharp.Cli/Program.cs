@@ -424,8 +424,11 @@ public static class Program
             }
         }
 
+        // --no-compress stores raw blocks and ignores --dict (docs): skip
+        // loading entirely so a missing/stale dictionary path cannot fail a
+        // run whose compression never uses it.
         ZstdDictionary? dictionary = null;
-        if (dictPath != null)
+        if (dictPath != null && !noCompress)
         {
             dictionary = TryLoadDictionary(dictPath);
             if (dictionary == null)

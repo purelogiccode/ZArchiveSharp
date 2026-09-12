@@ -289,6 +289,60 @@ public sealed class CliOptionValidationTests : IDisposable
         Assert.False(File.Exists(Path.Combine(work, "out.bin")), "A rejected run must not decompress.");
     }
 
+    [Fact]
+    public void NoCompress_WithMissingDict_StillPacks()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        var work = NewTempDir("opt_nodict");
+        var src = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+        var output = Path.Combine(work, "out.zar");
+
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+            [src, output, "--no-compress", "--dict", Path.Combine(work, "missing.dict")]);
+        if (!started)
+        {
+            return;
+        }
+
+        // --no-compress ignores --dict (docs): a missing dictionary must not
+        // fail a raw pack.
+        Assert.True(exit == 0, $"exit {exit}: {stderr}");
+        Assert.True(File.Exists(output));
+    }
+
+    [Fact]
+    public void UnhandledException_ReportsExceptionDetails()
+    {
+        var cli = Cli;
+        if (cli is null)
+        {
+            return;
+        }
+
+        // An empty output path reaches FileStream and throws ArgumentException
+        // (not one of the mapped I/O faults), so it escapes to Main's fatal
+        // handler: an empty argument exercises it deterministically.
+        var work = NewTempDir("opt_fatal");
+        var src = Directory.CreateDirectory(Path.Combine(work, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "data");
+
+        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work, [src, ""]);
+        if (!started)
+        {
+            return;
+        }
+
+        Assert.Equal(Pipeline.ZarchiveCli.PackFailed, exit);
+        Assert.Contains("Unhandled exception.", stderr, StringComparison.Ordinal);
+        Assert.Contains("ArgumentException", stderr, StringComparison.Ordinal);
+    }
+
     private static string? CreateSeekable(string cli, string work, string name)
     {
         var input = Path.Combine(work, "seekable_in.bin");

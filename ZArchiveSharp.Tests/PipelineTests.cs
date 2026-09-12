@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ZArchiveSharp.Pipeline;
 
 namespace ZArchiveSharp.Tests;
@@ -125,6 +126,54 @@ public sealed class PipelineTests : IDisposable
         {
             Assert.True(actual.TryGetValue(rel, out var got), $"missing {rel}");
             Assert.Equal(data, got);
+        }
+    }
+
+    [Fact]
+    public void DirectoryPackSource_DoesNotFollowDirectoryLinks()
+    {
+        var root = NewTempDir("pipe_link");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        var outside = Directory.CreateDirectory(Path.Combine(root, "outside")).FullName;
+        File.WriteAllText(Path.Combine(src, "inside.txt"), "in");
+        File.WriteAllText(Path.Combine(outside, "secret.txt"), "out");
+
+        var link = Path.Combine(src, "junction");
+        if (!TryCreateDirectoryLink(link, outside))
+        {
+            return; // Host cannot create links: nothing to assert here.
+        }
+
+        var entries = new DirectoryPackSource(src).Collect();
+        Assert.Contains(entries, e => string.Equals(e.RelativePath, "inside.txt", StringComparison.Ordinal));
+        Assert.DoesNotContain(entries, e => e.RelativePath.StartsWith("junction/", StringComparison.Ordinal));
+        Assert.DoesNotContain(entries, e => e.RelativePath.Contains("secret", StringComparison.Ordinal));
+    }
+
+    private static bool TryCreateDirectoryLink(string link, string target)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var psi = new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"")
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                };
+                using var proc = Process.Start(psi);
+                proc!.WaitForExit(10000);
+                return proc.ExitCode == 0;
+            }
+
+            Directory.CreateSymbolicLink(link, target);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            return false;
         }
     }
 
@@ -370,6 +419,38 @@ public sealed class PipelineTests : IDisposable
         Assert.True(File.Exists(third));
     }
 
+    [Fact]
+    public void PackSource_HonorsCollisionPolicyAndCreatesOutputDirectory()
+    {
+        var root = NewTempDir("pipe_src");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
+        var source = new DirectoryPackSource(src);
+        var zar = Path.Combine(root, "newdir", "out.zar");
+
+        // The output directory is created instead of failing CreateNew.
+        ZarPipeline.PackSource(source, zar);
+        Assert.True(File.Exists(zar));
+        var first = File.ReadAllBytes(zar);
+
+        // Fail (default) still refuses.
+        Assert.Throws<IOException>(() => ZarPipeline.PackSource(source, zar));
+
+        // Skip writes nothing and keeps the original.
+        ZarPipeline.PackSource(source, zar, new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Skip });
+        Assert.Equal(first, File.ReadAllBytes(zar));
+
+        // AutoRename numbers a sibling.
+        ZarPipeline.PackSource(source, zar,
+            new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.AutoRename });
+        Assert.True(File.Exists(Path.Combine(root, "newdir", "out_1.zar")));
+
+        // Overwrite replaces.
+        ZarPipeline.PackSource(source, zar,
+            new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Overwrite });
+        Assert.True(File.Exists(zar));
+    }
+
     // ------------------------------------------------------------------
     // Batches
     // ------------------------------------------------------------------
@@ -480,6 +561,21 @@ public sealed class PipelineTests : IDisposable
     }
 
     [Fact]
+    public void Pack_DeleteSourceOnSuccess_RemovesSource()
+    {
+        var root = NewTempDir("pipe_del1");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        PopulateRich(src);
+
+        var options = new ZarPipelineOptions { DeleteSourceOnSuccess = true };
+        var written = ZarPipeline.Pack(src, Path.Combine(root, "out.zar"), options);
+
+        Assert.NotNull(written);
+        Assert.True(File.Exists(written));
+        Assert.False(Directory.Exists(src));
+    }
+
+    [Fact]
     public void PackBatch_Empty_ReturnsCompletedRollUp()
     {
         var results = ZarPipeline.PackBatch([], NewTempDir("pipe_empty"));
@@ -504,6 +600,28 @@ public sealed class PipelineTests : IDisposable
         Assert.All(results, r => Assert.Equal(ZarItemStatus.Completed, r.Status));
         Assert.Equal("payload 0", File.ReadAllText(Path.Combine(root, "out", "a0_extracted", "a.txt")));
         Assert.Equal("payload 1", File.ReadAllText(Path.Combine(root, "out", "a1_extracted", "a.txt")));
+    }
+
+    [Fact]
+    public void ExtractBatch_SameStemArchives_UseDistinctDestinations()
+    {
+        var root = NewTempDir("pipe_ebsame");
+        var zars = new List<string>();
+        for (var i = 0; i < 2; i++)
+        {
+            var src = Directory.CreateDirectory(Path.Combine(root, $"src{i}")).FullName;
+            File.WriteAllText(Path.Combine(src, "payload.txt"), $"payload {i}");
+            var sub = Directory.CreateDirectory(Path.Combine(root, $"s{i}")).FullName;
+            zars.Add(ZarPipeline.Pack(src, Path.Combine(sub, "game.zar"))!);
+        }
+
+        var results = ZarPipeline.ExtractBatch(zars, Path.Combine(root, "out"),
+            new ZarPipelineOptions { MaxDegreeOfParallelism = 2 });
+
+        Assert.All(results, r => Assert.Equal(ZarItemStatus.Completed, r.Status));
+        Assert.NotEqual(results[0].DestinationPath, results[1].DestinationPath, StringComparer.Ordinal);
+        Assert.Equal("payload 0", File.ReadAllText(Path.Combine(results[0].DestinationPath!, "payload.txt")));
+        Assert.Equal("payload 1", File.ReadAllText(Path.Combine(results[1].DestinationPath!, "payload.txt")));
     }
 
     [Fact]

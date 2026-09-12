@@ -27,10 +27,33 @@ public sealed class DirectoryPackSource : IZarPackSource
             throw new DirectoryNotFoundException($"Input directory not found: {DisplayPath}");
         }
 
-        var enumerated = Directory.EnumerateFileSystemEntries(DisplayPath, "*", SearchOption.AllDirectories);
-        var paths = _deterministicOrder
-            ? enumerated.OrderBy(p => p, StringComparer.Ordinal).ToList()
-            : enumerated.ToList();
+        // Manual walk instead of SearchOption.AllDirectories: the walker must
+        // not descend through directory symlinks/junctions (reparse points),
+        // which could recurse forever or pack content outside the root. The
+        // link itself is still collected (as an empty directory), so the tree
+        // shape mirrors the source without following it.
+        var paths = new List<string>();
+        var pending = new Stack<string>();
+        pending.Push(DisplayPath);
+        while (pending.Count > 0)
+        {
+            var dir = pending.Pop();
+            foreach (var path in Directory.EnumerateFileSystemEntries(dir))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                paths.Add(path);
+                if (Directory.Exists(path) &&
+                    (File.GetAttributes(path) & FileAttributes.ReparsePoint) == FileAttributes.None)
+                {
+                    pending.Push(path);
+                }
+            }
+        }
+
+        if (_deterministicOrder)
+        {
+            paths.Sort(StringComparer.Ordinal);
+        }
 
         var entries = new List<ZarPackEntry>(paths.Count);
         foreach (var path in paths)
