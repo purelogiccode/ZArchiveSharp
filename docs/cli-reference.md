@@ -16,6 +16,12 @@ zar zstd -c|-d [options] [input] [output]
 zar seekable compress|decompress|list [options] [input] [output]
 ```
 
+Args are exactly `input [output]`, like `zarchive.exe`: extras fail
+with `-1` / `Too many paths specified`, never silently dropped.
+`-o/--output` occupies the output slot (`zar in -o out extra` is a usage
+error); `zar --iso x [out.zar]` takes the output positionally or via
+`-o`, not both.
+
 ## Commands
 
 ### Compress/Decompress Single zstd Streams
@@ -246,7 +252,7 @@ zar -b --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--jobs <N>` | `-j` | Number of parallel workers | 4 |
+| `--jobs <N>` | `-j` | Parallel workers: batch items plus 64 KiB block fan-out inside a single pack/extract (capped by CPU; byte-identical) | 4 |
 | `--mode <M>` | | Batch stages: `auto`, `extract-archive`, `extract-iso`, `compress` (`--batch` only) | `auto` |
 | `--seven-zip <exe>` | | 7z binary for the archive stage: explicit path, else `PATH` + install location (`--batch` only) | auto-detect |
 | `--keep-originals` / `--delete-source` | | Keep / delete each batch source after its pack succeeds (`--batch` only, last wins) | keep |

@@ -21,14 +21,27 @@ Writes `.zar` archive files. Faithful port of `zarchivewriter.cpp`.
 
 ```csharp
 // Stream-based (recommended)
-public ZArchiveWriter(Stream output, IZarBlockCompressor? compressor = null)
+public ZArchiveWriter(
+    Stream output,
+    IZarBlockCompressor? compressor = null,
+    IEnumerable<string>? nameOrder = null,
+    int maxDegreeOfParallelism = 1,
+    Func<IZarBlockCompressor>? compressorFactory = null)
 
 // Callback-based (for advanced scenarios)
 public ZArchiveWriter(
     Action<int> newOutputFile,
     Action<byte[], int, int> writeOutputData,
-    IZarBlockCompressor? compressor = null)
+    IZarBlockCompressor? compressor = null,
+    IEnumerable<string>? nameOrder = null,
+    int maxDegreeOfParallelism = 1,
+    Func<IZarBlockCompressor>? compressorFactory = null)
 ```
+
+`maxDegreeOfParallelism` fans 64 KiB block compression across workers
+(byte-identical, v1.1.0); it takes effect only with `compressorFactory`
+(one compressor per worker — explicit `IZarBlockCompressor` instances
+stay sequential).
 
 ### Methods
 

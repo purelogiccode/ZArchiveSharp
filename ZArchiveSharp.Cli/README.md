@@ -20,13 +20,14 @@ zar [options] [input] [output]
 |---------|-------------|
 | `zar <directory> [output.zar]` | Pack a directory to `.zar` |
 | `zar <archive.zar> [output_dir]` | Extract `.zar` to a directory |
-| `zar --iso <game.iso> [output.zar]` | Convert XISO to `.zar` (Redump-aware) |
+| `zar --iso <game.iso> [output.zar]` | Convert XISO to `.zar` (Redump-aware; output positionally or via `-o`, not both) |
 | `zar zstd <in> [out]` | Raw zstd compress/decompress (`--dict`, `--stdout`, `--check`) |
 | `zar seekable compress [in] [out]` | Seekable-zstd compress (`-l`, `-s`, `--checksum`, `--seek-table-file`) |
 | `zar seekable decompress [in] [out]` | Seekable-zstd decompress (`--from/--to`, `--from-frame/--to-frame`) |
 | `zar seekable list <file>` | Frame/seek-table detail tables |
 
 Outputs default to `<stem>.zar` / `<stem>_extracted` next to the input, like `zarchive.exe`.
+Args are exactly `input [output]` — extras fail with `-1` / `Too many paths specified`, never silently dropped. `-o/--output` occupies the output slot, so `zar in -o out extra` is a usage error.
 
 Batch mode (`-b/--batch`) processes every file under the input directory:
 archives (`.zip/.rar/.7z/.tar/.gz` via an installed 7z, `--seven-zip` override)
@@ -39,7 +40,7 @@ collisions only.
 
 ```
   -l, --level <N>       Compression level 1-22 (default: 6)
-  -j, --jobs <N>        Parallel workers (default: 4)
+  -j, --jobs <N>        Parallel workers: batch items plus 64 KiB block fan-out inside a single pack/extract, capped by CPU, byte-identical (default: 4)
   -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename
   -b, --batch           Batch process all files in input directory
   -o, --output <path>   Output path

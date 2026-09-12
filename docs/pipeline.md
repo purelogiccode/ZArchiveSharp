@@ -53,7 +53,7 @@ ZarPipeline.PackSource(mySource, @"C:\out.zar", options);
 | `Compressor` | `IZarBlockCompressor?` | `null` | Explicit compressor; overrides `Level`/`Checksum` |
 | `DeterministicOrder` | `bool` | `true` | Sort entries ordinally for reproducible archives |
 | `CollisionPolicy` | `ZarCollisionPolicy` | `Fail` | Output-exists behavior |
-| `MaxDegreeOfParallelism` | `int` | 4 | Batch workers (clamped ≥ 1; effective = `min(workers, items)`) |
+| `MaxDegreeOfParallelism` | `int` | 4 | Batch workers (clamped ≥ 1; effective = `min(workers, items)`) plus 64 KiB block fan-out inside a single pack/extract (capped by processor count; byte-identical) |
 | `DeleteSourceOnSuccess` | `bool` | `false` | Delete pack source after success (off by default — a library must not destroy inputs unless asked) |
 | `Pause` | `PauseToken` | default | Pause gate checked alongside the cancellation token |
 | `NameOrder` | `IReadOnlyList<string>?` | `null` | Pre-seeded name-table order; `null` = pack order. Pass a source-walk (discovery) order for byte-parity with packers that write names in discovery order |
@@ -151,6 +151,24 @@ foreach (var r in results)
 - Worker count is `min(MaxDegreeOfParallelism, items)` — never spins up more tasks than items
 - **One item's failure does not stop the others**; per-item outcomes come back as `ZarItemResult`
 - Batch progress re-bases per-item ratios into `1/n` shares
+
+### Block-Level Parallelism (v1.1.0)
+
+Each 64 KiB `.zar` block is an independent zstd frame, so a *single*
+pack/extract also fans out: `BlockWorkers()` is
+`min(max(1, MaxDegreeOfParallelism), ProcessorCount)`, and blocks are
+always emitted in input order — parallel bytes equal sequential bytes
+at every level, with or without dictionaries/checksums.
+
+- `ZArchiveWriter` takes an optional per-worker `compressorFactory`
+  (one `ZstdCompressor` per worker); explicit `IZarBlockCompressor`
+  instances stay sequential.
+- Extract decodes bounded waves (`min(workers × 4, 64)` blocks) with the
+  sequential corruption contract.
+- A default options pack now uses up to 4 block workers instead of
+  1 thread — pass `MaxDegreeOfParallelism = 1` for the old profile.
+  Note batch × block workers multiply (`PackBatch` at DOP 4 can reach
+  ~16 codec threads on many-core hosts).
 
 ### Extract Batch
 

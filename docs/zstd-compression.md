@@ -170,7 +170,9 @@ The test suite proves byte-identity:
    (verified against libzstd 1.5.7 goldens); byte-identity with `zstd -D`
    output is a goal, not a guarantee.
 
-3. **No multi-threaded compression** (`zstdmt`) inside one frame — use the pipeline's batch parallelism instead (archives/frames compress independently).
+3. **No multi-threaded compression** (`zstdmt`) inside one frame — each
+   64 KiB `.zar` block is an independent frame, so the pipeline
+   parallelizes *across blocks* (byte-identical) instead.
 
 4. **Stream wrappers buffer, then emit** — `ZstdCompressionStream` buffers input
    and emits one unknown-size-header frame at `Dispose()` (byte-identical to a
@@ -189,4 +191,4 @@ Current baseline (net10.0, Release — see [Benchmarks](benchmarks.md)):
 | Level 19 compress | ~38 MB/s |
 | Decode | ~860 MB/s |
 
-Measured hot-path speed is at native parity (L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× — see [Benchmarks](benchmarks.md)). The standing trade-off is byte-exact parity and safe (no `unsafe`) code over squeezing the last microseconds; the tracked levers are ArrayPool rental of the per-frame bound-size buffer and span-specializing the hot match-finder loop.
+Measured hot-path speed is at native parity (L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× — see [Benchmarks](benchmarks.md)). The standing trade-off is byte-exact parity and safe (no `unsafe`) code over squeezing the last microseconds; v1.1.0 pools the codec scratch (match tables, frame copies, sequence stores) and the remaining tracked lever is span-specializing the hot match-finder loop.

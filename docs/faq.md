@@ -24,7 +24,7 @@ The test suite enforces this with thousands of parity vectors and committed gold
 
 ### Is it production ready?
 
-The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4171 green tests including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
+The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4190 library tests plus 40 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
 
 ## Compatibility
 
@@ -75,7 +75,11 @@ Plug a block compressor into `IZarBlockCompressor` (e.g. a native interop adapte
 
 ### Does it support multi-threaded compression?
 
-Inside one frame, no (like upstream). Across items, yes: the pipeline packs batches in parallel (`MaxDegreeOfParallelism`). Each 64 KiB block is an independent frame, so batch parallelism scales cleanly.
+Inside one zstd frame, no (like upstream — no `zstdmt`). Across 64 KiB
+blocks, yes: each block is an independent frame, so a single
+pack/extract fans blocks across workers (`MaxDegreeOfParallelism`,
+capped by CPU count, byte-identical), and batches parallelize across
+items on top of that.
 
 ### Are dictionaries supported?
 

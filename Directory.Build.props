@@ -26,7 +26,7 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
-    <PackageReleaseNotes>v1.0.2 fix: the v1.0.1 zar tool package failed at startup with FileNotFoundException (mixed build outputs packed; that version is unlisted, v1.0.0 was unaffected) — repacked from a clean Release build and install-verified (pack/extract roundtrip). No functional library changes since v1.0.1.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.1.0: block-level parallelism (single pack/extract fans 64 KiB blocks across workers, byte-identical), codec scratch pooling, hardened pool/error contracts, CLI positional guards (-o/--iso extras rejected like the oracle), CLI battle-test suite, XISOSharp via NuGet. See WhatsNew.md.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

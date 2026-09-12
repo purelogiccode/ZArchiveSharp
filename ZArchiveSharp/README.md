@@ -86,8 +86,9 @@ a silent truncation), and error-string paths use `/` on every OS.
 ## Limits
 
 - No zstd dictionary *training*, LDM, legacy frames, or multithreading
-  inside one frame. Dictionary *use* (`ZstdDictionary`, `--dict`) is
-  supported.
+  inside one zstd frame (each 64 KiB block is an independent frame, so
+  packs/extracts parallelize across blocks, byte-identical).
+  Dictionary *use* (`ZstdDictionary`, `--dict`) is supported.
 - Decoder caps (configurable via `ZstdDecoderOptions`): 512 MiB window,
   512 MiB frame content.
 - Corrupt archives throw documented exceptions (`ZarArchiveOpenException`,
@@ -103,7 +104,8 @@ tags (`v1.0.0`-style — `MinVerTagPrefix=v` in `Directory.Build.props`;
 without it MinVer 8 silently ignores `v*` tags). Every push builds and
 tests on Ubuntu/Windows/macOS; `dotnet pack` runs for the library and the
 CLI tool (API-validated, symbols + SourceLink), and pushed `v*` tags publish to
-NuGet. See `.github/workflows/ci.yml`.
+NuGet. See `.github/workflows/ci.yml`. Per-release highlights live in
+[WhatsNew.md](../WhatsNew.md).
 
 ## License
 

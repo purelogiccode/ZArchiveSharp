@@ -13,7 +13,7 @@
 - **Dictionary use** — compress/decompress with supplied dicts (formatted + raw prefix); `ZstdDictionary`, per-file 4× smaller small entries (training out of scope)
 - **At native speed on the hot path** — L6 64 KiB ≈1.0× libzstd 1.5.7, decode ≈1.0× (measured; see [Benchmarks](docs/benchmarks.md))
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
-- **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
+- **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, byte-identical block-level parallelism inside a single pack/extract, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
 - **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
@@ -141,7 +141,7 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 | **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZArchiveSharp.Tests** | Comprehensive test suite (4171 tests, parity validation) |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4190 tests + 40 CLI battle tests, parity validation) |
 
 ## Documentation
 
@@ -154,6 +154,7 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 - **[Pipeline](docs/pipeline.md)** — Batch operations, progress, and collision handling
 - **[Benchmarks](docs/benchmarks.md)** — Performance characteristics and tuning
 - **[FAQ](docs/faq.md)** — Frequently asked questions
+- **[What's New](WhatsNew.md)** — v1.1.0 release notes (block parallelism, CLI guards, upgrade notes)
 
 ## Byte-Identity Target
 
@@ -165,7 +166,7 @@ Two known boundaries:
 
 ## Limits
 
-- No dictionary *training* (use only), no legacy frames, no multithreading inside one frame
+- No dictionary *training* (use only), no legacy frames, no multithreading inside one zstd frame (each 64 KiB block is an independent frame, so packs/extracts parallelize across blocks, byte-identical)
 - Decoder caps (configurable): 512 MiB window, 512 MiB frame content
 - Corrupt archives throw documented exceptions; truncations always fail the open
 
