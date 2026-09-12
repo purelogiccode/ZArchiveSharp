@@ -15,7 +15,7 @@
              third-party baseline. Pinned to the version in the local NuGet cache
              so clean clones restore offline. Never add to ZArchiveSharp.csproj. -->
         <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
-        <PackageReference Include="Meziantou.Analyzer" Version="3.0.235">
+        <PackageReference Include="Meziantou.Analyzer" Version="3.0.248">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
