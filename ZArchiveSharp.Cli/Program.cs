@@ -1026,33 +1026,41 @@ public static class Program
                 isIso = false;
             }
 
-            if (options.DeleteSourceOnSuccess)
-            {
-                File.Delete(archive);
-            }
-
             if (mode == ZarProcessMode.ExtractArchive)
             {
+                if (options.DeleteSourceOnSuccess)
+                {
+                    File.Delete(archive);
+                }
+
                 return new ZarItemResult(archive, current, ZarItemStatus.Completed);
             }
 
             // Continue down the pipeline; re-stamp the source so the batch
             // summary names the archive the user asked about, not the
             // intermediate the stage produced.
-            if (isIso)
-            {
-                return PackIsoOne(current, destDir, options, level, compressor, dictionary, progress)
+            var result = isIso
+                ? PackIsoOne(current, destDir, options, level, compressor, dictionary, progress)
+                    with
+                    {
+                        SourcePath = archive
+                    }
+                : ZarPipeline.PackBatch([current], destDir, options, progress)[0]
                     with
                     {
                         SourcePath = archive
                     };
+
+            // Delete the source only after the terminal stage actually
+            // produced its .zar: a failed or skipped downstream stage must
+            // not destroy the original archive (the docs promise removal
+            // "after its .zar succeeds").
+            if (options.DeleteSourceOnSuccess && result.Status == ZarItemStatus.Completed)
+            {
+                File.Delete(archive);
             }
 
-            return ZarPipeline.PackBatch([current], destDir, options, progress)[0]
-                with
-                {
-                    SourcePath = archive
-                };
+            return result;
         }
         catch (OperationCanceledException ex)
         {

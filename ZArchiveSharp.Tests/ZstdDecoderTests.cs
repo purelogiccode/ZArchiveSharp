@@ -130,9 +130,37 @@ public sealed class ZstdDecoderTests
     }
 
     [Fact]
+    public void TotalOutputCapBoundsConcatenatedFrames()
+    {
+        var a = Text(1000);
+        var fa = new ZstdCompressor().CompressBlock(a);
+        byte[] both = [.. fa, .. fa, .. fa];
+
+        // 3 x 1000 bytes fit under 5000 but not under 2500.
+        var ok = new ZstdDecoderOptions { MaxTotalOutputSize = 5000 };
+        Assert.Equal([.. a, .. a, .. a], ZstdDecompressor.Decompress(both, ok));
+
+        var tight = new ZstdDecoderOptions { MaxTotalOutputSize = 2500 };
+        var ex = Assert.Throws<ZstdException>(() => ZstdDecompressor.Decompress(both, tight));
+        Assert.Contains("total output", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TotalOutputCapShortCircuitsFramesWithoutDeclaredSize()
+    {
+        // Streaming-form frame (no FCS): the running per-block check must
+        // catch the cap during decode, not after materializing the output.
+        var frame = ZstdCompressor.EncodeStreamingFrame(new byte[1 << 20], level: 3, checksum: false);
+        var tight = new ZstdDecoderOptions { MaxTotalOutputSize = 4096 };
+        var ex = Assert.Throws<ZstdException>(() => ZstdDecompressor.Decompress(frame, tight));
+        Assert.Contains("total output", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ZeroCapsAreRejected()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdDecoderOptions { MaxWindowSize = 0 });
         Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdDecoderOptions { MaxFrameContentSize = 0 });
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ZstdDecoderOptions { MaxTotalOutputSize = 0 });
     }
 }

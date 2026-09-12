@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using ZArchiveSharp.Zstd;
@@ -475,14 +476,38 @@ public sealed class ZArchiveWriter : IDisposable
 
             try
             {
+                // Workers are rented per block, never selected by iteration
+                // index: Parallel.For may run iterations i and i + count
+                // concurrently, and a stateful custom compressor must never
+                // be entered twice at once (contract: one compressor per
+                // worker, a worker is never shared).
+                var pool = new ConcurrentBag<BlockWorker>(workers);
                 Parallel.For(0, _stagedBlocks.Count,
                     new ParallelOptions { MaxDegreeOfParallelism = workers.Count },
                     i =>
                     {
-                        var worker = workers[i % workers.Count];
-                        // Explicit length: rented arrays may exceed the block size.
-                        results[i] = worker.Compressor.Compress(
-                            _stagedBlocks[i].AsSpan(0, ZArchiveCommon.CompressedBlockSize), dests[i]);
+                        if (!pool.TryTake(out var worker))
+                        {
+                            // Unreachable: at most workers.Count bodies run at
+                            // once and every body returns its worker. Spin
+                            // rather than share if scheduling ever changes.
+                            var spin = new SpinWait();
+                            while (!pool.TryTake(out worker))
+                            {
+                                spin.SpinOnce();
+                            }
+                        }
+
+                        try
+                        {
+                            // Explicit length: rented arrays may exceed the block size.
+                            results[i] = worker.Compressor.Compress(
+                                _stagedBlocks[i].AsSpan(0, ZArchiveCommon.CompressedBlockSize), dests[i]);
+                        }
+                        finally
+                        {
+                            pool.Add(worker);
+                        }
                     });
             }
             catch (AggregateException ex) when (ex.InnerExceptions.Count != 0)

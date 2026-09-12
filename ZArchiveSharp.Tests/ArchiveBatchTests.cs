@@ -294,6 +294,57 @@ public sealed class ArchiveBatchTests
     }
 
     [Fact]
+    public void Batch_Auto_DeleteSource_DownstreamFailure_KeepsSource()
+    {
+        var cli = RedumpIsoTests.FindCli();
+        if (cli is null || SevenZip.FindTool() is null)
+        {
+            return;
+        }
+
+        var work = RedumpIsoTests.NewTempDir("arcdelfail");
+        try
+        {
+            var inDir = Path.Combine(work, "in");
+            Directory.CreateDirectory(inDir);
+            var stage = Path.Combine(work, "stage", "game");
+            Directory.CreateDirectory(stage);
+            File.WriteAllBytes(Path.Combine(stage, "hello.txt"), "hi"u8.ToArray());
+            var zip = Path.Combine(inDir, "game.zip");
+            ZipTree(stage, zip);
+            var outDir = Path.Combine(work, "out");
+            Directory.CreateDirectory(outDir);
+            // Occupy the downstream .zar so the terminal pack refuses under
+            // the default fail policy: the source must survive the failure.
+            File.WriteAllBytes(Path.Combine(outDir, "game.zar"), "occupied"u8.ToArray());
+
+            var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+                ["--batch", "--delete-source", inDir, outDir]);
+            if (!started)
+            {
+                return;
+            }
+
+            Assert.Equal(-13, exit);
+            Assert.Contains("game.zip", stderr, StringComparison.Ordinal);
+            Assert.True(File.Exists(zip),
+                "The source archive was deleted even though the downstream .zar stage failed.");
+            Assert.Equal("occupied"u8.ToArray(), File.ReadAllBytes(Path.Combine(outDir, "game.zar")));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(work, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Best effort: temp cleanup must not fail the test.
+            }
+        }
+    }
+
+    [Fact]
     public void Batch_Archive_BogusFile_FailsItemNotBatch()
     {
         var cli = RedumpIsoTests.FindCli();

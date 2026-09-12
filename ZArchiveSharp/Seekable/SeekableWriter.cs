@@ -47,6 +47,21 @@ public sealed class SeekableWriter
 
     private bool _finished;
 
+    /// <summary>
+    /// Uncompressed frame cap. Normally the format's
+    /// <see cref="SeekableOptions.MaxFrameSize"/> (1 GiB): the oracle ends a
+    /// frame once <c>frame_d</c> reaches it, in <em>both</em> policies. This
+    /// is an internal test seam so the boundary can be exercised without
+    /// materializing a gigabyte.
+    /// </summary>
+    internal int MaxUncompressedFrameSize
+    {
+        get => field;
+        init => field = value > 0
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(value), "Frame cap must be positive.");
+    } = SeekableOptions.MaxFrameSize;
+
     // Pump scratch sized to the oracle CLI read granularity.
     private readonly byte[] _streamPump = new byte[InputChunkSize];
 
@@ -94,17 +109,29 @@ public sealed class SeekableWriter
             // reads its input in 128 KiB units. Odd Write splits or short
             // stream reads can shift boundaries exactly as odd oracle reads
             // would; every framing stays valid and decodes identically.
+            // Each take is additionally capped at the frame's remaining
+            // uncompressed room (the oracle's remaining_frame_size), so a
+            // frame never exceeds the 1 GiB format cap.
             var pos = 0;
             while (pos < data.Length)
             {
-                var take = (int)Math.Min(
+                var chunk = (int)Math.Min(
                     InputChunkSize - (_consumed % InputChunkSize), data.Length - pos);
+                var take = (int)Math.Min(chunk, MaxUncompressedFrameSize - _pendingLen);
                 AppendPending(data.Slice(pos, take));
                 pos += take;
                 _consumed += take;
-                if (MeasurePending() >= _frameSize)
+
+                // Encode once per take: the frame is only logged when the
+                // oracle's is_frame_complete fires (compressed threshold or
+                // the 1 GiB uncompressed cap), and the measured bytes are
+                // the logged ones.
+                var bytes = ZstdCompressor.EncodeStreamingFrame(
+                    new ReadOnlySpan<byte>(_pending, 0, _pendingLen), _level, _checksum);
+                if (bytes.Length >= _frameSize || _pendingLen >= MaxUncompressedFrameSize)
                 {
-                    EmitPending(_pendingLen);
+                    LogFrame(bytes, _pendingLen);
+                    ShiftPending(_pendingLen);
                 }
             }
         }
@@ -161,12 +188,6 @@ public sealed class SeekableWriter
     {
         var (data, table) = FinishCore(writeHead: true);
         return (data, table!);
-    }
-
-    private int MeasurePending()
-    {
-        return ZstdCompressor.EncodeStreamingFrame(
-            new ReadOnlySpan<byte>(_pending, 0, _pendingLen), _level, _checksum).Length;
     }
 
     private void EmitPending(int contentLength)

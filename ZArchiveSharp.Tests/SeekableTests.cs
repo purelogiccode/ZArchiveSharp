@@ -246,6 +246,35 @@ public sealed class SeekableTests
     }
 
     [Fact]
+    public void CompressedPolicy_UncompressedCapCutsFrames()
+    {
+        // The oracle ends a Compressed-policy frame at SEEKABLE_MAX_FRAME_SIZE
+        // (1 GiB) of uncompressed data even when the compressed threshold is
+        // never reached. Lower the cap to exercise the boundary cheaply.
+        var input = MakeInput("zeros", 10000, 1);
+        var options = new SeekableOptions
+        {
+            Level = 3,
+            FrameSize = int.MaxValue, // compressed threshold never reached
+            Policy = SeekableFrameSizePolicy.Compressed,
+            Checksum = true,
+        };
+        var writer = new SeekableWriter(options) { MaxUncompressedFrameSize = 4096 };
+        writer.Write(input);
+        var file = writer.Finish();
+
+        var table = SeekTable.ParseFoot(file);
+        Assert.Equal(3, table.FrameCount);
+        Assert.Equal(4096UL, table.FrameSizeDecomp(0));
+        Assert.Equal(4096UL, table.FrameSizeDecomp(1));
+        Assert.Equal(1808UL, table.FrameSizeDecomp(2));
+
+        var reader = new SeekableReader(file);
+        Assert.Equal(3, reader.FrameCount);
+        Assert.Equal(input, reader.DecompressAll());
+    }
+
+    [Fact]
     public void SeekTable_SerializeParseCycle()
     {
         var input = MakeInput("text", 120000, 3);

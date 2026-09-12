@@ -380,6 +380,7 @@ public static class ZstdDecompressor
         var end = offset + length;
         var pos = offset;
         var anyFrame = false;
+        ulong produced = 0;
         while (pos < end)
         {
             if (end - pos < 4)
@@ -410,8 +411,14 @@ public static class ZstdDecompressor
                 throw new ZstdException($"Bad zstd magic 0x{magic:X8}.");
             }
 
-            pos = DecompressFrame(src, pos, end - pos, output, exactSize, options, dict);
+            var before = output.Count;
+            // Concatenated frames share one cumulative cap so N small
+            // frames cannot multiply the per-frame bound (exact-size mode
+            // pins the output and takes no budget).
+            pos = DecompressFrame(src, pos, end - pos, output, exactSize, options, dict,
+                exactSize.HasValue ? null : options.MaxTotalOutputSize - produced);
             anyFrame = true;
+            produced += (ulong)(output.Count - before);
             if (exactSize.HasValue)
             {
                 break; // exact mode: single frame
@@ -428,7 +435,7 @@ public static class ZstdDecompressor
 
     private static int DecompressFrame(
         byte[] src, int offset, int length, List<byte> output, ulong? exactSize,
-        ZstdDecoderOptions options, ZstdDictionary? dict = null)
+        ZstdDecoderOptions options, ZstdDictionary? dict = null, ulong? totalBudget = null)
     {
         var end = offset + length;
         var pos = offset + 4; // magic already validated by caller... (validated below for exact path)
@@ -553,6 +560,12 @@ public static class ZstdDecompressor
                 $"zstd frame content size {fcs} exceeds decoder limit {options.MaxFrameContentSize}.");
         }
 
+        if (totalBudget.HasValue && fcsKnown && fcs > totalBudget.Value)
+        {
+            throw new ZstdException(
+                $"zstd total output size exceeds decoder limit {options.MaxTotalOutputSize}.");
+        }
+
         if (exactSize.HasValue && (!fcsKnown || fcs != exactSize.Value))
         {
             // The caller demands an exact output size (e.g. 64 KiB blocks);
@@ -663,6 +676,14 @@ public static class ZstdDecompressor
             if ((ulong)(output.Count - frameStart) > frameCap)
             {
                 throw new ZstdException("zstd frame content size mismatch.");
+            }
+
+            if (totalBudget.HasValue && (ulong)(output.Count - frameStart) > totalBudget.Value)
+            {
+                // Checked per block: a many-frame stream hits the cumulative
+                // cap during decode instead of after materializing it.
+                throw new ZstdException(
+                    $"zstd total output size exceeds decoder limit {options.MaxTotalOutputSize}.");
             }
         }
 
@@ -1337,4 +1358,21 @@ public sealed class ZstdDecoderOptions
             ? value
             : throw new ArgumentOutOfRangeException(nameof(value), "MaxFrameContentSize must be positive.");
     } = 512UL * 1024 * 1024;
+
+    /// <summary>
+    /// Maximum total decompressed size across all frames of one
+    /// <see cref="ZstdDecompressor.Decompress(byte[], int, int, ZstdDictionary?, ZstdDecoderOptions)"/>
+    /// call (default 1 GiB). Per-frame limits still apply; this one bounds
+    /// concatenated-frame expansion (N RLE frames each under the per-frame
+    /// cap could otherwise multiply the memory bound). Set to
+    /// <see cref="ulong.MaxValue"/> to disable.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">When set to zero.</exception>
+    public ulong MaxTotalOutputSize
+    {
+        get;
+        init => field = value > 0
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(value), "MaxTotalOutputSize must be positive.");
+    } = 1UL << 30;
 }

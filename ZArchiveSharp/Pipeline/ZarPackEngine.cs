@@ -299,6 +299,7 @@ public static class ZarPackEngine
             // are extracted, so a mid-archive failure leaves the same prefix.
             log?.Invoke(item.LogLine);
             var outPath = Path.Combine(destDir, item.RelativePath);
+            EnsureWithinRoot(destDir, outPath);
             if (item.IsDirectory)
             {
                 Directory.CreateDirectory(outPath);
@@ -480,6 +481,7 @@ public static class ZarPackEngine
                 throw new InvalidOperationException("Directory contains invalid node.");
             }
 
+            ValidateEntryName(entry.Name);
             var childSrc = string.IsNullOrEmpty(srcPath) ? entry.Name : srcPath + "/" + entry.Name;
             var childRel = string.IsNullOrEmpty(relPath) ? entry.Name : relPath + "/" + entry.Name;
             // Native stdout quirk, kept byte-identical: the root call passes
@@ -494,6 +496,61 @@ public static class ZarPackEngine
             {
                 plan.Add(new ExtractPlanEntry(childSrc, childRel, false, entry.Size, logLine));
             }
+        }
+    }
+
+    // Entry names come from the archive and are used verbatim as filesystem
+    // paths. A crafted archive can carry "../", absolute, drive-qualified or
+    // Windows device names; extracting those escapes the destination root
+    // (zip-slip). Every component must be a single, plain name.
+    private static void ValidateEntryName(string name)
+    {
+        if (name.Length == 0 || name is "." or ".."
+            || name.Contains('/') || name.Contains('\\')
+            || Path.IsPathRooted(name)
+            || (name.Length >= 2 && name[1] == ':' && char.IsAsciiLetter(name[0]))
+            || IsReservedDeviceName(name))
+        {
+            throw new InvalidOperationException($"Archive entry name is not safe to extract: '{name}'.");
+        }
+    }
+
+    private static bool IsReservedDeviceName(string name)
+    {
+        var dot = name.IndexOf('.');
+        var stem = dot < 0 ? name : name[..dot];
+        if (stem.Equals("CON", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("PRN", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("AUX", StringComparison.OrdinalIgnoreCase)
+            || stem.Equals("NUL", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return stem.Length == 4
+               && (stem.StartsWith("COM", StringComparison.OrdinalIgnoreCase)
+                   || stem.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
+               && stem[3] is >= '1' and <= '9';
+    }
+
+    // Defense in depth: even with validated components, the resolved path
+    // must stay under the destination root before anything is created.
+    private static void EnsureWithinRoot(string destDir, string outPath)
+    {
+        var root = Path.GetFullPath(destDir);
+        if (!root.EndsWith(Path.DirectorySeparatorChar))
+        {
+            root += Path.DirectorySeparatorChar;
+        }
+
+        var full = Path.GetFullPath(outPath);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!full.StartsWith(root, comparison))
+        {
+            throw new InvalidOperationException(
+                $"Archive entry escapes the destination directory: '{outPath}'.");
         }
     }
 }

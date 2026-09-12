@@ -220,6 +220,78 @@ public sealed class ParallelBlockTests : IDisposable
                 new ZarPipelineOptions { MaxDegreeOfParallelism = 8 }, cancellationToken: cts.Token));
     }
 
+    [Fact]
+    public void Pack_ParallelFactory_WorkersAreNeverEnteredConcurrently()
+    {
+        var root = NewTempDir("parshare");
+        var zar = Path.Combine(root, "out.zar");
+        var probe = new WorkerSharingProbe();
+
+        using (var output = File.Create(zar))
+        using (var writer = new ZArchiveWriter(
+            output,
+            compressorFactory: probe.CreateWorker,
+            maxDegreeOfParallelism: 4))
+        {
+            var block = new byte[ZArchiveCommon.CompressedBlockSize];
+            new Random(424242).NextBytes(block);
+            // 32 blocks = 2 MiB: four full waves at the 8-block flush
+            // threshold, so the old i % workers mapping has every chance
+            // to run iterations i and i + workers concurrently.
+            for (var f = 0; f < 8; f++)
+            {
+                Assert.True(writer.StartNewFile($"f{f}.bin"));
+                for (var b = 0; b < 4; b++)
+                {
+                    writer.AppendData(block);
+                }
+            }
+
+            writer.Finalize();
+        }
+
+        Assert.Equal(0, probe.ConcurrentEntries);
+        var outDir = Path.Combine(root, "out");
+        ZarPipeline.Extract(zar, outDir, new ZarPipelineOptions { MaxDegreeOfParallelism = 1 });
+        Assert.True(File.Exists(Path.Combine(outDir, "f0.bin")));
+    }
+
+    private sealed class WorkerSharingProbe
+    {
+        private int _concurrentEntries;
+
+        public int ConcurrentEntries => Volatile.Read(ref _concurrentEntries);
+
+        public IZarBlockCompressor CreateWorker()
+        {
+            return new Worker(this);
+        }
+
+        private sealed class Worker : IZarBlockCompressor
+        {
+            private readonly WorkerSharingProbe _owner;
+            private int _inUse;
+
+            public Worker(WorkerSharingProbe owner)
+            {
+                _owner = owner;
+            }
+
+            public int Compress(ReadOnlySpan<byte> source, Span<byte> destination)
+            {
+                if (Interlocked.Increment(ref _inUse) != 1)
+                {
+                    Interlocked.Increment(ref _owner._concurrentEntries);
+                }
+
+                // Hold the worker briefly so overlap actually manifests.
+                Thread.Sleep(20);
+                Interlocked.Decrement(ref _inUse);
+                return -1; // raw storage: valid archive, no codec dependency.
+            }
+        }
+    }
+
     private sealed class ThreadTrackingCompressor : IZarBlockCompressor
     {
         private readonly HashSet<int> _threads = [];
