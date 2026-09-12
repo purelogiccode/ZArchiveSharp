@@ -20,7 +20,8 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
 
     // Submit-only key (rate-limited); see InstructionsToSendBugs.md in
     // AspNet_BugReportEmailService. It can only file reports, nothing else.
-    private const string ApiKey = "hjh7yu6t56tyr540o9u8767676r5674534453235264c75b6t7ggghgg76trf564e";
+    // The key is double-obfuscated in ApiKeyProvider and decoded on first use.
+    private static string ApiKey => ApiKeyProvider.ApiKey;
 
     private const int MaxPerMinute = 9;
     private const int QueueCapacity = 64;
@@ -175,15 +176,15 @@ internal sealed class BugReportSink : ILogEventSink, IDisposable
     {
         var sb = new StringBuilder();
         sb.Append("{\"message\":");
-        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.FormatMessage(error, ex));
+        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.Sanitize(BugReportFormatter.FormatMessage(error, ex)));
         sb.Append(",\"applicationName\":");
         BugReportFormatter.AppendJsonString(sb, BugReportFormatter.ApplicationName);
         sb.Append(",\"version\":");
         BugReportFormatter.AppendJsonString(sb, BugReportFormatter.FormatVersion());
         sb.Append(",\"environment\":");
-        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.FormatEnvironment());
+        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.Sanitize(BugReportFormatter.FormatEnvironment()));
         sb.Append(",\"stackTrace\":");
-        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.FormatStackTrace(ex));
+        BugReportFormatter.AppendJsonString(sb, BugReportFormatter.Sanitize(BugReportFormatter.FormatStackTrace(ex)));
         sb.Append('}');
         return sb.ToString();
     }

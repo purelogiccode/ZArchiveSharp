@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using System.Text;
-using Serilog.Events;
 
 namespace ZArchiveSharp.Cli;
 
@@ -26,21 +25,21 @@ internal static class BugReportFormatter
     {
         var environment = BuildEnvironmentSection();
         var stack = ex?.StackTrace ?? "(none)";
-        var fixed_ = environment + Environment.NewLine + Environment.NewLine
+        var @fixed = environment + Environment.NewLine + Environment.NewLine
             + "=== Error Details ===" + Environment.NewLine + error + Environment.NewLine + Environment.NewLine
             + "=== Exception Details ===" + Environment.NewLine
             + $"Type: {ex?.GetType().FullName ?? "(none)"}" + Environment.NewLine
             + $"Message: {ex?.Message ?? "(none)"}" + Environment.NewLine
             + $"Source: {ex?.Source ?? "(none)"}" + Environment.NewLine
             + "StackTrace: ";
-        var budget = MaxMessage - fixed_.Length - Environment.NewLine.Length;
+        var budget = MaxMessage - @fixed.Length - Environment.NewLine.Length;
         if (budget < 0)
         {
             budget = 0;
         }
 
         var shown = stack.Length > budget ? stack[..budget] + "..." : stack;
-        var message = fixed_ + shown + Environment.NewLine;
+        var message = @fixed + shown + Environment.NewLine;
         return message.Length > MaxMessage ? message[..MaxMessage] : message;
     }
 
@@ -62,6 +61,50 @@ internal static class BugReportFormatter
         return Truncate(RuntimeInformation.OSDescription, MaxEnvironment);
     }
 
+    /// <summary>
+    /// Strips local-account details before a value leaves the process: the
+    /// user profile directory becomes <c>%USERPROFILE%</c> (both slash
+    /// directions) and any remaining bare username becomes <c>[user]</c>.
+    /// Bug reports must never carry the Windows account name.
+    /// </summary>
+    public static string Sanitize(string value)
+    {
+        return Sanitize(
+            value,
+            Environment.UserName,
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+    }
+
+    internal static string Sanitize(string value, string userName, string profilePath)
+    {
+        if (value.Length == 0)
+        {
+            return value;
+        }
+
+        const string marker = "%USERPROFILE%";
+        if (profilePath.Length > 0)
+        {
+            value = value.Replace(profilePath, marker, StringComparison.OrdinalIgnoreCase);
+            var forward = profilePath.Replace('\\', '/');
+            if (!string.Equals(forward, profilePath, StringComparison.Ordinal))
+            {
+                value = value.Replace(forward, marker, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        // Usernames as short as "user" would otherwise corrupt the marker
+        // (case-insensitive match inside %USERPROFILE%), so mask it first.
+        if (userName.Length >= 3)
+        {
+            value = value.Replace(marker, "\0", StringComparison.Ordinal);
+            value = value.Replace(userName, "[user]", StringComparison.OrdinalIgnoreCase);
+            value = value.Replace("\0", marker, StringComparison.Ordinal);
+        }
+
+        return value;
+    }
+
     /// <summary>Escapes <paramref name="value"/> as a JSON string literal.</summary>
     public static void AppendJsonString(StringBuilder sb, string value)
     {
@@ -74,7 +117,7 @@ internal static class BugReportFormatter
                     sb.Append("\\\"");
                     break;
                 case '\\':
-                    sb.Append("\\\\");
+                    sb.Append(@"\\");
                     break;
                 case '\n':
                     sb.Append("\\n");

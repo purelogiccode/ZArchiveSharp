@@ -17,7 +17,8 @@ internal static class UsageTracker
     private const string Endpoint = "https://www.purelogiccode.com/ApplicationStats/stats";
 
     // Stats/bug shared secret (see InstructionsToUseApiEndpoints.md).
-    private const string ApiKey = "hjh7yu6t56tyr540o9u8767676r5674534453235264c75b6t7ggghgg76trf564e";
+    // The key is double-obfuscated in ApiKeyProvider and decoded on first use.
+    private static string ApiKey => ApiKeyProvider.ApiKey;
 
     internal const string ApplicationId = "zarchivesharp-cli";
 

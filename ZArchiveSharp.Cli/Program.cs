@@ -23,6 +23,8 @@ public static class Program
             .WriteTo.Sink(bugSink, LogEventLevel.Warning)
             .CreateLogger();
         UsageTracker.TrackLaunch();
+        var updateCheck = UpdateChecker.Begin();
+        var quiet = Array.Exists(args, static arg => arg is "-q" or "--quiet");
         try
         {
             return Run(args);
@@ -36,6 +38,8 @@ public static class Program
         {
             bugSink.Flush(TimeSpan.FromSeconds(6));
             Log.CloseAndFlush();
+            UpdateChecker.Notify(updateCheck, quiet);
+            ConsoleWindow.KeepOpenIfOwned(quiet);
         }
     }
 
