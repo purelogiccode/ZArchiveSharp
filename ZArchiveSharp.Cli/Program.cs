@@ -614,7 +614,7 @@ public static class Program
         // Binary output to stdout: informational lines must go to stderr or
         // they would corrupt piped data. List output IS the table, so it
         // always goes to stdout (quiet is ignored there, like the oracle).
-        var parsed = job!;
+        var parsed = job;
         Action<string>? log = parsed switch
         {
             { ShowHelp: true } => CliLog.Out,

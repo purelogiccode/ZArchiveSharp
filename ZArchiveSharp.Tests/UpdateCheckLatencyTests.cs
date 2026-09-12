@@ -26,25 +26,7 @@ public sealed class UpdateCheckLatencyTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         var held = new List<TcpClient>();
         using var stop = new CancellationTokenSource();
-        var acceptor = Task.Run(async () =>
-        {
-            try
-            {
-                while (!stop.IsCancellationRequested)
-                {
-                    var client = await listener.AcceptTcpClientAsync(stop.Token).ConfigureAwait(false);
-                    lock (held)
-                    {
-                        held.Add(client);
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is OperationCanceledException or SocketException
-                                           or ObjectDisposedException)
-            {
-                // Listener shut down.
-            }
-        });
+        var acceptor = AcceptWhileRunning(listener, held, stop.Token);
 
         try
         {
@@ -83,6 +65,27 @@ public sealed class UpdateCheckLatencyTests
             }
 
             await acceptor.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    private static async Task AcceptWhileRunning(TcpListener listener, List<TcpClient> held,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var client = await listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false);
+                lock (held)
+                {
+                    held.Add(client);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or SocketException
+                                       or ObjectDisposedException)
+        {
+            // Listener shut down.
         }
     }
 

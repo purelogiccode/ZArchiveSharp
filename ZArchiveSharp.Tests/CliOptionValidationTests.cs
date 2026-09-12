@@ -294,7 +294,7 @@ public sealed class CliOptionValidationTests : IDisposable
         var input = Path.Combine(work, "seekable_in.bin");
         File.WriteAllBytes(input, Payload(8192, 3));
         var output = Path.Combine(work, name);
-        var (started, exit, _, stderr) = RedumpIsoTests.TryRunCli(cli, work,
+        var (started, exit, _, _) = RedumpIsoTests.TryRunCli(cli, work,
             ["seekable", "compress", input, output]);
         if (!started || exit != 0)
         {
