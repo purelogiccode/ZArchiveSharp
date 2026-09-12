@@ -918,8 +918,10 @@ public static class Program
 
             if (sevenZipPath != null && archives.Count > 0 && !File.Exists(sevenZipPath))
             {
+                // A missing tool is an environment/runtime failure, not bad
+                // usage (-1 is documented as usage / invalid input only).
                 CliLog.Err($"Error: 7z binary not found: {sevenZipPath}");
-                return -1;
+                return ZarchiveCli.PackFailed;
             }
 
             var results = new List<ZarItemResult>();

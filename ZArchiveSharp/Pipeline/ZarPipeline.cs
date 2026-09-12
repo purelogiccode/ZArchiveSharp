@@ -284,8 +284,9 @@ public static class ZarPipeline
             afterItem();
             return new ZarItemResult(source, dest, ZarItemStatus.Cancelled, ex.Message);
         }
-        catch (Exception ex) when (IsBatchFault(ex))
+        catch (Exception ex)
         {
+            // result (not an AggregateException) so the rest keep running.
             afterItem();
             return new ZarItemResult(source, dest, ZarItemStatus.Failed, ex.Message);
         }
@@ -309,17 +310,12 @@ public static class ZarPipeline
             afterItem();
             return new ZarItemResult(zar, dest, ZarItemStatus.Cancelled, ex.Message);
         }
-        catch (Exception ex) when (IsBatchFault(ex))
+        catch (Exception ex)
         {
+            // Same isolation contract as PackOne: every fault is per-item.
             afterItem();
             return new ZarItemResult(zar, dest, ZarItemStatus.Failed, ex.Message);
         }
-    }
-
-    /// <summary>Faults an item may carry without aborting the batch (I/O, structure, bad paths).</summary>
-    private static bool IsBatchFault(Exception ex)
-    {
-        return ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException;
     }
 
     private static IProgress<ZarProgress>? Rebasing(

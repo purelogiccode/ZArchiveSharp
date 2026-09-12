@@ -107,6 +107,12 @@ public sealed class ZstdDecompressionStream : Stream
     /// <inheritdoc/>
     public override bool CanRead => !_disposed;
 
+    /// <summary>
+    /// Bytes currently retained by the frame buffer. Test seam for the
+    /// eager-release contract: zero once a completed frame is fully served.
+    /// </summary>
+    internal int RetainedFrameBytes => _frameOut.Count;
+
     /// <inheritdoc/>
     public override bool CanSeek => false;
 
@@ -240,6 +246,15 @@ public sealed class ZstdDecompressionStream : Stream
         System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_frameOut)
             .Slice(_outPos, served).CopyTo(buffer);
         _outPos += served;
+        // A frame-end buffer can still carry unserved trailing bytes (the
+        // last block decoded after the reader stopped); release it as soon
+        // as the tail is served. Mid-frame buffers stay for the checksum.
+        if (_frame is null && _outPos >= _frameOut.Count)
+        {
+            _frameOut.Clear();
+            _outPos = 0;
+        }
+
         return true;
     }
 
@@ -552,8 +567,8 @@ public sealed class ZstdDecompressionStream : Stream
                 throw new ZstdException("Truncated content checksum.");
             }
 
-            var flat = _frameOut.ToArray();
-            var actual = (uint)ZstdXxh64.Hash64(flat, state.ServeBase, flat.Length - state.ServeBase);
+            var actual = (uint)ZstdXxh64.Hash64(
+                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_frameOut).Slice(state.ServeBase));
             var expected = ZstdDecompressor.ReadU32Le(_inBuf, _inStart);
             _inStart += 4;
             if (actual != expected)
@@ -567,6 +582,20 @@ public sealed class ZstdDecompressionStream : Stream
             throw new ZstdException("zstd frame content size mismatch.");
         }
 
+        // Release the frame buffer as soon as the frame ends: drop the served
+        // prefix (dictionary bytes included), or clear outright when nothing
+        // is left to serve. A caller that stops reading after a frame must
+        // not keep up to MaxFrameContentSize referenced until dispose.
+        if (_outPos >= _frameOut.Count)
+        {
+            _frameOut.Clear();
+        }
+        else
+        {
+            _frameOut.RemoveRange(0, _outPos);
+        }
+
+        _outPos = 0;
         _frame = null;
     }
 

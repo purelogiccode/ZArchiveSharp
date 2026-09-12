@@ -29,7 +29,8 @@ zar [options] [input] [output]
 Outputs default to `<stem>.zar` / `<stem>_extracted` next to the input, like `zarchive.exe`.
 Args are exactly `input [output]` — extras fail with `-1` / `Too many paths specified`, never silently dropped. `-o/--output` occupies the output slot, so `zar in -o out extra` is a usage error.
 
-Batch mode (`-b/--batch`) processes every file under the input directory:
+Batch mode (`-b/--batch`) processes every processable file directly inside the
+input directory (one level, not recursive):
 archives (`.zip/.rar/.7z/.tar/.gz` via an installed 7z, `--seven-zip` override)
 → ISO/dir → `.zar`; `--mode auto/extract-archive/extract-iso/compress`
 selects the legs, `--keep-originals`/`--delete-source` (default keep) controls

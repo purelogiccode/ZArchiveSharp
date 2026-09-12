@@ -65,7 +65,7 @@ Either way, a new frame always starts at 1 GiB of uncompressed data (`SEEKABLE_M
 byte[] file = writer.Finish();
 
 // Head: standalone seek table, delivered out-of-band (sidecar, header row, ...)
-byte[] head = writer.FinishHead();
+(byte[] frames, byte[] seekTable) = writer.FinishHead();
 ```
 
 The standalone Head is useful when the table must precede the data (e.g., an object-storage header) or when appending data after the table was produced.
@@ -151,7 +151,7 @@ Per-frame bytes are streaming-style, byte-identical to real libzstd streaming (v
 | Limit | Value |
 |-------|-------|
 | Frame size (uncompressed) | 1 GiB (`SEEKABLE_MAX_FRAME_SIZE`) |
-| Frame count | 2³² − 1 (u32 table entries) |
+| Frame count | 134,217,728 (`0x08000000`, `SEEKABLE_MAX_FRAMES`) |
 
 ## Compatibility
 

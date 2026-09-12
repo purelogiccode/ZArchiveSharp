@@ -415,7 +415,7 @@ public sealed class ArchiveBatchTests
                 return;
             }
 
-            Assert.Equal(-1, exit);
+            Assert.Equal(ZarchiveCli.PackFailed, exit);
             Assert.Contains("7z binary not found", stderr, StringComparison.Ordinal);
         }
         finally

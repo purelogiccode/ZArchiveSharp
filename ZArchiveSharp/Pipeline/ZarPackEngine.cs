@@ -404,31 +404,49 @@ public static class ZarPackEngine
             }
             else
             {
-                using var output = new FileStream(outPath, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-                ulong offset = 0;
-                while (true)
+                // Write through a scratch file and move it into place only
+                // after the size check: a disk-full, corrupt-archive or
+                // cancellation fault must not leave a truncated file behind
+                // that looks like a successful extraction.
+                var temp = TempOutputPath(outPath);
+                try
                 {
-                    pause.WaitIfPaused(cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var read = reader.ReadFromFile(handle, offset, buffer);
-                    if (read == 0)
+                    using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                               65536))
                     {
-                        break;
+                        ulong offset = 0;
+                        while (true)
+                        {
+                            pause.WaitIfPaused(cancellationToken);
+                            cancellationToken.ThrowIfCancellationRequested();
+                            var read = reader.ReadFromFile(handle, offset, buffer);
+                            if (read == 0)
+                            {
+                                break;
+                            }
+
+                            output.Write(buffer, 0, (int)read);
+                            offset += read;
+                            bytesCompleted += (long)read;
+                            if (clock.Elapsed >= ProgressInterval)
+                            {
+                                Report(item.RelativePath);
+                                clock.Restart();
+                            }
+                        }
+
+                        if (offset != reader.GetFileSize(handle))
+                        {
+                            throw new InvalidOperationException($"Extraction failed: {item.SrcPath}");
+                        }
                     }
 
-                    output.Write(buffer, 0, (int)read);
-                    offset += read;
-                    bytesCompleted += (long)read;
-                    if (clock.Elapsed >= ProgressInterval)
-                    {
-                        Report(item.RelativePath);
-                        clock.Restart();
-                    }
+                    File.Move(temp, outPath, overwrite: true);
                 }
-
-                if (offset != reader.GetFileSize(handle))
+                catch
                 {
-                    throw new InvalidOperationException($"Extraction failed: {item.SrcPath}");
+                    TryDeleteFile(temp);
+                    throw;
                 }
             }
 
@@ -466,74 +484,85 @@ public static class ZarPackEngine
                 slots[s] = ArrayPool<byte>.Shared.Rent(ZArchiveCommon.CompressedBlockSize);
             }
 
+            var temp = TempOutputPath(path);
             try
             {
-                using var output = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 65536);
-                var block = globalOffset / (ulong)ZArchiveCommon.CompressedBlockSize;
-                var skip = (int)(globalOffset % (ulong)ZArchiveCommon.CompressedBlockSize);
-                var remaining = size;
-                ulong written = 0;
-                while (remaining > 0)
+                using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536))
                 {
-                    gate.WaitIfPaused(token);
-                    token.ThrowIfCancellationRequested();
-                    var touched = ((ulong)skip + remaining + (ulong)ZArchiveCommon.CompressedBlockSize - 1) /
-                                  (ulong)ZArchiveCommon.CompressedBlockSize;
-                    var wave = (int)Math.Min(touched, (ulong)waveSize);
-                    var waveFirst = block;
-                    Exception? failure = null;
-                    try
+                    var block = globalOffset / (ulong)ZArchiveCommon.CompressedBlockSize;
+                    var skip = (int)(globalOffset % (ulong)ZArchiveCommon.CompressedBlockSize);
+                    var remaining = size;
+                    ulong written = 0;
+                    while (remaining > 0)
                     {
-                        Parallel.For(0, wave,
-                            new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
-                            j =>
-                            {
-                                if (!archive.TryDecodeBlock(waveFirst + (ulong)j, slots[j]))
-                                {
-                                    lock (slots)
-                                    {
-                                        failure ??= new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
-                                    }
-                                }
-                            });
-                    }
-                    catch (AggregateException ex) when (ex.InnerExceptions.Count != 0)
-                    {
-                        // Same unwrapped contract as the parallel pack path:
-                        // callers map exact types (OCE stays raw, corruption
-                        // stays InvalidOperationException). IsBatchFault only
-                        // understands the inner type.
-                        ExceptionDispatchInfo.Throw(ex.InnerExceptions[0]);
-                    }
-                    if (failure is not null)
-                    {
-                        throw failure;
-                    }
-
-                    for (var j = 0; j < wave; j++)
-                    {
-                        var from = j == 0 ? skip : 0;
-                        var take = (int)Math.Min(
-                            (ulong)ZArchiveCommon.CompressedBlockSize - (ulong)from, remaining);
-                        output.Write(slots[j], from, take);
-                        remaining -= (ulong)take;
-                        written += (ulong)take;
-                        completed += take;
-                        if (timer.Elapsed >= ProgressInterval)
+                        gate.WaitIfPaused(token);
+                        token.ThrowIfCancellationRequested();
+                        var touched = ((ulong)skip + remaining + (ulong)ZArchiveCommon.CompressedBlockSize - 1) /
+                                      (ulong)ZArchiveCommon.CompressedBlockSize;
+                        var wave = (int)Math.Min(touched, (ulong)waveSize);
+                        var waveFirst = block;
+                        Exception? failure = null;
+                        try
                         {
-                            Report(entry.RelativePath);
-                            timer.Restart();
+                            Parallel.For(0, wave,
+                                new ParallelOptions { MaxDegreeOfParallelism = dop, CancellationToken = token },
+                                j =>
+                                {
+                                    if (!archive.TryDecodeBlock(waveFirst + (ulong)j, slots[j]))
+                                    {
+                                        lock (slots)
+                                        {
+                                            failure ??=
+                                                new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                                        }
+                                    }
+                                });
                         }
+                        catch (AggregateException ex) when (ex.InnerExceptions.Count != 0)
+                        {
+                            // Same unwrapped contract as the parallel pack path:
+                            // callers map exact types (OCE stays raw, corruption
+                            // stays InvalidOperationException).
+                            ExceptionDispatchInfo.Throw(ex.InnerExceptions[0]);
+                        }
+
+                        if (failure is not null)
+                        {
+                            throw failure;
+                        }
+
+                        for (var j = 0; j < wave; j++)
+                        {
+                            var from = j == 0 ? skip : 0;
+                            var take = (int)Math.Min(
+                                (ulong)ZArchiveCommon.CompressedBlockSize - (ulong)from, remaining);
+                            output.Write(slots[j], from, take);
+                            remaining -= (ulong)take;
+                            written += (ulong)take;
+                            completed += take;
+                            if (timer.Elapsed >= ProgressInterval)
+                            {
+                                Report(entry.RelativePath);
+                                timer.Restart();
+                            }
+                        }
+
+                        block += (ulong)wave;
+                        skip = 0;
                     }
 
-                    block += (ulong)wave;
-                    skip = 0;
+                    if (written != size)
+                    {
+                        throw new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
+                    }
                 }
 
-                if (written != size)
-                {
-                    throw new InvalidOperationException($"Extraction failed: {entry.SrcPath}");
-                }
+                File.Move(temp, path, overwrite: true);
+            }
+            catch
+            {
+                TryDeleteFile(temp);
+                throw;
             }
             finally
             {
@@ -543,13 +572,44 @@ public static class ZarPackEngine
                 }
             }
         }
+
+        // Scratch path next to the destination (same directory, so the final
+        // move cannot cross volumes); unique so parallel workers never share.
+        static string TempOutputPath(string outPath)
+        {
+            var dir = Path.GetDirectoryName(outPath) ?? "";
+            return Path.Combine(dir, $".{Path.GetFileName(outPath)}.{Guid.NewGuid():N}.part");
+        }
+
+        static void TryDeleteFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Best effort: the original extraction fault is the one to surface.
+            }
+        }
     }
+
+    /// <summary>Maximum archive directory nesting accepted when extracting.</summary>
+    public const int MaxExtractDepth = 1024;
 
     private static void CollectEntries(
         ZArchiveReader reader, string srcPath, string relPath,
-        List<ExtractPlanEntry> plan, CancellationToken cancellationToken)
+        List<ExtractPlanEntry> plan, CancellationToken cancellationToken, int depth = 0)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (depth > MaxExtractDepth)
+        {
+            // Recursion is bounded: a crafted archive with thousands of
+            // nesting levels must fail catchably, not with StackOverflow.
+            throw new InvalidOperationException(
+                $"Archive directory nesting exceeds the supported depth ({MaxExtractDepth}).");
+        }
+
         var dirHandle = reader.LookUp(srcPath);
         if (dirHandle == ZArchiveReader.InvalidNode || !reader.IsDirectory(dirHandle))
         {
@@ -574,7 +634,7 @@ public static class ZarPackEngine
             if (entry.IsDirectory)
             {
                 plan.Add(new ExtractPlanEntry(childSrc, childRel, true, 0, logLine));
-                CollectEntries(reader, childSrc, childRel, plan, cancellationToken);
+                CollectEntries(reader, childSrc, childRel, plan, cancellationToken, depth + 1);
             }
             else
             {

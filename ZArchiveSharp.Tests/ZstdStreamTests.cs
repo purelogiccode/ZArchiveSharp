@@ -394,6 +394,22 @@ public sealed class ZstdStreamTests
     }
 
     [Fact]
+    public void Stream_FullyServedFrame_ReleasesBuffer()
+    {
+        var input = Hetero(200000);
+        var frame = CompressViaStream(input, 6, true, 5000);
+        using var src = new MemoryStream(frame, writable: false);
+        using var dec = new ZstdDecompressionStream(src);
+        using var outMs = new MemoryStream();
+        dec.CopyTo(outMs);
+        Assert.Equal(input, outMs.ToArray());
+
+        // Pre-fix the decoded frame stayed referenced until the next header
+        // parsed (or dispose): a fully served frame must release it eagerly.
+        Assert.Equal(0, dec.RetainedFrameBytes);
+    }
+
+    [Fact]
     public void Stream_ChecksumMismatch_Throws()
     {
         // Random data encodes as raw blocks (no other validation), so a

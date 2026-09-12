@@ -423,9 +423,11 @@ Decompresses a zstd frame.
 ## ZstdCompressionStream (ZArchiveSharp.Zstd)
 
 Write-only zstd compression stream. Buffers everything written and emits one
-logical frame with an unknown-size header on `Dispose()` — byte-identical to
+logical frame with an unknown-size header on `Dispose()` - byte-identical to
 encoding the concatenated input in one shot. `Flush()` emits the 6-byte frame
-header once payload exists. Not seekable; async is thin-over-sync.
+header once payload exists - except with a dictionary, where the header carries
+the final content size and nothing is emitted before `Dispose()`. Not seekable;
+async is thin-over-sync.
 
 ```csharp
 public ZstdCompressionStream(Stream destination, int level = 6, bool checksum = false, bool leaveOpen = false)
@@ -662,10 +664,11 @@ Finalizes and returns the complete seekable file bytes.
 #### FinishHead
 
 ```csharp
-public byte[] FinishHead()
+public (byte[] Data, byte[] SeekTable) FinishHead()
 ```
 
-Returns just the seek table as a standalone Head frame.
+Returns the bare frame data plus the standalone `Head` seek table: `Data` is
+the frames without an appended `Foot`, `SeekTable` is the serialized table.
 
 ---
 
@@ -716,6 +719,15 @@ public byte[] DecompressRange(long offset, long length)
 ```
 
 Decompresses a byte range, decoding only the frames the range touches.
+
+#### DecompressFrames
+
+```csharp
+public byte[] DecompressFrames(int first, int lastInclusive)
+```
+
+Decompresses frames `first` through `lastInclusive` concatenated
+(`set_lower_frame` / `set_upper_frame`).
 
 ---
 

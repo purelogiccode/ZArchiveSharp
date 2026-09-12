@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ZArchiveSharp.Pipeline;
+using ZArchiveSharp.Zstd;
 
 namespace ZArchiveSharp.Tests;
 
@@ -350,6 +351,69 @@ public sealed class PipelineTests : IDisposable
         Assert.Throws<ZarArchiveOpenException>(() => ZarPipeline.Extract(zar, Path.Combine(root, "dest")));
     }
 
+    [Theory]
+    [InlineData(1)] // sequential writer loop
+    [InlineData(4)] // parallel block-wave loop
+    public void Extract_CorruptLaterBlock_LeavesNoPartialFile(int workers)
+    {
+        var root = NewTempDir($"pipe_partial{workers}");
+        var blockSize = ZArchiveCommon.CompressedBlockSize;
+        var first = new byte[blockSize];
+        new Random(20260913).NextBytes(first);
+        var data = new byte[blockSize * 2];
+        first.CopyTo(data, 0);
+        Array.Fill(data, (byte)'A', blockSize, blockSize);
+
+        var zar = Path.Combine(root, "big.zar");
+        using (var output = File.Create(zar))
+        using (var writer = new ZArchiveWriter(output))
+        {
+            Assert.True(writer.StartNewFile("big.bin"));
+            writer.AppendData(data);
+            writer.Finalize();
+        }
+
+        // Block 0 is stored raw (locatable); corrupt block 1's frame magic so
+        // the second read fails after the first block was already written.
+        var bytes = File.ReadAllBytes(zar);
+        var block0 = bytes.AsSpan().IndexOf(first.AsSpan(0, 32));
+        Assert.True(block0 >= 0, "Could not locate the raw first block in the archive.");
+        bytes[block0 + blockSize] ^= 0xFF;
+        File.WriteAllBytes(zar, bytes);
+
+        var dest = Path.Combine(root, "out");
+        var options = new ZarPipelineOptions { MaxDegreeOfParallelism = workers };
+        Assert.Throws<InvalidOperationException>(() => ZarPipeline.Extract(zar, dest, options));
+
+        // The scratch file (and any partial output) must be gone.
+        Assert.False(File.Exists(Path.Combine(dest, "big.bin")));
+        Assert.Empty(Directory.GetFiles(dest, "big.bin", SearchOption.AllDirectories));
+        Assert.Empty(Directory.GetFiles(dest, "*.part", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void Extract_DeeplyNestedArchive_FailsCatchably()
+    {
+        var root = NewTempDir("pipe_deep");
+        var depth = ZarPackEngine.MaxExtractDepth + 10;
+        var nested = string.Join('/', Enumerable.Repeat("d", depth));
+
+        var zar = Path.Combine(root, "deep.zar");
+        using (var output = File.Create(zar))
+        using (var writer = new ZArchiveWriter(output))
+        {
+            Assert.True(writer.MakeDir(nested, recursive: true));
+            Assert.True(writer.StartNewFile(nested + "/f.txt"));
+            writer.AppendData([1]);
+            writer.Finalize();
+        }
+
+        // Bounded recursion: a crafted deep tree must throw catchably instead
+        // of overflowing the stack.
+        var ex = Assert.Throws<InvalidOperationException>(() => ZarPipeline.Extract(zar, Path.Combine(root, "out")));
+        Assert.Contains("depth", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // ------------------------------------------------------------------
     // Collision policies
     // ------------------------------------------------------------------
@@ -499,6 +563,36 @@ public sealed class PipelineTests : IDisposable
         Assert.Equal(ZarItemStatus.Failed, results[1].Status);
         Assert.NotNull(results[1].ErrorMessage);
         Assert.Equal(ZarProcessState.Failed, ZarPipeline.RollUp(results));
+    }
+
+    [Fact]
+    public void PackBatch_UnexpectedFault_IsIsolatedPerItem()
+    {
+        var root = NewTempDir("pipe_fault");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        PopulateRich(src);
+        var options = new ZarPipelineOptions
+        {
+            Compressor = new ThrowingCompressor(),
+            MaxDegreeOfParallelism = 2,
+        };
+
+        // A compressor fault is not one of the I/O fault types: it must still
+        // come back as this item's ZarItemResult, not escape as
+        // AggregateException from Parallel.For.
+        var results = ZarPipeline.PackBatch([src, src], Path.Combine(root, "zars"), options);
+
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal(ZarItemStatus.Failed, r.Status));
+        Assert.All(results, r => Assert.NotNull(r.ErrorMessage));
+    }
+
+    private sealed class ThrowingCompressor : IZarBlockCompressor
+    {
+        public int Compress(ReadOnlySpan<byte> source, Span<byte> destination)
+        {
+            throw new ZstdException("compressor exploded");
+        }
     }
 
     [Fact]

@@ -37,8 +37,15 @@ internal static class ZstdXxh64
     /// <summary>Computes XXH64 over <paramref name="data"/> with seed 0.</summary>
     public static ulong Hash64(byte[] data, int offset, int length)
     {
-        var p = offset;
-        var end = offset + length;
+        return Hash64(new ReadOnlySpan<byte>(data, offset, length));
+    }
+
+    /// <summary>Computes XXH64 over <paramref name="data"/> with seed 0.</summary>
+    public static ulong Hash64(ReadOnlySpan<byte> data)
+    {
+        var p = 0;
+        var end = data.Length;
+        var length = data.Length;
         ulong hash;
         if (length >= 32)
         {
@@ -49,13 +56,13 @@ internal static class ZstdXxh64
             var limit = end - 32;
             while (p <= limit)
             {
-                v1 = Round(v1, BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p)));
+                v1 = Round(v1, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(p)));
                 p += 8;
-                v2 = Round(v2, BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p)));
+                v2 = Round(v2, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(p)));
                 p += 8;
-                v3 = Round(v3, BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p)));
+                v3 = Round(v3, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(p)));
                 p += 8;
-                v4 = Round(v4, BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p)));
+                v4 = Round(v4, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(p)));
                 p += 8;
             }
 
@@ -73,14 +80,14 @@ internal static class ZstdXxh64
         hash += (ulong)length;
         while (p + 8 <= end)
         {
-            hash ^= Round(0, BinaryPrimitives.ReadUInt64LittleEndian(data.AsSpan(p)));
+            hash ^= Round(0, BinaryPrimitives.ReadUInt64LittleEndian(data.Slice(p)));
             hash = (Rotl(hash, 27) * P1) + P4;
             p += 8;
         }
 
         if (p + 4 <= end)
         {
-            hash ^= BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(p)) * P1;
+            hash ^= BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(p)) * P1;
             hash = (Rotl(hash, 23) * P2) + P3;
             p += 4;
         }
