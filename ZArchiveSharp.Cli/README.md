@@ -93,6 +93,15 @@ Identical to `zarchive.exe` (`-2` and `-5`..`-9` are unused upstream too):
 - Compression is byte-identical to libzstd 1.5.7; archives interop with `zarchive.exe` both ways
 - No native dependencies, no `unsafe`, trimmable and AOT-compatible
 
+## Error Reporting
+
+All logging flows through Serilog. Warnings and errors are also forwarded
+to the PureLogicCode bug-report API with environment, error, and exception
+details (background sender, at most 9 reports/minute, never blocks or
+crashes the CLI). Each launch also records one anonymous usage hit with
+the PureLogicCode ApplicationStats API (rate-limited server-side to
+1/hour/IP). Set `ZAR_BUG_REPORT=off` to disable all outbound telemetry.
+
 ## Documentation
 
 Full documentation lives in the [repository wiki](https://github.com/purelogiccode/ZArchiveSharp/wiki) ([docs/](https://github.com/purelogiccode/ZArchiveSharp/tree/master/docs)): format spec, compression guide, pipeline API, benchmarks and FAQ.

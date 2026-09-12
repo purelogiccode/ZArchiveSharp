@@ -155,6 +155,10 @@ public static class CliRunner
             CreateNoWindow = true,
         };
 
+        // Parity runs exercise failure paths on purpose: keep them off the
+        // production bug-report API (the CLI honors ZAR_BUG_REPORT=off).
+        psi.Environment["ZAR_BUG_REPORT"] = "off";
+
         using var process = new Process();
         process.StartInfo = psi;
         process.Start();

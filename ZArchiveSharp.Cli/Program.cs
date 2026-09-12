@@ -1,3 +1,5 @@
+using Serilog;
+using Serilog.Events;
 using ZArchiveSharp.Pipeline;
 using ZArchiveSharp.Zstd;
 #if HAS_XISO
@@ -13,6 +15,31 @@ public static class Program
     /// <param name="args">Command-line arguments.</param>
     /// <returns>Process exit code (0 on success).</returns>
     public static int Main(string[] args)
+    {
+        using var bugSink = new BugReportSink();
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .WriteTo.Sink(new CliConsoleSink())
+            .WriteTo.Sink(bugSink, LogEventLevel.Warning)
+            .CreateLogger();
+        UsageTracker.TrackLaunch();
+        try
+        {
+            return Run(args);
+        }
+        catch (Exception ex)
+        {
+            CliLog.Fatal("Unhandled exception.", ex);
+            return ZarchiveCli.PackFailed; // generic internal failure; no closer oracle code exists
+        }
+        finally
+        {
+            bugSink.Flush(TimeSpan.FromSeconds(6));
+            Log.CloseAndFlush();
+        }
+    }
+
+    private static int Run(string[] args)
     {
         if (args.Length == 0)
         {
@@ -71,7 +98,7 @@ public static class Program
                 case "--policy" or "-p":
                     if (i + 1 >= args.Length)
                     {
-                        Console.Error.WriteLine(
+                        CliLog.Err(
                             "Error: missing value for --policy (expected fail, skip, overwrite, auto-rename).");
                         return ZarchiveCli.BadUsage;
                     }
@@ -91,7 +118,7 @@ public static class Program
                 case "--dict":
                     if (i + 1 >= args.Length)
                     {
-                        Console.Error.WriteLine("Error: missing value for --dict (expected a dictionary file).");
+                        CliLog.Err("Error: missing value for --dict (expected a dictionary file).");
                         return ZarchiveCli.BadUsage;
                     }
 
@@ -112,7 +139,7 @@ public static class Program
                 case "--mode":
                     if (i + 1 >= args.Length)
                     {
-                        Console.Error.WriteLine(
+                        CliLog.Err(
                             "Error: missing value for --mode (expected auto, extract-archive, extract-iso, compress).");
                         return ZarchiveCli.BadUsage;
                     }
@@ -128,7 +155,7 @@ public static class Program
                 case "--seven-zip":
                     if (i + 1 >= args.Length)
                     {
-                        Console.Error.WriteLine("Error: missing value for --seven-zip (expected a 7z binary path).");
+                        CliLog.Err("Error: missing value for --seven-zip (expected a 7z binary path).");
                         return ZarchiveCli.BadUsage;
                     }
 
@@ -141,7 +168,7 @@ public static class Program
                     helpRequested = true;
                     break;
                 case "--version" or "-v":
-                    Console.WriteLine($"zar {GetVersion()}");
+                    CliLog.Out($"zar {GetVersion()}");
                     return 0;
                 default:
                     positional.Add(args[i]);
@@ -161,7 +188,7 @@ public static class Program
             {
                 if (positional.Count > 0)
                 {
-                    Console.WriteLine("Too many paths specified");
+                    CliLog.WarnToStdout("Too many paths specified");
                     return ZarchiveCli.BadUsage;
                 }
             }
@@ -169,7 +196,7 @@ public static class Program
             {
                 if (positional.Count > 1)
                 {
-                    Console.WriteLine("Too many paths specified");
+                    CliLog.WarnToStdout("Too many paths specified");
                     return ZarchiveCli.BadUsage;
                 }
 
@@ -185,7 +212,7 @@ public static class Program
             {
                 if (positional.Count > 1)
                 {
-                    Console.WriteLine("Too many paths specified");
+                    CliLog.WarnToStdout("Too many paths specified");
                     return ZarchiveCli.BadUsage;
                 }
 
@@ -220,7 +247,7 @@ public static class Program
         };
         if (collisionPolicy == null)
         {
-            Console.Error.WriteLine(
+            CliLog.Err(
                 $"Error: invalid --policy '{policy}' (expected fail, skip, overwrite, auto-rename).");
             return ZarchiveCli.BadUsage;
         }
@@ -276,13 +303,13 @@ public static class Program
         // (same message and stdout channel as the oracle and ZarchiveCli).
         if (positional.Count > 2)
         {
-            Console.WriteLine("Too many paths specified");
+            CliLog.WarnToStdout("Too many paths specified");
             return ZarchiveCli.BadUsage;
         }
 
         if (stdoutFlag)
         {
-            Console.Error.WriteLine("Error: --stdout is only supported with 'zar zstd'.");
+            CliLog.Err("Error: --stdout is only supported with 'zar zstd'.");
             return ZarchiveCli.BadUsage;
         }
 
@@ -291,7 +318,7 @@ public static class Program
         {
             if (!ZarProcessModes.TryParse(modeRaw, out processMode))
             {
-                Console.Error.WriteLine(
+                CliLog.Err(
                     $"Error: invalid --mode '{modeRaw}' (expected auto, extract-archive, extract-iso, compress).");
                 return ZarchiveCli.BadUsage;
             }
@@ -307,7 +334,7 @@ public static class Program
         {
             if (modeRaw != null)
             {
-                Console.Error.WriteLine("Error: --mode is only supported with --batch.");
+                CliLog.Err("Error: --mode is only supported with --batch.");
                 return ZarchiveCli.BadUsage;
             }
 
@@ -318,13 +345,13 @@ public static class Program
 
             if (deleteSource)
             {
-                Console.Error.WriteLine("Error: --delete-source is only supported with --batch.");
+                CliLog.Err("Error: --delete-source is only supported with --batch.");
                 return ZarchiveCli.BadUsage;
             }
 
             if (sevenZipRaw != null)
             {
-                Console.Error.WriteLine("Error: --seven-zip is only supported with --batch.");
+                CliLog.Err("Error: --seven-zip is only supported with --batch.");
                 return ZarchiveCli.BadUsage;
             }
         }
@@ -371,7 +398,7 @@ public static class Program
         if (inputPath != null) args2.Add(inputPath);
         if (outputPath != null) args2.Add(outputPath);
 
-        return ZarchiveCli.Run(args2.ToArray(), options, log: quiet ? null : Console.WriteLine);
+        return ZarchiveCli.Run(args2.ToArray(), options, log: quiet ? null : CliLog.Out);
     }
 
     /// <summary>
@@ -381,7 +408,7 @@ public static class Program
     /// </summary>
     private static int RejectNonBatchPolicy(string policy)
     {
-        Console.Error.WriteLine($"Error: --policy {policy} is only supported with --batch.");
+        CliLog.Err($"Error: --policy {policy} is only supported with --batch.");
         return ZarchiveCli.BadUsage;
     }
 
@@ -392,8 +419,8 @@ public static class Program
                 defaultLevel: level, defaultDictPath: dictPath, defaultChecksum: checksum,
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
-            Console.Error.WriteLine($"Error: {parseError}");
-            Console.Error.WriteLine(ZstdCli.UsageText);
+            CliLog.Err($"Error: {parseError}");
+            CliLog.InfoToStderr(ZstdCli.UsageText);
             return ZarchiveCli.BadUsage;
         }
 
@@ -403,8 +430,8 @@ public static class Program
         Action<string>? log = job!.Quiet && !job.ShowHelp
             ? null
             : job.ShowHelp || job.OutputPath is not null
-                ? Console.WriteLine
-                : Console.Error.WriteLine;
+                ? CliLog.Out
+                : CliLog.InfoToStderr;
 
         using var cts = new CancellationTokenSource();
         // Safe: unsubscribed in finally before cts is disposed at scope end.
@@ -418,11 +445,11 @@ public static class Program
         try
         {
             return ZstdCli.RunAsync(job, Console.OpenStandardInput(), Console.OpenStandardOutput(),
-                log, Console.Error.WriteLine, cts.Token).GetAwaiter().GetResult();
+                log, CliLog.Err, cts.Token).GetAwaiter().GetResult();
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("Canceled.");
+            CliLog.InfoToStderr("Canceled.");
             return 130; // SIGINT shell convention, not a pack/extract code.
         }
         finally
@@ -440,7 +467,7 @@ public static class Program
         // this subcommand is a usage error, not a silent ignore.
         if (dictPath != null)
         {
-            Console.Error.WriteLine(
+            CliLog.Err(
                 "Error: --dict is not supported with 'zar seekable' (seekable frames carry no dictionary).");
             return ZarchiveCli.BadUsage;
         }
@@ -449,8 +476,8 @@ public static class Program
                 defaultLevel: levelExplicit ? globalLevel : 3, defaultChecksum: checksumOverride,
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
-            Console.Error.WriteLine($"Error: {parseError}");
-            Console.Error.WriteLine(SeekableCli.UsageText);
+            CliLog.Err($"Error: {parseError}");
+            CliLog.InfoToStderr(SeekableCli.UsageText);
             return ZarchiveCli.BadUsage;
         }
 
@@ -460,11 +487,11 @@ public static class Program
         var parsed = job!;
         Action<string>? log = parsed switch
         {
-            { ShowHelp: true } => Console.WriteLine,
-            { Command: SeekableCli.SeekableCommand.List } => Console.WriteLine,
+            { ShowHelp: true } => CliLog.Out,
+            { Command: SeekableCli.SeekableCommand.List } => CliLog.Out,
             { Quiet: true } => null,
-            { OutputPath: not null } => Console.WriteLine,
-            _ => Console.Error.WriteLine,
+            { OutputPath: not null } => CliLog.Out,
+            _ => CliLog.InfoToStderr,
         };
 
         using var cts = new CancellationTokenSource();
@@ -479,11 +506,11 @@ public static class Program
         try
         {
             return SeekableCli.RunAsync(parsed, Console.OpenStandardInput(), Console.OpenStandardOutput(),
-                log, Console.Error.WriteLine, cts.Token).GetAwaiter().GetResult();
+                log, CliLog.Err, cts.Token).GetAwaiter().GetResult();
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("Canceled.");
+            CliLog.InfoToStderr("Canceled.");
             return 130; // SIGINT shell convention, not a pack/extract code.
         }
         finally
@@ -501,7 +528,7 @@ public static class Program
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine($"Error: dictionary file not found: {path}");
+            CliLog.Err($"Error: dictionary file not found: {path}", ex);
             return null;
         }
 
@@ -511,7 +538,7 @@ public static class Program
         }
         catch (Exception ex) when (ex is ArgumentException or ZstdException)
         {
-            Console.Error.WriteLine($"Error: invalid dictionary file '{path}': {ex.Message}");
+            CliLog.Err($"Error: invalid dictionary file '{path}': {ex.Message}", ex);
             return null;
         }
     }
@@ -563,7 +590,7 @@ public static class Program
             {
                 var video =
  videoType >= 0 ? videoType.ToString(System.Globalization.CultureInfo.InvariantCulture) : "unknown (assuming 0)";
-                Console.WriteLine($"Redump ISO detected (type {redumpType}, video {video}); game partition at 0x{isoOffset:X}.");
+                CliLog.Out($"Redump ISO detected (type {redumpType}, video {video}); game partition at 0x{isoOffset:X}.");
             }
 
             return isoOffset;
@@ -580,13 +607,16 @@ public static class Program
     /// partition offset is resolved first, like single <c>--iso</c>). Single
     /// `--iso` and the batch ISO/archive legs share this; it never writes
     /// to the console when <paramref name="quiet"/> is true. Returns true on
-    /// success with <paramref name="error"/> null, else false with a reason.
+    /// success with <paramref name="error"/> null, else false with a reason
+    /// (and the captured exception in <paramref name="errorException"/> when
+    /// the failure threw).
     /// </summary>
     private static bool TryPackIso(string isoPath, string destZar, int level, bool quiet,
         IZarBlockCompressor? compressor, ZstdDictionary? dictionary,
-        IProgress<ZarProgress>? progress, out string? error)
+        IProgress<ZarProgress>? progress, out string? error, out Exception? errorException)
     {
         error = null;
+        errorException = null;
         if (!File.Exists(isoPath))
         {
             error = $"ISO file not found: {isoPath}";
@@ -604,7 +634,7 @@ public static class Program
         // the video area as garbage, so resolve the game offset first.
         var isoOffset = ResolveGamePartitionOffset(isoPath, quiet);
 
-        if (!quiet) Console.WriteLine($"Converting XISO to ZAR: {isoPath} -> {destZar}");
+        if (!quiet) CliLog.Out($"Converting XISO to ZAR: {isoPath} -> {destZar}");
 
         var comp = compressor;
         if (comp == null && (level != 6 || dictionary != null))
@@ -616,10 +646,10 @@ public static class Program
         {
             var ok =
  XisoZarchive.CreateZar(isoPath, destZar, isoOffset, quiet: quiet, compressor: comp, progress: progress);
-            if (!quiet) Console.WriteLine();
+            if (!quiet) CliLog.Out();
             if (ok)
             {
-                if (!quiet) Console.WriteLine($"Done: {destZar}");
+                if (!quiet) CliLog.Out($"Done: {destZar}");
                 return true;
             }
 
@@ -629,6 +659,7 @@ public static class Program
         catch (Exception ex)
         {
             error = ex.Message;
+            errorException = ex;
             return false;
         }
 #endif
@@ -639,14 +670,14 @@ public static class Program
     {
         if (!File.Exists(isoPath))
         {
-            Console.Error.WriteLine($"Error: ISO file not found: {isoPath}");
+            CliLog.Err($"Error: ISO file not found: {isoPath}");
             return -10;
         }
 
 #if !HAS_XISO
-        Console.Error.WriteLine(
+        CliLog.Err(
             "Error: --iso is unavailable: this build of zar was compiled without XISOSharp support.");
-        Console.Error.WriteLine(
+        CliLog.Err(
             "Rebuild with XISOSharp enabled (it is omitted only with -p:XisoSharpAvailable=false).");
         return ZarchiveCli.BadUsage;
 #else
@@ -654,7 +685,7 @@ public static class Program
 
         if (File.Exists(output))
         {
-            Console.Error.WriteLine($"Error: Output file already exists: {output}");
+            CliLog.Err($"Error: Output file already exists: {output}");
             return -11;
         }
 
@@ -663,16 +694,17 @@ public static class Program
             if (p.BytesTotal > 0)
             {
                 var pct = (double)p.BytesCompleted / p.BytesTotal * 100;
-                Console.Write($"\r  {pct:F1}% ({p.BytesCompleted / (1024 * 1024)} / {p.BytesTotal / (1024 * 1024)} MiB)");
+                CliLog.Progress($"\r  {pct:F1}% ({p.BytesCompleted / (1024 * 1024)} / {p.BytesTotal / (1024 * 1024)} MiB)");
             }
         });
 
-        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, progress, out var error))
+        if (TryPackIso(isoPath, output, level, quiet, compressor, dictionary, progress,
+                out var error, out var errorException))
         {
             return 0;
         }
 
-        Console.Error.WriteLine($"Error: {error}");
+        CliLog.Err($"Error: {error}", errorException);
         return -13;
 #endif
     }
@@ -683,7 +715,7 @@ public static class Program
     {
         if (inputPath == null || !Directory.Exists(inputPath))
         {
-            Console.Error.WriteLine("Error: --batch requires an input directory.");
+            CliLog.Err("Error: --batch requires an input directory.");
             return -1;
         }
 
@@ -692,11 +724,11 @@ public static class Program
         var files = ProcessableFiles.Find(inputPath, mode);
         if (files.Count == 0)
         {
-            if (!quiet) Console.WriteLine("No processable files found.");
+            if (!quiet) CliLog.Out("No processable files found.");
             return 0;
         }
 
-        if (!quiet) Console.WriteLine($"Found {files.Count} file(s). Processing with {jobs} workers...");
+        if (!quiet) CliLog.Out($"Found {files.Count} file(s). Processing with {jobs} workers...");
 
         var options = new ZarPipelineOptions
         {
@@ -716,7 +748,7 @@ public static class Program
                 if (p.Operation == ZarOperation.Pack)
                 {
                     var pct = p.Ratio * 100;
-                    Console.Write(
+                    CliLog.Progress(
                         $"\r  [{p.FilesCompleted}/{p.FilesTotal}] {pct:F1}% {Path.GetFileName(p.SourcePath)}");
                 }
             });
@@ -748,7 +780,7 @@ public static class Program
 
             if (sevenZipPath != null && archives.Count > 0 && !File.Exists(sevenZipPath))
             {
-                Console.Error.WriteLine($"Error: 7z binary not found: {sevenZipPath}");
+                CliLog.Err($"Error: 7z binary not found: {sevenZipPath}");
                 return -1;
             }
 
@@ -769,7 +801,7 @@ public static class Program
                     quiet, compressor, dictionary, sevenZipPath, jobs, progress));
             }
 
-            if (!quiet) Console.WriteLine();
+            if (!quiet) CliLog.Out();
 
             int ok = 0, fail = 0, skip = 0;
             foreach (var r in results)
@@ -781,18 +813,18 @@ public static class Program
                 else if (r.Status == ZarItemStatus.Skipped)
                 {
                     skip++;
-                    if (!quiet) Console.WriteLine($"  Skipped: {r.SourcePath} - {r.ErrorMessage}");
+                    if (!quiet) CliLog.Out($"  Skipped: {r.SourcePath} - {r.ErrorMessage}");
                 }
                 else
                 {
                     fail++;
-                    Console.Error.WriteLine($"  Failed: {r.SourcePath} - {r.ErrorMessage}");
+                    CliLog.Err($"  Failed: {r.SourcePath} - {r.ErrorMessage}");
                 }
             }
 
             if (!quiet)
             {
-                Console.WriteLine(skip == 0
+                CliLog.Out(skip == 0
                     ? $"Batch complete: {ok} succeeded, {fail} failed."
                     : $"Batch complete: {ok} succeeded, {fail} failed, {skip} skipped.");
             }
@@ -801,7 +833,7 @@ public static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"Error: {ex.Message}");
+            CliLog.Err($"Error: {ex.Message}", ex);
             return -13;
         }
     }
@@ -841,7 +873,8 @@ public static class Program
                 return new ZarItemResult(iso, dest, ZarItemStatus.Skipped, "Output already exists.");
             }
 
-            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, progress, out var error))
+            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, progress,
+                    out var error, out _))
             {
                 if (options.DeleteSourceOnSuccess)
                 {
@@ -915,13 +948,13 @@ public static class Program
                     "No 7z binary found. Install 7-Zip and ensure 7z is on PATH, or pass --seven-zip <path>.");
             }
 
-            if (!quiet) Console.WriteLine($"Extracting archive: {archive}");
+            if (!quiet) CliLog.Out($"Extracting archive: {archive}");
             IProgress<double>? sevenProgress = quiet
                 ? null
                 : new Progress<double>(ratio =>
-                    Console.Write($"\r  {ratio * 100:F1}% {stem}"));
+                    CliLog.Progress($"\r  {ratio * 100:F1}% {stem}"));
             SevenZip.Extract(archive, temp, tool, sevenProgress, options.Pause);
-            if (!quiet) Console.WriteLine();
+            if (!quiet) CliLog.Out();
 
             var extracted = Directory.EnumerateFileSystemEntries(temp, "*", SearchOption.AllDirectories).ToList();
             string? current;
@@ -1014,7 +1047,7 @@ public static class Program
         }
     }
 
-    private static string GetVersion()
+    internal static string GetVersion()
     {
         var info = typeof(Program).Assembly
             .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
@@ -1041,60 +1074,60 @@ public static class Program
 
     private static void PrintUsage()
     {
-        Console.WriteLine("Usage: zar [options] [input] [output]");
-        Console.WriteLine("       zar zstd -c|-d [options] [input] [output]");
-        Console.WriteLine("       zar seekable compress|decompress|list [options] [input] [output]");
-        Console.WriteLine();
-        Console.WriteLine("Pack a directory to .zar, extract a .zar, convert an XISO, or");
-        Console.WriteLine("compress/decompress single zstd streams:");
-        Console.WriteLine("  zar <directory> [output.zar]         Pack directory to .zar");
-        Console.WriteLine("  zar <archive.zar> [output_dir]       Extract .zar to directory");
-        Console.WriteLine("  zar --iso <game.iso> [output.zar]    Convert XISO to .zar");
+        CliLog.Out("Usage: zar [options] [input] [output]");
+        CliLog.Out("       zar zstd -c|-d [options] [input] [output]");
+        CliLog.Out("       zar seekable compress|decompress|list [options] [input] [output]");
+        CliLog.Out();
+        CliLog.Out("Pack a directory to .zar, extract a .zar, convert an XISO, or");
+        CliLog.Out("compress/decompress single zstd streams:");
+        CliLog.Out("  zar <directory> [output.zar]         Pack directory to .zar");
+        CliLog.Out("  zar <archive.zar> [output_dir]       Extract .zar to directory");
+        CliLog.Out("  zar --iso <game.iso> [output.zar]    Convert XISO to .zar");
 #if HAS_XISO
-        Console.WriteLine("                                     (Redump ISOs auto-detected: packs");
-        Console.WriteLine("                                     the game partition, not the video)");
+        CliLog.Out("                                     (Redump ISOs auto-detected: packs");
+        CliLog.Out("                                     the game partition, not the video)");
 #else
-        Console.WriteLine("                                     (unavailable in this build:");
-        Console.WriteLine("                                     compiled without XISOSharp)");
+        CliLog.Out("                                     (unavailable in this build:");
+        CliLog.Out("                                     compiled without XISOSharp)");
 #endif
-        Console.WriteLine("  zar zstd -c [in] [out]               Compress a file/stdin to zstd");
-        Console.WriteLine("  zar zstd -d [in] [out]               Decompress a zstd file/stdin");
-        Console.WriteLine("  zar seekable compress [in] [out]     Compress to seekable .zst");
-        Console.WriteLine("  zar seekable decompress [in] [out]   Decompress seekable .zst");
-        Console.WriteLine("  zar seekable list <file>             Show seekable frame table");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  -l, --level <N>       Compression level 1-22 (default: 6)");
-        Console.WriteLine("      --dict <file>     Dictionary file (pack/zstd; kept alongside,");
-        Console.WriteLine("                        never stored; --no-compress ignores it)");
-        Console.WriteLine("  -c, --stdout          Stream to stdout (only with 'zar zstd'; inside");
-        Console.WriteLine("                        'zar zstd', -c means --compress instead)");
-        Console.WriteLine("      --check           Write content checksums (pack/zstd)");
-        Console.WriteLine("      --no-check        Do not write checksums (default; last wins)");
-        Console.WriteLine("  -j, --jobs <N>        Parallel workers (default: 4)");
-        Console.WriteLine("  -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename");
-        Console.WriteLine("                        (only with --batch; single paths always refuse)");
-        Console.WriteLine("  -b, --batch           Batch process all files in input directory");
-        Console.WriteLine("      --mode <M>        Batch stages (default: auto; only with --batch):");
-        Console.WriteLine("                        auto: archives-(7z)-ISO/dir-.zar, ISOs-.zar, dirs-.zar");
-        Console.WriteLine("                        extract-archive: extract archives with 7z, stop there");
-        Console.WriteLine("                        extract-iso: convert ISOs to .zar;");
-        Console.WriteLine("                        compress: pack directories to .zar");
-        Console.WriteLine("      --seven-zip <exe> 7z binary for the archive stage (default: PATH plus");
-        Console.WriteLine("                        the standard install location; only with --batch)");
-        Console.WriteLine("      --keep-originals  Keep batch sources after packing (default; last wins");
-        Console.WriteLine("                        against --delete-source; only with --batch)");
-        Console.WriteLine("      --delete-source   Delete each batch source dir after its pack succeeds");
-        Console.WriteLine("                        (only with --batch)");
-        Console.WriteLine("  -o, --output <path>   Output path");
-        Console.WriteLine("  -q, --quiet           Suppress output");
-        Console.WriteLine("      --no-compress     Store blocks without compression");
-        Console.WriteLine("  -v, --version         Show version");
-        Console.WriteLine("  -h, --help            Show this help");
-        Console.WriteLine();
-        Console.WriteLine("Run 'zar zstd --help' for the zstd subcommand. A path literally");
-        Console.WriteLine("named 'zstd' must be spelled ./zstd to pack/extract it.");
-        Console.WriteLine("Run 'zar seekable --help' for the seekable subcommand (same");
-        Console.WriteLine("./seekable escape for a colliding path).");
+        CliLog.Out("  zar zstd -c [in] [out]               Compress a file/stdin to zstd");
+        CliLog.Out("  zar zstd -d [in] [out]               Decompress a zstd file/stdin");
+        CliLog.Out("  zar seekable compress [in] [out]     Compress to seekable .zst");
+        CliLog.Out("  zar seekable decompress [in] [out]   Decompress seekable .zst");
+        CliLog.Out("  zar seekable list <file>             Show seekable frame table");
+        CliLog.Out();
+        CliLog.Out("Options:");
+        CliLog.Out("  -l, --level <N>       Compression level 1-22 (default: 6)");
+        CliLog.Out("      --dict <file>     Dictionary file (pack/zstd; kept alongside,");
+        CliLog.Out("                        never stored; --no-compress ignores it)");
+        CliLog.Out("  -c, --stdout          Stream to stdout (only with 'zar zstd'; inside");
+        CliLog.Out("                        'zar zstd', -c means --compress instead)");
+        CliLog.Out("      --check           Write content checksums (pack/zstd)");
+        CliLog.Out("      --no-check        Do not write checksums (default; last wins)");
+        CliLog.Out("  -j, --jobs <N>        Parallel workers (default: 4)");
+        CliLog.Out("  -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename");
+        CliLog.Out("                        (only with --batch; single paths always refuse)");
+        CliLog.Out("  -b, --batch           Batch process all files in input directory");
+        CliLog.Out("      --mode <M>        Batch stages (default: auto; only with --batch):");
+        CliLog.Out("                        auto: archives-(7z)-ISO/dir-.zar, ISOs-.zar, dirs-.zar");
+        CliLog.Out("                        extract-archive: extract archives with 7z, stop there");
+        CliLog.Out("                        extract-iso: convert ISOs to .zar;");
+        CliLog.Out("                        compress: pack directories to .zar");
+        CliLog.Out("      --seven-zip <exe> 7z binary for the archive stage (default: PATH plus");
+        CliLog.Out("                        the standard install location; only with --batch)");
+        CliLog.Out("      --keep-originals  Keep batch sources after packing (default; last wins");
+        CliLog.Out("                        against --delete-source; only with --batch)");
+        CliLog.Out("      --delete-source   Delete each batch source dir after its pack succeeds");
+        CliLog.Out("                        (only with --batch)");
+        CliLog.Out("  -o, --output <path>   Output path");
+        CliLog.Out("  -q, --quiet           Suppress output");
+        CliLog.Out("      --no-compress     Store blocks without compression");
+        CliLog.Out("  -v, --version         Show version");
+        CliLog.Out("  -h, --help            Show this help");
+        CliLog.Out();
+        CliLog.Out("Run 'zar zstd --help' for the zstd subcommand. A path literally");
+        CliLog.Out("named 'zstd' must be spelled ./zstd to pack/extract it.");
+        CliLog.Out("Run 'zar seekable --help' for the seekable subcommand (same");
+        CliLog.Out("./seekable escape for a colliding path).");
     }
 }
