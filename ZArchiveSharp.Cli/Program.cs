@@ -228,7 +228,7 @@ public static class Program
                     helpRequested = true;
                     break;
                 case "--version" or "-v":
-                    CliLog.Out($"zar {GetVersion()}");
+                    CliLog.Out($"{ProgramName} {GetVersion()}");
                     return 0;
                 case "--":
                     // End of options: everything after is positional, so
@@ -325,7 +325,7 @@ public static class Program
                     // Without an input path the output would be dispatched as
                     // the input (e.g. `zar -o game.zar` would extract it or
                     // pack it): fail loud instead of running the wrong op.
-                    CliLog.Err("Error: missing input path (expected: zar [options] [input] [output]).");
+                    CliLog.Err($"Error: missing input path (expected: {ProgramName} [options] [input] [output]).");
                     return ZarchiveCli.BadUsage;
                 }
 
@@ -420,7 +420,8 @@ public static class Program
 
         if (stdoutFlag)
         {
-            CliLog.Err("Error: --stdout is only supported with the 'zar zstd' and 'zar seekable' subcommands.");
+            CliLog.Err(
+                $"Error: --stdout is only supported with the '{ProgramName} zstd' and '{ProgramName} seekable' subcommands.");
             return ZarchiveCli.BadUsage;
         }
 
@@ -668,7 +669,7 @@ public static class Program
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
             CliLog.Err($"Error: {parseError}");
-            CliLog.InfoToStderr(ZstdCli.UsageText);
+            CliLog.InfoToStderr(WithProgramName(ZstdCli.UsageText));
             return ZarchiveCli.BadUsage;
         }
 
@@ -679,7 +680,7 @@ public static class Program
         if (checksumOverride == true && job is { Compress: false, ShowHelp: false })
         {
             CliLog.Err("Error: --check is only supported when compressing (-c).");
-            CliLog.InfoToStderr(ZstdCli.UsageText);
+            CliLog.InfoToStderr(WithProgramName(ZstdCli.UsageText));
             return ZarchiveCli.BadUsage;
         }
 
@@ -688,9 +689,11 @@ public static class Program
         // the global --help it goes to stdout.
         Action<string>? log = job!.Quiet && !job.ShowHelp
             ? null
-            : job.ShowHelp || job.OutputPath is not null
-                ? CliLog.Out
-                : CliLog.InfoToStderr;
+            : job.ShowHelp
+                ? Named(CliLog.Out)
+                : job.OutputPath is not null
+                    ? CliLog.Out
+                    : CliLog.InfoToStderr;
 
         using var cts = new CancellationTokenSource();
         // Safe: unsubscribed in finally before cts is disposed at scope end.
@@ -727,7 +730,7 @@ public static class Program
         if (dictPath != null)
         {
             CliLog.Err(
-                "Error: --dict is not supported with 'zar seekable' (seekable frames carry no dictionary).");
+                $"Error: --dict is not supported with '{ProgramName} seekable' (seekable frames carry no dictionary).");
             return ZarchiveCli.BadUsage;
         }
 
@@ -736,7 +739,7 @@ public static class Program
                 defaultQuiet: quiet, defaultStdout: stdoutFlag))
         {
             CliLog.Err($"Error: {parseError}");
-            CliLog.InfoToStderr(SeekableCli.UsageText);
+            CliLog.InfoToStderr(WithProgramName(SeekableCli.UsageText));
             return ZarchiveCli.BadUsage;
         }
 
@@ -751,7 +754,7 @@ public static class Program
             {
                 CliLog.Err(
                     $"Error: option {checksumOption ?? "--check"} is only supported with 'seekable compress'.");
-                CliLog.InfoToStderr(SeekableCli.UsageText);
+                CliLog.InfoToStderr(WithProgramName(SeekableCli.UsageText));
                 return ZarchiveCli.BadUsage;
             }
 
@@ -759,7 +762,7 @@ public static class Program
             {
                 CliLog.Err(
                     "Error: option --stdout is only supported with 'seekable compress' or 'seekable decompress' (list always writes to stdout).");
-                CliLog.InfoToStderr(SeekableCli.UsageText);
+                CliLog.InfoToStderr(WithProgramName(SeekableCli.UsageText));
                 return ZarchiveCli.BadUsage;
             }
 
@@ -767,7 +770,7 @@ public static class Program
             {
                 CliLog.Err(
                     $"Error: option {levelOption ?? "--level"} is only supported with 'seekable compress'.");
-                CliLog.InfoToStderr(SeekableCli.UsageText);
+                CliLog.InfoToStderr(WithProgramName(SeekableCli.UsageText));
                 return ZarchiveCli.BadUsage;
             }
         }
@@ -778,7 +781,7 @@ public static class Program
         var parsed = job;
         Action<string>? log = parsed switch
         {
-            { ShowHelp: true } => CliLog.Out,
+            { ShowHelp: true } => Named(CliLog.Out),
             { Command: SeekableCli.SeekableCommand.List } => CliLog.Out,
             { Quiet: true } => null,
             { OutputPath: not null } => CliLog.Out,
@@ -1379,6 +1382,69 @@ public static class Program
         }
     }
 
+    /// <summary>
+    /// Name this process was launched as: the standalone release bundles are
+    /// <c>ZArchiveSharp</c> / <c>ZArchiveSharp.exe</c>, the global tool shim is
+    /// <c>zar</c>. Usage and help text substitute it for the documented
+    /// <c>zar</c> token so instructions always match the actual executable.
+    /// </summary>
+    internal static string ProgramName { get; } = ResolveProgramName();
+
+    private static string ResolveProgramName()
+    {
+        var path = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(path))
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            if (!string.IsNullOrEmpty(name) && !name.Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+            {
+                return name;
+            }
+        }
+
+        // Launched as `dotnet ZArchiveSharp.Cli.dll`: keep the documented tool command.
+        return "zar";
+    }
+
+    /// <summary>
+    /// Replaces the documented <c>zar</c> command token with
+    /// <see cref="ProgramName"/>. Only standalone tokens are touched, so the
+    /// <c>.zar</c> file extension and words like "zstd" stay intact.
+    /// </summary>
+    private static string WithProgramName(string text)
+    {
+        var start = 0;
+        var sb = new System.Text.StringBuilder(text.Length);
+        while (true)
+        {
+            var index = text.IndexOf("zar ", start, StringComparison.Ordinal);
+            if (index < 0)
+            {
+                sb.Append(text, start, text.Length - start);
+                return sb.ToString();
+            }
+
+            var isToken = index == 0 || text[index - 1] is ' ' or '\'' or '\n' or '\r';
+            if (isToken)
+            {
+                sb.Append(text, start, index - start).Append(ProgramName).Append(' ');
+                start = index + 4;
+            }
+            else
+            {
+                // ".zar " (extension), "ZArchive..." etc.: keep as-is.
+                sb.Append(text, start, index - start + 1);
+                start = index + 1;
+            }
+        }
+    }
+
+    /// <summary>Wraps a log sink so printed usage text names the actual executable.</summary>
+    private static Action<string> Named(Action<string> inner)
+    {
+        return message => inner(WithProgramName(message));
+    }
+
     internal static string GetVersion()
     {
         var info = typeof(Program).Assembly
@@ -1406,65 +1472,70 @@ public static class Program
 
     private static void PrintUsage()
     {
-        CliLog.Out("Usage: zar [options] [input] [output]");
-        CliLog.Out("       zar zstd -c|-d [options] [input] [output]");
-        CliLog.Out("       zar seekable compress|decompress|list [options] [input] [output]");
-        CliLog.Out();
-        CliLog.Out("Pack a directory to .zar, extract a .zar, convert an XISO, or");
-        CliLog.Out("compress/decompress single zstd streams:");
-        CliLog.Out("  zar <directory> [output.zar]         Pack directory to .zar");
-        CliLog.Out("  zar <archive.zar> [output_dir]       Extract .zar to directory");
-        CliLog.Out("  zar --iso <game.iso> [output.zar]    Convert XISO to .zar");
+        static void Out(string text)
+        {
+            CliLog.Out(WithProgramName(text));
+        }
+
+        Out("Usage: zar [options] [input] [output]");
+        Out("       zar zstd -c|-d [options] [input] [output]");
+        Out("       zar seekable compress|decompress|list [options] [input] [output]");
+        Out(string.Empty);
+        Out("Pack a directory to .zar, extract a .zar, convert an XISO, or");
+        Out("compress/decompress single zstd streams:");
+        Out("  zar <directory> [output.zar]         Pack directory to .zar");
+        Out("  zar <archive.zar> [output_dir]       Extract .zar to directory");
+        Out("  zar --iso <game.iso> [output.zar]    Convert XISO to .zar");
 #if HAS_XISO
-        CliLog.Out("                                     (Redump ISOs auto-detected: packs");
-        CliLog.Out("                                     the game partition, not the video)");
+        Out("                                     (Redump ISOs auto-detected: packs");
+        Out("                                     the game partition, not the video)");
 #else
-        CliLog.Out("                                     (unavailable in this build:");
-        CliLog.Out("                                     compiled without XISOSharp)");
+        Out("                                     (unavailable in this build:");
+        Out("                                     compiled without XISOSharp)");
 #endif
-        CliLog.Out("  zar zstd -c [in] [out]               Compress a file/stdin to zstd");
-        CliLog.Out("  zar zstd -d [in] [out]               Decompress a zstd file/stdin");
-        CliLog.Out("  zar seekable compress [in] [out]     Compress to seekable .zst");
-        CliLog.Out("  zar seekable decompress [in] [out]   Decompress seekable .zst");
-        CliLog.Out("  zar seekable list <file>             Show seekable frame table");
-        CliLog.Out();
-        CliLog.Out("Options:");
-        CliLog.Out("  -l, --level <N>       Compression level 1-22 (default: 6)");
-        CliLog.Out("      --dict <file>     Dictionary file (pack/zstd; kept alongside,");
-        CliLog.Out("                        never stored; --no-compress ignores it)");
-        CliLog.Out("  -c, --stdout          Stream to stdout ('zar zstd' and 'zar seekable';");
-        CliLog.Out("                        inside 'zar zstd', -c means --compress instead)");
-        CliLog.Out("      --check           Write content checksums (pack/--iso/zstd)");
-        CliLog.Out("      --no-check        Do not write checksums (default; last wins)");
-        CliLog.Out("  -j, --jobs <N>        Parallel workers (default: 4)");
-        CliLog.Out("  -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename");
-        CliLog.Out("                        (only with --batch; single paths always refuse)");
-        CliLog.Out("  -b, --batch           Batch process all files in input directory");
-        CliLog.Out("      --mode <M>        Batch stages (default: auto; only with --batch):");
-        CliLog.Out("                        auto: archives-(7z)-ISO/dir-.zar, ISOs-.zar, dirs-.zar");
-        CliLog.Out("                        extract-archive: extract archives with 7z, stop there");
-        CliLog.Out("                        extract-iso: convert ISOs to .zar;");
-        CliLog.Out("                        compress: pack directories to .zar");
-        CliLog.Out("      --seven-zip <exe> 7z binary for the archive stage (default: PATH plus");
-        CliLog.Out("                        the standard install location; only with --batch)");
-        CliLog.Out("      --keep-originals  Keep batch sources after packing (default; last wins");
-        CliLog.Out("                        against --delete-source; only with --batch)");
-        CliLog.Out("      --delete-source   Delete each batch source dir after its pack succeeds");
-        CliLog.Out("                        (only with --batch)");
-        CliLog.Out("  -o, --output <path>   Output path");
-        CliLog.Out("  -q, --quiet           Suppress output");
-        CliLog.Out("      --no-compress     Store blocks without compression");
-        CliLog.Out("  -v, --version         Show version");
-        CliLog.Out("  -h, --help            Show this help");
-        CliLog.Out("      --no-telemetry    Disable usage stats, update checks and bug reports");
-        CliLog.Out("                        (also via ZAR_BUG_REPORT=off)");
-        CliLog.Out();
-        CliLog.Out("Run 'zar zstd --help' for the zstd subcommand. A path literally");
-        CliLog.Out("named 'zstd' must be spelled ./zstd to pack/extract it.");
-        CliLog.Out("Run 'zar seekable --help' for the seekable subcommand (same");
-        CliLog.Out("./seekable escape for a colliding path).");
-        CliLog.Out();
-        CliLog.Out("Use '--' before paths that begin with '-'; unknown options are");
-        CliLog.Out("usage errors.");
+        Out("  zar zstd -c [in] [out]               Compress a file/stdin to zstd");
+        Out("  zar zstd -d [in] [out]               Decompress a zstd file/stdin");
+        Out("  zar seekable compress [in] [out]     Compress to seekable .zst");
+        Out("  zar seekable decompress [in] [out]   Decompress seekable .zst");
+        Out("  zar seekable list <file>             Show seekable frame table");
+        Out(string.Empty);
+        Out("Options:");
+        Out("  -l, --level <N>       Compression level 1-22 (default: 6)");
+        Out("      --dict <file>     Dictionary file (pack/zstd; kept alongside,");
+        Out("                        never stored; --no-compress ignores it)");
+        Out("  -c, --stdout          Stream to stdout ('zar zstd' and 'zar seekable';");
+        Out("                        inside 'zar zstd', -c means --compress instead)");
+        Out("      --check           Write content checksums (pack/--iso/zstd)");
+        Out("      --no-check        Do not write checksums (default; last wins)");
+        Out("  -j, --jobs <N>        Parallel workers (default: 4)");
+        Out("  -p, --policy <P>      Collision policy: fail, skip, overwrite, auto-rename");
+        Out("                        (only with --batch; single paths always refuse)");
+        Out("  -b, --batch           Batch process all files in input directory");
+        Out("      --mode <M>        Batch stages (default: auto; only with --batch):");
+        Out("                        auto: archives-(7z)-ISO/dir-.zar, ISOs-.zar, dirs-.zar");
+        Out("                        extract-archive: extract archives with 7z, stop there");
+        Out("                        extract-iso: convert ISOs to .zar;");
+        Out("                        compress: pack directories to .zar");
+        Out("      --seven-zip <exe> 7z binary for the archive stage (default: PATH plus");
+        Out("                        the standard install location; only with --batch)");
+        Out("      --keep-originals  Keep batch sources after packing (default; last wins");
+        Out("                        against --delete-source; only with --batch)");
+        Out("      --delete-source   Delete each batch source dir after its pack succeeds");
+        Out("                        (only with --batch)");
+        Out("  -o, --output <path>   Output path");
+        Out("  -q, --quiet           Suppress output");
+        Out("      --no-compress     Store blocks without compression");
+        Out("  -v, --version         Show version");
+        Out("  -h, --help            Show this help");
+        Out("      --no-telemetry    Disable usage stats, update checks and bug reports");
+        Out("                        (also via ZAR_BUG_REPORT=off)");
+        Out(string.Empty);
+        Out("Run 'zar zstd --help' for the zstd subcommand. A path literally");
+        Out("named 'zstd' must be spelled ./zstd to pack/extract it.");
+        Out("Run 'zar seekable --help' for the seekable subcommand (same");
+        Out("./seekable escape for a colliding path).");
+        Out(string.Empty);
+        Out("Use '--' before paths that begin with '-'; unknown options are");
+        Out("usage errors.");
     }
 }

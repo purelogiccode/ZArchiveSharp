@@ -49,10 +49,12 @@ public sealed class ArgParityTests : IDisposable
 
         Assert.Equal(0, oracle.ExitCode);
         Assert.Equal(0, mine.ExitCode);
-        // The oracle prints the minimal zarchive.exe usage; zar intentionally
-        // prints its extended help (subcommands, batch flags).
+        // The oracle prints the minimal zarchive.exe usage; the CLI intentionally
+        // prints its extended help (subcommands, batch flags) under the name it
+        // was launched as (the standalone bundle is ZArchiveSharp, not zar).
         Assert.Contains("zarchive.exe input_path", oracle.StdOut, StringComparison.Ordinal);
-        Assert.Contains("Usage: zar", mine.StdOut, StringComparison.Ordinal);
+        var expectedName = Path.GetFileNameWithoutExtension(BinaryLocator.UnderTestExe());
+        Assert.Contains($"Usage: {expectedName}", mine.StdOut, StringComparison.Ordinal);
     }
 
     [Theory]

@@ -2,6 +2,11 @@
 
 The `zar` command-line tool provides pack, extract, convert, and batch operations. It matches the `zarchive.exe` exit codes and behavior for compatibility.
 
+The global tool command is `zar`; the standalone release bundles ship the same
+CLI as `ZArchiveSharp` (`ZArchiveSharp.exe` on Windows) and require the
+matching .NET runtime. Help and usage text always name the executable you
+launched, so swap `zar` for `ZArchiveSharp` when running a bundle.
+
 ## Installation
 
 ```bash

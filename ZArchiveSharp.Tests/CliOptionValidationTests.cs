@@ -548,9 +548,13 @@ public sealed class CliOptionValidationTests : IDisposable
         Assert.Contains("--no-telemetry", stdout, StringComparison.Ordinal);
         Assert.Contains("ZAR_BUG_REPORT", stdout, StringComparison.Ordinal);
         Assert.Contains("Use '--'", stdout, StringComparison.Ordinal);
-        // Seekable also accepts -c/--stdout, so the old "only with zar zstd"
-        // wording was wrong.
-        Assert.Contains("'zar zstd' and 'zar seekable'", stdout, StringComparison.Ordinal);
+        // Seekable also accepts -c/--stdout, and the help names the executable
+        // it was launched as (zar for the global tool, ZArchiveSharp for the
+        // standalone bundles).
+        var name = cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
+            ? "zar"
+            : Path.GetFileNameWithoutExtension(cli);
+        Assert.Contains($"'{name} zstd' and '{name} seekable'", stdout, StringComparison.Ordinal);
         Assert.DoesNotContain("only with 'zar zstd'", stdout, StringComparison.Ordinal);
     }
 

@@ -4,6 +4,13 @@ Command-line tool for creating and extracting ZArchive (`.zar`) files using [ZAr
 
 A pure-C# port of the `zarchive.exe` contract (ZArchive 0.1.2): same arguments, defaults, stdout chatter and exit codes, with three documented deviations where native behavior is a bug.
 
+The global tool command is `zar`. Standalone release bundles
+(`release_<version>_<rid>.zip`) ship the same CLI as `ZArchiveSharp`
+(`ZArchiveSharp.exe` on Windows), are framework-dependent (matching .NET
+runtime required), and always print the name they were launched as in help
+and usage text — swap `zar` for `ZArchiveSharp` in the examples when using
+those bundles.
+
 ## Install
 
 ```bash

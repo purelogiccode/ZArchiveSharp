@@ -137,6 +137,11 @@ zar --batch --seven-zip "D:\tools\7z.exe" C:\games C:\archives
 zar -- -odd-directory out.zar
 ```
 
+The CLI also ships as framework-dependent standalone bundles (per platform
+and architecture): the executable is `ZArchiveSharp` (`ZArchiveSharp.exe` on
+Windows), so replace `zar` with `ZArchiveSharp` in the examples above. Help
+and usage text always print the name it was launched as.
+
 The CLI sends opt-out telemetry (anonymous usage stats, a background update
 check, and bug reports for warnings/errors). Disable it with
 `--no-telemetry` or `ZAR_BUG_REPORT=off`; `--help`/`--version` never send
