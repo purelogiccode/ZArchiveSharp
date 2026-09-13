@@ -5,6 +5,7 @@
         <IsPackable>false</IsPackable>
         <Nullable>enable</Nullable>
         <RootNamespace>ZArchiveSharp.CliBattleTests</RootNamespace>
+        <Company>PureLogicCode.com</Company>
     </PropertyGroup>
 
     <ItemGroup>

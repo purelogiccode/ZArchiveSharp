@@ -35,6 +35,8 @@
         <!-- API compatibility validation across target frameworks -->
         <EnablePackageValidation>true</EnablePackageValidation>
         <EnableStrictModeForPackageValidation>true</EnableStrictModeForPackageValidation>
+        <ApplicationIcon>icon\zar.ico</ApplicationIcon>
+        <Company>PureLogicCode.com</Company>
     </PropertyGroup>
 
     <!-- The apphost (native launcher) is renamed to ZArchiveSharp<ext> by
@@ -162,9 +164,6 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" Version="10.0.401" />
-        <PackageReference Include="MinVer" PrivateAssets="all" Version="8.0.0">
-            <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-        </PackageReference>
         <PackageReference Include="Roslynator.Analyzers" Version="5.0.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

@@ -18,8 +18,8 @@
     <Nullable>enable</Nullable>
          every package. Replaces the SPDX expression used through v1.2.0. -->
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
-    <Authors>purelogiccode</Authors>
-    <Copyright>Copyright (c) purelogiccode</Copyright>
+    <Authors>PureLogicCode.com</Authors>
+    <Copyright>Copyright (c) PureLogicCode.com</Copyright>
     <PackageProjectUrl>https://github.com/purelogiccode/ZArchiveSharp</PackageProjectUrl>
     <!-- Release tags are v-prefixed (v1.0.0); MinVer 8 does not assume that
          prefix, so state it explicitly or tags are silently ignored. -->
@@ -28,5 +28,15 @@
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
   </PropertyGroup>
+
+  <!-- Tag-driven versioning for every project in the solution: MinVer reads
+       the v-prefixed git tags and stamps Version/FileVersion/InformationalVersion
+       so the library, CLI, tests, battle tests and benchmarks all report the
+       same release (e.g. 1.2.1). -->
+  <ItemGroup>
+    <PackageReference Include="MinVer" Version="8.0.0" PrivateAssets="all">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
 
 </Project>

@@ -7,6 +7,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <RootNamespace>ZArchiveSharp.Benchmarks</RootNamespace>
+        <Company>PureLogicCode.com</Company>
     </PropertyGroup>
 
     <ItemGroup>
