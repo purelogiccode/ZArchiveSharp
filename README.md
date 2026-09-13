@@ -14,7 +14,7 @@
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
 - **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, byte-identical block-level parallelism inside a single pack/extract, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
 - **Hardened extraction** — zip-slip/device-name rejection with resolved-path re-validation, 1024-level nesting cap, and scratch-and-move writes that never leave truncated files
-- **Mount-friendly reader API** — node-handle directory walks, canonical names, seekable per-entry streams, specific open-failure reasons, and cache-locked parallel block decode for virtual file systems
+- **Mount-friendly reader API** — node-handle directory walks, canonical names, seekable per-entry streams, specific open-failure reasons, and parallel block decode (decompression outside the lock) for virtual file systems
 - **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior, with `--` path escapes, strict option validation, collision policies, and opt-out telemetry (`--no-telemetry` / `ZAR_BUG_REPORT=off`)
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
@@ -81,6 +81,13 @@ for (uint i = 0; i < reader.GetDirEntryCount(ZArchiveReader.RootNode); i++)
     }
 }
 ```
+
+`TryGetNodeName` returns the stored (canonical) name for a handle, and
+`EntryCount` / `TotalUncompressedSize` report archive stats computed at open.
+Open failures are specific: `ZArchiveOpenFailure` distinguishes `BadMagic`,
+`UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`, `FileNotFound`,
+`InvalidPath`, and the other validation and I/O reasons. Distinct 64 KiB
+blocks decompress in parallel; `CacheBlockCount` tunes the shared LRU cache.
 
 ### Standalone zstd Compression
 
@@ -180,7 +187,7 @@ anything.
 | **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZArchiveSharp.Tests** | Comprehensive test suite (4279 tests + 43 CLI battle tests, parity validation) |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4291 tests + 43 CLI battle tests, parity validation) |
 
 ## Documentation
 
@@ -194,7 +201,7 @@ anything.
 - **[Benchmarks](docs/benchmarks.md)** — Performance characteristics and tuning
 - **[FAQ](docs/faq.md)** — Frequently asked questions
 - **[Release Notes](docs/release-notes.md)** — Version history and upgrade notes
-- **[What's New](WhatsNew.md)** — v1.2.2 release notes (executable-aware help, Windows icon, versioning, release bundles)
+- **[What's New](WhatsNew.md)** — v1.3.0 release notes (mount-friendly reader API, parallel block decode, hardened open failures)
 
 ## Byte-Identity Target
 

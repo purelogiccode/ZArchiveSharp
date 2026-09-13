@@ -1,14 +1,13 @@
-# What's New in v1.2.2
+# What's New in v1.3.0
 
 **Versioning:** package versions derive from git tags via MinVer
-(`v`-prefixed annotated tags). Tagging `v1.2.2` stamps 1.2.2 on the
+(`v`-prefixed annotated tags). Tagging `v1.3.0` stamps 1.3.0 on the
 `ZArchiveSharp` library, the `ZArchiveSharp.Cli` (`zar`) tool, the test
-projects and the benchmarks together — MinVer is now referenced once for the
-whole solution.
+projects and the benchmarks together.
 
 **Provenance:** Release build, `0` warnings / `0` errors;
-`4279/4279` library tests + `43/43` CLI battle tests green
-(Ubuntu/Windows/macOS via `.github/workflows/ci.yml`).
+`4291/4291` library tests + `43/43` CLI battle tests green (net10.0). The CI
+matrix repeats the same suites on Ubuntu/Windows/macOS when the tag is pushed.
 
 **License (since v1.2.1):** the batch pipeline layer is a port of
 v1.2.0 packages were published under MIT. See [LICENSE](LICENSE) and
@@ -16,67 +15,97 @@ v1.2.0 packages were published under MIT. See [LICENSE](LICENSE) and
 
 ## Highlights
 
-### CLI help names the executable you launched
-The usage, help, and error text no longer hardcode the global-tool name
-`zar`. The CLI resolves the name it was actually started as and uses it
-everywhere:
+### Mount-friendly random-access reader API
+The reader now exposes the surface a virtual file system or mount host needs,
+without rebuilding paths or re-parsing the tree:
 
-- Standalone bundles: `Usage: ZArchiveSharp ...`, `ZArchiveSharp 1.2.2`
-- Global tool: still `Usage: zar ...`, `zar 1.2.2`
-- `dotnet ZArchiveSharp.Cli.dll`: falls back to `zar` (the documented tool name)
+- **Node handles everywhere.** `ZArchiveReader.RootNode` (`0`) names the
+  root, `LookUp` resolves paths, and the new
+  `TryGetDirEntry(node, index, out childNode, out entry)` enumerates a
+  directory *and* returns the child handle. `GetDirEntryCount` is clamped to
+  the file-tree bounds, so a crafted directory entry can never make callers
+  iterate past the table.
+- **Canonical names.** `TryGetNodeName(node, out name)` returns the stored
+  (original-casing) name; the root's name is `""`.
+- **Seekable per-entry streams.** `OpenRead(node)` and
+  `TryOpenRead(path)` return a seekable, read-only `Stream` over a file's
+  uncompressed contents, reading through the block cache. Disposing the
+  stream does not dispose the archive.
+- **Archive stats at open.** `EntryCount` (file-tree entries) and
+  `TotalUncompressedSize` (natural "volume size") are computed from the
+  in-memory tree, with no archive I/O. The total saturates at
+  `ulong.MaxValue` for crafted sizes that would otherwise overflow.
 
-The substitution is token-aware, so the `.zar` file extension and `zstd`
-are never touched. It covers the main help, `zstd`/`seekable` subcommand help
-and parse errors, the `--stdout`/`--dict` usage errors, the missing-input
-error, and `--version`.
+### Specific open-failure reasons
+`ZArchiveOpenFailure` plus new `out` overloads for the path, stream and
+byte-array opens report exactly which check failed instead of a bare `null`:
+`FileNotFound`, `AccessDenied`, `InvalidStream`, `ReadError`, `TooSmall`,
+`BadMagic`, `UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`,
+`BadOffsetRecords`, `BadNameTable`, `BadFileTree`, and `InvalidPath` (null,
+empty, or invalid path characters). The plain `TryOpen` overloads are
+unchanged and still return `null` on any failure.
 
-### Windows app icon and product metadata
-The CLI project now carries `ApplicationIcon` (and `Company`) metadata, so the
-Windows executables — the build apphost, the published bundle, and the
-`.exe` inside every release zip — embed the ZArchiveSharp icon and show
-`PureLogicCode.com` in their file properties. Unix bundles are plain
-executables and have no icon concept.
+### Options for mount hosts
+`ZArchiveReaderOptions` tunes an open: `CacheBlockCount` (default 64 blocks =
+4 MiB; raise it for many concurrent streams), `DecodeExtendedNames` (see
+below), and `FileShare` for path opens (use `FileShare.ReadWrite` so
+scanners and indexers can keep the archive open while it is mounted).
 
-### Tag-driven versioning for every project
-MinVer moved from the two shipped projects into `Directory.Build.props`, so
-the library, CLI, tests, battle tests and benchmarks all stamp the same
-release version from the git tag (`1.2.2`), with FileVersion
-`1.2.2.0`/InformationalVersion `1.2.2+<commit>`.
+### Parallel block decode
+`ReadFromFile` now decompresses blocks **outside** the global lock: cache
+bookkeeping and copies stay locked, distinct 64 KiB blocks decode in
+parallel, and the preallocated LRU buffers are preserved. Concurrent reads
+of separate files no longer serialize on decompression.
 
-### Standalone release bundles
-Per platform/architecture zips are produced from the tagged source:
+### Corrected extended-name decoding (opt-in)
+The 0.1.2 name-table quirk that makes names of ≥ 0x80 characters decode to
+`""` is still the default (byte parity). Opening with
+`DecodeExtendedNames = true` — or calling the new
+`GetName`/`GetNameRaw(..., decodeExtendedLengths: true)` overloads — decodes
+those names correctly, so long-named entries become listable, resolvable and
+readable.
 
-| Bundle | Executable |
-|--------|------------|
-| `release_1.2.2_win-x64.zip` / `win-arm64` | `ZArchiveSharp.exe` |
-| `release_1.2.2_linux-x64.zip` / `linux-arm64` | `ZArchiveSharp` (0755) |
-| `release_1.2.2_osx-x64.zip` / `osx-arm64` | `ZArchiveSharp` (0755) |
+### Crafted-archive hardening and fixes
+Following review of the new surface:
 
-- **Framework-dependent:** the .NET runtime is *not* embedded; the matching
-  .NET 10 runtime must be installed. Each zip carries the single-file
-  executable plus its required `ZArchiveSharp.Cli.runtimeconfig.json`
-  sidecar (the host reads it before loading the bundle).
-- Each zip also contains `README.md`, `LICENSE` and
-  `THIRD-PARTY-NOTICES.md`.
-- Unix executables are marked executable in the zip metadata, so they run
-  straight after unzipping.
+- **Extraction still fails loudly on crafted directory ranges.**
+  `GetDirEntryCount` clamps for enumeration, but extraction uses the raw
+  stored count and rejects a child range that runs past the file tree
+  (`Directory contains invalid node.`) instead of silently extracting a
+  partial directory.
+- **`InvalidPath`** is reported for null/empty/invalid paths instead of the
+  misleading `FileNotFound`.
+- **`TotalUncompressedSize` saturates** instead of wrapping on crafted trees.
+- Long-name entries are documented as counted by `GetDirEntryCount` but
+  rejected by `GetDirEntry`/`TryGetDirEntry` until `DecodeExtendedNames` is
+  enabled.
 
 ## Upgrade notes
 
-- **No wire-format or API changes** since v1.2.0: archive bytes, frame bytes
-  and exit codes are unchanged.
-- **Standalone bundles require .NET 10** (they are framework-dependent) and
-  the runtimeconfig sidecar must stay next to the executable.
-- **License:** v1.2.0 NuGet packages are MIT; v1.2.1 and later are
-  term, so no code changes are needed.
+- **Additive API; no wire-format changes.** Archive bytes, zstd frame bytes
+  and CLI exit codes are unchanged, and the existing reader overloads keep
+  their behavior. Recompiling is enough; no data migration is needed.
+- **Behavior changes only for invalid or crafted input:** empty/invalid paths
+  now report `InvalidPath`; directory enumeration clamps out-of-range child
+  counts; extraction rejects crafted child ranges; the archive total
+  saturates on overflow. Valid archives are unaffected.
+  unchanged in that regard.
 
-## Full change list since v1.2.0
+## Full change list since v1.2.2
 
-  `THIRD-PARTY-NOTICES.md`, switch packages to `<license type="file">`
-- `feat:` CLI help/usage/version name the executable they were launched as
-  (`ZArchiveSharp` vs `zar`), token-aware so `.zar` stays intact
-- `chore:` Windows application icon and product metadata
-- `chore:` MinVer for the whole solution so every project stamps 1.2.2
-- `test:` executable-name-aware help/parity assertions
-- `docs:` standalone-bundle instructions, runtime requirement, v1.2.1/v1.2.2
-  release notes
+- `feat:` mount-host reader APIs — `RootNode`, `TryGetDirEntry`,
+  `TryGetNodeName`, clamped `GetDirEntryCount`, `EntryCount`,
+  `TotalUncompressedSize`, `OpenRead`/`TryOpenRead`
+- `feat:` `ZArchiveOpenFailure` enum and failure-reporting `TryOpen` overloads
+  for path, stream and byte-array opens
+- `feat:` `ZArchiveReaderOptions` (`CacheBlockCount`, `DecodeExtendedNames`,
+  `FileShare`) and corrected extended-name decode overloads
+- `feat:` `ReadFromFile` decompresses outside the global lock so distinct
+  blocks decode in parallel (lock-free decode, locked publish)
+- `fix:` extraction fails loudly on crafted directory child ranges
+- `fix:` null/empty/invalid paths report `InvalidPath`, not `FileNotFound`
+- `fix:` `TotalUncompressedSize` saturates instead of wrapping
+- `test:` mount-host reader API tests and a crafted-count extraction
+  corruption test
+- `style:` analyzer cleanups in the mount API tests
+- `docs:` API reference, format, FAQ and README updates for the new surface

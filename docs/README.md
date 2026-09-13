@@ -22,8 +22,8 @@ Welcome to the ZArchiveSharp documentation. This guide covers everything you nee
 - **[FAQ](faq.md)** — Frequently asked questions and troubleshooting
 
 ### Releases
-- **[Release Notes](release-notes.md)** — Version history, v1.2.2 highlights, and upgrade notes
-- **[What's New in v1.2.2](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
+- **[Release Notes](release-notes.md)** — Version history, v1.3.0 highlights, and upgrade notes
+- **[What's New in v1.3.0](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
 
 ---
 
@@ -54,7 +54,7 @@ ZArchiveSharp produces **byte-identical output** to:
 - libzstd 1.5.7 (frozen reference)
 - zeekstd (seekable format)
 
-This is verified by 4279 library tests plus 43 CLI battle tests, including parity validation against native tools.
+This is verified by 4291 library tests plus 43 CLI battle tests, including parity validation against native tools.
 
 ---
 

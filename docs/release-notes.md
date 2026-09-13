@@ -9,6 +9,39 @@ notes for the current release live in
 > **License change (after v1.2.0):** ZArchiveSharp is now distributed under
 > notices: [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
 
+## v1.3.0
+
+**Highlights**
+
+- **Mount-friendly reader API.** Node-handle directory walks
+  (`RootNode`, `TryGetDirEntry`), canonical names (`TryGetNodeName`),
+  seekable per-entry streams (`OpenRead`/`TryOpenRead`), and archive stats
+  (`EntryCount`, `TotalUncompressedSize`) for virtual file systems and other
+  random-access hosts.
+- **Specific open-failure reasons.** `ZArchiveOpenFailure` plus `out`
+  overloads for path/stream/byte-array opens report `BadMagic`,
+  `UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`,
+  `BadOffsetRecords`, `BadNameTable`, `BadFileTree`, `TooSmall`,
+  `InvalidStream`, `FileNotFound`, `AccessDenied`, `ReadError` and
+  `InvalidPath` instead of a bare `null`.
+- **Reader options.** `ZArchiveReaderOptions` adds `CacheBlockCount`
+  (default 64 × 64 KiB), opt-in corrected extended-name decoding
+  (`DecodeExtendedNames`), and `FileShare` for path opens.
+- **Parallel block decode.** `ReadFromFile` decompresses distinct 64 KiB
+  blocks outside the global lock (cache bookkeeping and copies stay locked),
+  so concurrent reads scale; the preallocated LRU buffers are preserved.
+- **Hardening fixes.** Extraction still rejects crafted directory child
+  ranges loudly; null/empty/invalid paths report `InvalidPath`;
+  `TotalUncompressedSize` saturates instead of wrapping.
+
+**Upgrade notes**
+
+- Additive API: no wire-format or CLI behavior changes, no breaking changes
+  to existing reader overloads.
+- Behavior changes apply only to invalid or crafted input: `InvalidPath` for
+  bad paths, clamped enumeration counts, loud extraction failure on crafted
+  child ranges, and a saturating archive size.
+
 ## v1.2.2
 
 **Highlights**
