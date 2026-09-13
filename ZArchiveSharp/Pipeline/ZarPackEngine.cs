@@ -616,7 +616,10 @@ public static class ZarPackEngine
             throw new InvalidOperationException($"Directory not found in archive: '{srcPath}'.");
         }
 
-        var count = reader.GetDirEntryCount(dirHandle);
+        // Raw (unclamped) count: a crafted directory whose child range runs
+        // past the table must fail extraction below, not silently extract a
+        // partial directory. Mount hosts get the clamped count instead.
+        var count = reader.GetRawDirEntryCount(dirHandle);
         for (uint i = 0; i < count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();

@@ -24,7 +24,7 @@ The test suite enforces this with thousands of parity vectors and committed gold
 
 ### Is it production ready?
 
-The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4279 library tests plus 43 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
+The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4291 library tests plus 43 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
 
 ## Compatibility
 
@@ -114,6 +114,7 @@ if (reader == null)
 Common causes:
 
 - The file is not a `.zar` at all (check for a download wrapper, e.g. HTML) — `BadMagic`
+- Empty, null, or invalid path characters — `InvalidPath`
 - Truncated transfer — re-download; truncations always fail the open (`TooSmall`, `LengthMismatch`, `ReadError`)
 - Newer format revision (0.1.2 only is supported) — `UnsupportedVersion`
 - Renamed/huge sections or malformed tables — `SectionOutOfRange`, `BadOffsetRecords`, `BadNameTable`, `BadFileTree`

@@ -91,6 +91,35 @@ public sealed class ZarCorruptionTests : IDisposable
         Assert.False(reader.GetDirEntry(0, 31, out _));
     }
 
+    [Fact]
+    public void Reader_DirectoryEntryCount_OverrunFailsExtraction()
+    {
+        var root = NewTempDir("zar_corr_count");
+        var src = Directory.CreateDirectory(Path.Combine(root, "src")).FullName;
+        for (var i = 0; i < 20; i++)
+        {
+            File.WriteAllText(Path.Combine(src, $"f{i:D2}.txt"), "count probe");
+        }
+
+        var zar = Path.Combine(root, "count.zar");
+        ZarPipeline.Pack(src, zar);
+
+        var bytes = File.ReadAllBytes(zar);
+        var footer = Footer.ReadFrom(bytes.AsSpan(bytes.Length - Footer.SizeOnDisk));
+        var treeOffset = (int)footer.SectionFileTree.Offset;
+
+        // Root: child range entirely outside the table. The public count clamps
+        // this to zero entries, but extraction must still fail loudly instead
+        // of silently extracting an empty directory.
+        ZArchiveCommon.WriteU32Be(bytes.AsSpan(treeOffset + 4), 0xFFFFFFF0u);
+        ZArchiveCommon.WriteU32Be(bytes.AsSpan(treeOffset + 8), 32u);
+
+        var work = Directory.CreateDirectory(Path.Combine(root, "work")).FullName;
+        var captured = GuardedExtract(bytes, work, "dir count overrun");
+        Assert.NotNull(captured);
+        AssertDocumented(captured, "dir count overrun");
+    }
+
     /// <summary>Extracts under a hang guard. Returns the captured exception, or null on success.</summary>
     private static Exception? GuardedExtract(byte[] bytes, string workDir, string label)
     {

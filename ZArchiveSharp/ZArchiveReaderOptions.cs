@@ -48,6 +48,9 @@ public enum ZArchiveOpenFailure
 
     /// <summary>The file tree is empty, truncated, or has an invalid root entry.</summary>
     BadFileTree,
+
+    /// <summary>The path is null, empty, or contains invalid characters.</summary>
+    InvalidPath,
 }
 
 /// <summary>

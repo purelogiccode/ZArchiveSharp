@@ -84,7 +84,8 @@ public sealed class ZArchiveReader : IDisposable
     /// <summary>
     /// Total uncompressed size of every file in the archive. Computed from the
     /// in-memory tree at open (no archive I/O), so it is cheap to query; for a
-    /// mounted volume this is the natural "volume size".
+    /// mounted volume this is the natural "volume size". Saturates at
+    /// <see cref="ulong.MaxValue"/> when a crafted tree's claimed sizes overflow.
     /// </summary>
     public ulong TotalUncompressedSize { get; }
 
@@ -130,7 +131,8 @@ public sealed class ZArchiveReader : IDisposable
         {
             if (entry.IsFile)
             {
-                total += entry.GetFileSize();
+                var size = entry.GetFileSize();
+                total = total > ulong.MaxValue - size ? ulong.MaxValue : total + size;
             }
         }
 
@@ -210,7 +212,7 @@ public sealed class ZArchiveReader : IDisposable
         catch (ArgumentException)
         {
             // Null, empty, or invalid path characters.
-            failure = ZArchiveOpenFailure.FileNotFound;
+            failure = ZArchiveOpenFailure.InvalidPath;
             return null;
         }
         catch (Exception)
@@ -769,6 +771,13 @@ public sealed class ZArchiveReader : IDisposable
     /// clamped to the file-tree bounds, so a crafted directory entry can never
     /// make callers iterate past the table.
     /// </summary>
+    /// <remarks>
+    /// With the default name decoding
+    /// (<see cref="ZArchiveReaderOptions.DecodeExtendedNames"/> unset), entries
+    /// whose stored names are ≥ 0x80 characters decode to "" and are still
+    /// included here, while <see cref="GetDirEntry"/> and
+    /// <see cref="TryGetDirEntry"/> reject them.
+    /// </remarks>
     public uint GetDirEntryCount(uint node)
     {
         if (node >= (uint)_fileTree.Length || _fileTree[node].IsFile)
@@ -786,7 +795,30 @@ public sealed class ZArchiveReader : IDisposable
         return Math.Min(dir.Count, available);
     }
 
-    /// <summary>Reads a directory entry. Returns false when invalid.</summary>
+    /// <summary>
+    /// Raw stored child count, without the <see cref="GetDirEntryCount"/> clamp.
+    /// Used by extraction to reject crafted out-of-range child ranges loudly
+    /// instead of silently skipping the phantom entries.
+    /// </summary>
+    internal uint GetRawDirEntryCount(uint node)
+    {
+        if (node >= (uint)_fileTree.Length || _fileTree[node].IsFile)
+        {
+            return 0;
+        }
+
+        return _fileTree[node].Count;
+    }
+
+    /// <summary>
+    /// Reads a directory entry. Returns false when invalid.
+    /// </summary>
+    /// <remarks>
+    /// With the default name decoding
+    /// (<see cref="ZArchiveReaderOptions.DecodeExtendedNames"/> unset), entries
+    /// whose stored names are ≥ 0x80 characters decode to "" and are rejected
+    /// here even though <see cref="GetDirEntryCount"/> counts them.
+    /// </remarks>
     public bool GetDirEntry(uint node, uint index, out DirEntry entry)
     {
         entry = default;

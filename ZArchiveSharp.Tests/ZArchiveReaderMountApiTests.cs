@@ -85,6 +85,9 @@ public sealed class ZArchiveReaderMountApiTests
         Assert.Null(ZArchiveReader.TryOpen("definitely-missing-xyz.zar", out var missing));
         Assert.Equal(ZArchiveOpenFailure.FileNotFound, missing);
 
+        Assert.Null(ZArchiveReader.TryOpen(string.Empty, out var noPath));
+        Assert.Equal(ZArchiveOpenFailure.InvalidPath, noPath);
+
         Assert.Null(ZArchiveReader.TryOpen(new byte[16], out var small));
         Assert.Equal(ZArchiveOpenFailure.TooSmall, small);
 

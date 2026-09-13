@@ -168,7 +168,7 @@ Opens an archive. Returns `null` on invalid archives (never throws; a null
 - `failure` — Receives `None` on success, or a `ZArchiveOpenFailure` reason:
   `FileNotFound`, `AccessDenied`, `InvalidStream`, `ReadError`, `TooSmall`,
   `BadMagic`, `UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`,
-  `BadOffsetRecords`, `BadNameTable`, `BadFileTree`
+  `BadOffsetRecords`, `BadNameTable`, `BadFileTree`, `InvalidPath`
 
 **Ownership:** with `leaveOpen: false` (the default), a failed open disposes
 the stream — ownership is only transferred to the returned reader on success.
@@ -181,7 +181,7 @@ Pass `leaveOpen: true` to keep the stream alive after a failed open.
 | `InvalidNode` | `uint` | Constant `0xFFFFFFFF` for path-not-found |
 | `RootNode` | `uint` | Node handle of the root directory (always `0`) |
 | `EntryCount` | `uint` | File-tree entry count (files and directories), computed at open |
-| `TotalUncompressedSize` | `ulong` | Sum of every file's uncompressed size, computed at open (no archive I/O) |
+| `TotalUncompressedSize` | `ulong` | Sum of every file's uncompressed size, computed at open (no archive I/O); saturates at `ulong.MaxValue` for crafted sizes that overflow |
 | `Dictionary` | `ZstdDictionary?` | Dictionary for dictionary-packed archives (null = plain; inert for plain blocks; dictionary blocks read without it fail, never mis-decode) |
 
 ### Methods
@@ -217,6 +217,11 @@ Enumerates a directory. `GetDirEntryCount` is clamped to the file-tree bounds,
 so a crafted directory entry can never make callers iterate past the table.
 `TryGetDirEntry` additionally returns the child's node handle, so mount and
 extraction hosts can descend without rebuilding a path and looking it up again.
+
+With the default name decoding (`DecodeExtendedNames` unset), an entry whose
+stored name is ≥ 0x80 characters decodes to `""`: it is included in
+`GetDirEntryCount` but `GetDirEntry`/`TryGetDirEntry` return `false` for it.
+Open with `DecodeExtendedNames = true` to list and resolve such entries.
 
 #### TryGetNodeName
 
@@ -293,7 +298,7 @@ public enum ZArchiveOpenFailure
 {
     None, FileNotFound, AccessDenied, InvalidStream, ReadError, TooSmall,
     BadMagic, UnsupportedVersion, LengthMismatch, SectionOutOfRange,
-    BadOffsetRecords, BadNameTable, BadFileTree,
+    BadOffsetRecords, BadNameTable, BadFileTree, InvalidPath,
 }
 ```
 

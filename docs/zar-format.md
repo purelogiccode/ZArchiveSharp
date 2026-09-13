@@ -162,7 +162,7 @@ The SHA-256 covers **every output byte written before the footer**, then the foo
 - Directory enumeration can return child node handles (`TryGetDirEntry`) and canonical names (`TryGetNodeName`), and `GetDirEntryCount` clamps crafted counts to the file-tree bounds
 - `OpenRead`/`TryOpenRead` expose a seekable per-entry stream over the block cache
 - Data blocks carry no per-block checksums (same as native): flipped bytes may decode to different content instead of throwing. Truncations always fail the open.
-- Crafted tables are bounds-checked without wrapping (`OffsetInfo.IsWithinValidRange`, child ranges, directory indices); a block fault mid-read returns a short read instead of looking like EOF
+- Crafted tables are bounds-checked without wrapping (`OffsetInfo.IsWithinValidRange`, child ranges, directory indices); a block fault mid-read returns a short read instead of looking like EOF, and extraction rejects a crafted directory child range that runs past the file tree instead of silently skipping entries
 - Extraction treats entry names as untrusted: traversal, rooted, drive-qualified, and reserved device names are refused, and the resolved path must stay under the destination root (see [Pipeline](pipeline.md#extraction-safety))
 
 ## Limits
