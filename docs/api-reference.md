@@ -137,18 +137,38 @@ Reads `.zar` archive files. Faithful port of `zarchivereader.h`.
 #### TryOpen
 
 ```csharp
+// File
 public static ZArchiveReader? TryOpen(string path)
+public static ZArchiveReader? TryOpen(string path, ZArchiveReaderOptions options)
+public static ZArchiveReader? TryOpen(string path, out ZArchiveOpenFailure failure)
+public static ZArchiveReader? TryOpen(string path, ZArchiveReaderOptions options, out ZArchiveOpenFailure failure)
+
+// Seekable stream
 public static ZArchiveReader? TryOpen(Stream stream, bool leaveOpen = false)
+public static ZArchiveReader? TryOpen(Stream stream, bool leaveOpen, ZArchiveReaderOptions options)
+public static ZArchiveReader? TryOpen(Stream stream, bool leaveOpen, out ZArchiveOpenFailure failure)
+public static ZArchiveReader? TryOpen(Stream stream, bool leaveOpen, ZArchiveReaderOptions options,
+    out ZArchiveOpenFailure failure)
+
+// Byte array
+public static ZArchiveReader? TryOpen(byte[] data)
+public static ZArchiveReader? TryOpen(byte[] data, ZArchiveReaderOptions options)
+public static ZArchiveReader? TryOpen(byte[] data, out ZArchiveOpenFailure failure)
+public static ZArchiveReader? TryOpen(byte[] data, ZArchiveReaderOptions options, out ZArchiveOpenFailure failure)
 ```
 
-Opens an archive. Returns `null` on invalid archives (never throws).
+Opens an archive. Returns `null` on invalid archives (never throws; a null
+`options` argument is a programming error and throws `ArgumentNullException`).
 
 **Parameters:**
 - `path` — Archive file path
-- `stream` — Archive stream
-- `leaveOpen` — Keep stream open after reader disposal
-
-**Returns:** Reader instance, or `null` if invalid
+- `stream` — Seekable archive stream
+- `leaveOpen` — Keep the stream open after a failed open
+- `options` — Cache size, extended-name decoding, path share mode
+- `failure` — Receives `None` on success, or a `ZArchiveOpenFailure` reason:
+  `FileNotFound`, `AccessDenied`, `InvalidStream`, `ReadError`, `TooSmall`,
+  `BadMagic`, `UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`,
+  `BadOffsetRecords`, `BadNameTable`, `BadFileTree`
 
 **Ownership:** with `leaveOpen: false` (the default), a failed open disposes
 the stream — ownership is only transferred to the returned reader on success.
@@ -159,85 +179,130 @@ Pass `leaveOpen: true` to keep the stream alive after a failed open.
 | Property | Type | Description |
 |----------|------|-------------|
 | `InvalidNode` | `uint` | Constant `0xFFFFFFFF` for path-not-found |
+| `RootNode` | `uint` | Node handle of the root directory (always `0`) |
+| `EntryCount` | `uint` | File-tree entry count (files and directories), computed at open |
+| `TotalUncompressedSize` | `ulong` | Sum of every file's uncompressed size, computed at open (no archive I/O) |
 | `Dictionary` | `ZstdDictionary?` | Dictionary for dictionary-packed archives (null = plain; inert for plain blocks; dictionary blocks read without it fail, never mis-decode) |
 
 ### Methods
 
-#### FileExists
+#### LookUp
 
 ```csharp
-public bool FileExists(string path)
+public uint LookUp(string path, bool allowFile = true, bool allowDirectory = true)
 ```
 
-Checks if a file exists at the given path.
+Resolves a path (case-insensitive, `/` or `\` separators) to a node handle,
+or `InvalidNode`. `allowFile`/`allowDirectory` are accepted for C++
+compatibility and ignored.
 
-#### DirectoryExists
+#### IsFile / IsDirectory
 
 ```csharp
-public bool DirectoryExists(string path)
+public bool IsFile(uint node)
+public bool IsDirectory(uint node)
 ```
 
-Checks if a directory exists at the given path.
+Reports the type of a node handle (`false` for invalid handles).
 
-#### ReadFile
+#### GetDirEntryCount / GetDirEntry / TryGetDirEntry
 
 ```csharp
-public byte[] ReadFile(string path)
+public uint GetDirEntryCount(uint node)
+public bool GetDirEntry(uint node, uint index, out ZArchiveReader.DirEntry entry)
+public bool TryGetDirEntry(uint node, uint index, out uint childNode, out ZArchiveReader.DirEntry entry)
 ```
 
-Reads and decompresses an entire file.
+Enumerates a directory. `GetDirEntryCount` is clamped to the file-tree bounds,
+so a crafted directory entry can never make callers iterate past the table.
+`TryGetDirEntry` additionally returns the child's node handle, so mount and
+extraction hosts can descend without rebuilding a path and looking it up again.
 
-**Parameters:**
-- `path` — File path within the archive
-
-**Returns:** File contents
-
-**Exceptions:**
-- `FileNotFoundException` — If file not found
-- `InvalidOperationException` — If archive is corrupt
-
-#### ReadFileRange
+#### TryGetNodeName
 
 ```csharp
-public byte[] ReadFileRange(string path, long offset, long length)
+public bool TryGetNodeName(uint node, out string name)
 ```
 
-Reads a range of bytes from a file.
+Returns the canonical (stored) name of a node handle, preserving the archive's
+casing. The root's name is `""`. Returns `false` for out-of-range handles.
 
-**Parameters:**
-- `path` — File path within the archive
-- `offset` — Byte offset within the file
-- `length` — Number of bytes to read
-
-**Returns:** Requested byte range
-
-#### ReadDirectory
+#### GetFileSize
 
 ```csharp
-public IReadOnlyList<ZArchiveReader.DirEntry> ReadDirectory(string path)
+public ulong GetFileSize(uint node)
 ```
 
-Lists directory contents.
+File size in bytes (0 for directories and invalid handles).
 
-**Parameters:**
-- `path` — Directory path within the archive
-
-**Returns:** List of directory entries
-
-#### GetName
+#### ReadFromFile / ReadFile
 
 ```csharp
-public string GetName(uint nameIndex)
+public ulong ReadFromFile(uint node, ulong offset, Span<byte> buffer)
+public byte[] ReadFile(uint node)
 ```
 
-Retrieves a name by its index in the name table.
+`ReadFromFile` reads at most `buffer.Length` bytes, clamped to the file size.
+A block failure mid-read returns the partial count (short read), never a
+silent EOF. `ReadFile` reads the whole file into a new array and throws
+`IOException` on a short read (or `InvalidOperationException` when the file
+exceeds `int.MaxValue`).
+
+#### OpenRead / TryOpenRead
+
+```csharp
+public Stream OpenRead(uint node)
+public Stream? TryOpenRead(string path)
+```
+
+Opens a seekable, read-only `Stream` over a file's uncompressed contents,
+reading through the block cache. `OpenRead` throws `ArgumentException` for an
+invalid or directory handle; `TryOpenRead` returns `null` when the path is
+missing or not a file. Disposing the stream does not dispose the archive.
+
+#### GetName / GetNameRaw
+
+```csharp
+public static string GetName(byte[] nameTable, uint nameOffset)
+public static string GetName(byte[] nameTable, uint nameOffset, bool decodeExtendedLengths)
+public static byte[]? GetNameRaw(byte[] nameTable, uint nameOffset, out int length)
+public static byte[]? GetNameRaw(byte[] nameTable, uint nameOffset, out int length, bool decodeExtendedLengths)
+```
+
+Decodes a name-table entry. The default preserves the 0.1.2 extended-length
+quirk (names of ≥ 0x80 characters decode to `""`); pass
+`decodeExtendedLengths: true` for the corrected decode. A whole reader can opt
+in through `ZArchiveReaderOptions.DecodeExtendedNames`.
+
+### ZArchiveReaderOptions
+
+```csharp
+public sealed class ZArchiveReaderOptions
+{
+    public static ZArchiveReaderOptions Default { get; }
+    public int CacheBlockCount { get; init; }      // default 64 (4 MiB); must be >= 1
+    public bool DecodeExtendedNames { get; init; } // default false (0.1.2 quirk)
+    public FileShare FileShare { get; init; }      // default FileShare.Read
+}
+```
+
+### ZArchiveOpenFailure
+
+```csharp
+public enum ZArchiveOpenFailure
+{
+    None, FileNotFound, AccessDenied, InvalidStream, ReadError, TooSmall,
+    BadMagic, UnsupportedVersion, LengthMismatch, SectionOutOfRange,
+    BadOffsetRecords, BadNameTable, BadFileTree,
+}
+```
 
 ### DirEntry Structure
 
 ```csharp
 public readonly struct DirEntry
 {
-    public string Name { get; }      // Entry name
+    public string Name { get; }      // Entry name (Windows-1252 decoded)
     public bool IsFile { get; }      // True for files
     public bool IsDirectory { get; } // True for directories
     public ulong Size { get; }       // File size (0 for directories)
@@ -246,26 +311,42 @@ public readonly struct DirEntry
 
 ### Thread Safety
 
-The reader is thread-safe for concurrent reads (single lock, like the C++ mutex).
+The reader is thread-safe for concurrent reads. Cache bookkeeping and copies
+are taken under a single lock; block decompression happens outside it, so
+distinct blocks decode in parallel (tune the working set with
+`ZArchiveReaderOptions.CacheBlockCount`).
 
 ### Example
 
 ```csharp
-using var reader = ZArchiveReader.TryOpen("archive.zar");
+using var reader = ZArchiveReader.TryOpen("archive.zar",
+    new ZArchiveReaderOptions { FileShare = FileShare.ReadWrite },
+    out var failure);
 if (reader == null)
 {
-    Console.WriteLine("Invalid archive");
+    Console.WriteLine($"Invalid archive: {failure}");
     return;
 }
 
-// List root directory
-foreach (var entry in reader.ReadDirectory("/"))
+// Walk a directory with node handles (no path rebuilds).
+for (uint i = 0; i < reader.GetDirEntryCount(ZArchiveReader.RootNode); i++)
 {
+    if (!reader.TryGetDirEntry(ZArchiveReader.RootNode, i, out var node, out var entry))
+    {
+        continue;
+    }
+
     Console.WriteLine($"{entry.Name}: {(entry.IsFile ? $"{entry.Size} bytes" : "DIR")}");
+
+    if (entry.IsFile)
+    {
+        using var stream = reader.OpenRead(node);
+        // stream.CopyTo(destination);
+    }
 }
 
-// Read a file
-byte[] data = reader.ReadFile("readme.txt");
+// Or resolve by path and stream the file.
+using var readme = reader.TryOpenRead("readme.txt");
 ```
 
 ---

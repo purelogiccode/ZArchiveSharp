@@ -156,9 +156,11 @@ The SHA-256 covers **every output byte written before the footer**, then the foo
 
 ## Reader Behavior
 
-- `TryOpen` returns `null` on **any** validation failure — it never throws (mirrors the C++ open chain); with `leaveOpen: false` (the default), a failed `TryOpen(Stream)` also disposes the stream, so ownership only transfers on success
-- A **4 MiB LRU cache** (64 × 64 KiB blocks) holds decompressed blocks
-- Reads are thread-safe (single lock, like the C++ mutex)
+- `TryOpen` returns `null` on **any** validation failure — it never throws (mirrors the C++ open chain); with `leaveOpen: false` (the default), a failed `TryOpen(Stream)` also disposes the stream, so ownership only transfers on success. The `out ZArchiveOpenFailure` overloads report the specific reason (`BadMagic`, `LengthMismatch`, `SectionOutOfRange`, …)
+- A **4 MiB LRU cache** (64 × 64 KiB blocks, configurable via `ZArchiveReaderOptions.CacheBlockCount`) holds decompressed blocks
+- Reads are thread-safe: cache bookkeeping and copies take the lock, while block decompression runs outside it, so distinct blocks decode in parallel
+- Directory enumeration can return child node handles (`TryGetDirEntry`) and canonical names (`TryGetNodeName`), and `GetDirEntryCount` clamps crafted counts to the file-tree bounds
+- `OpenRead`/`TryOpenRead` expose a seekable per-entry stream over the block cache
 - Data blocks carry no per-block checksums (same as native): flipped bytes may decode to different content instead of throwing. Truncations always fail the open.
 - Crafted tables are bounds-checked without wrapping (`OffsetInfo.IsWithinValidRange`, child ranges, directory indices); a block fault mid-read returns a short read instead of looking like EOF
 - Extraction treats entry names as untrusted: traversal, rooted, drive-qualified, and reserved device names are refused, and the resolved path must stay under the destination root (see [Pipeline](pipeline.md#extraction-safety))

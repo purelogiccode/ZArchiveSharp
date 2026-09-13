@@ -159,7 +159,7 @@
 
     <ItemGroup>
         <PackageReference Include="Serilog" Version="4.4.0" />
-        <PackageReference Include="Meziantou.Analyzer" Version="3.0.254">
+        <PackageReference Include="Meziantou.Analyzer" Version="3.0.257">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>

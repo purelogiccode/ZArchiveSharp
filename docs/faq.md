@@ -101,11 +101,22 @@ second.
 
 ### `ZArchiveReader.TryOpen` returned null — what do I do?
 
-`TryOpen` never throws; `null` means the file failed validation (bad magic/version, hash mismatch, truncated, malformed tables). Common causes:
+`TryOpen` never throws; `null` means the file failed validation (bad magic/version, size mismatch, truncated, malformed tables). Use the failure-reporting overload to see exactly which check failed:
 
-- The file is not a `.zar` at all (check for a download wrapper, e.g. HTML)
-- Truncated transfer — re-download; truncations always fail the open
-- Newer format revision (0.1.2 only is supported)
+```csharp
+using var reader = ZArchiveReader.TryOpen("game.zar", out var failure);
+if (reader == null)
+{
+    Console.WriteLine($"Rejected: {failure}"); // e.g. BadMagic, TooSmall, SectionOutOfRange
+}
+```
+
+Common causes:
+
+- The file is not a `.zar` at all (check for a download wrapper, e.g. HTML) — `BadMagic`
+- Truncated transfer — re-download; truncations always fail the open (`TooSmall`, `LengthMismatch`, `ReadError`)
+- Newer format revision (0.1.2 only is supported) — `UnsupportedVersion`
+- Renamed/huge sections or malformed tables — `SectionOutOfRange`, `BadOffsetRecords`, `BadNameTable`, `BadFileTree`
 
 ### Flipping bytes in an archive doesn't always throw — why?
 

@@ -14,6 +14,7 @@
 - **Seekable zstd format** (Foot + Head) — zeekstd-compatible framing
 - **Pipeline engine** — parallel batch pack/extract with progress, pause, cancellation & collision policies, byte-identical block-level parallelism inside a single pack/extract, plus the 7z archive-container stage (`.zip/.7z/.rar` → ISO/dir → `.zar` in one `zar --batch` run)
 - **Hardened extraction** — zip-slip/device-name rejection with resolved-path re-validation, 1024-level nesting cap, and scratch-and-move writes that never leave truncated files
+- **Mount-friendly reader API** — node-handle directory walks, canonical names, seekable per-entry streams, specific open-failure reasons, and cache-locked parallel block decode for virtual file systems
 - **Name-table order control** — `ZarPipelineOptions.NameOrder` pre-seeds the writer so archives can match discovery-order packers byte-for-byte
 - **CLI tool** — `zar` command matching `zarchive.exe` exit codes and behavior, with `--` path escapes, strict option validation, collision policies, and opt-out telemetry (`--no-telemetry` / `ZAR_BUG_REPORT=off`)
 - **Trimmable & AOT-compatible** — works with Native AOT deployment
@@ -54,6 +55,31 @@ writer.Finalize();
 
 // Read it back
 using var reader = ZArchiveReader.TryOpen("game.zar");
+```
+
+### Mount-Friendly Random Access
+
+```csharp
+using ZArchiveSharp;
+
+using var reader = ZArchiveReader.TryOpen("game.zar",
+    new ZArchiveReaderOptions { FileShare = FileShare.ReadWrite },
+    out var failure);
+if (reader == null)
+{
+    Console.WriteLine($"Invalid archive: {failure}");
+    return;
+}
+
+// Enumerate with node handles (no path rebuilds); stream any file.
+for (uint i = 0; i < reader.GetDirEntryCount(ZArchiveReader.RootNode); i++)
+{
+    if (reader.TryGetDirEntry(ZArchiveReader.RootNode, i, out var node, out var entry) && entry.IsFile)
+    {
+        using var stream = reader.OpenRead(node);
+        // stream.CopyTo(destination);
+    }
+}
 ```
 
 ### Standalone zstd Compression
