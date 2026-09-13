@@ -2,7 +2,8 @@
 
 Version history for ZArchiveSharp and the `zar` CLI. Package versions derive
 from `v`-prefixed git tags via MinVer; the library and CLI release together.
-The detailed notes for the current release live in [WhatsNew.md](../WhatsNew.md).
+The detailed notes for the current release live in
+[WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
 
 ## v1.2.0
 
@@ -46,7 +47,8 @@ The detailed notes for the current release live in [WhatsNew.md](../WhatsNew.md)
   (with `leaveOpen: false`, the default).
 - Telemetry is opt-out; no data is sent for `--help`/`--version` launches.
 
-Full notes: [WhatsNew.md](../WhatsNew.md).
+Full notes:
+[WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
 
 ## v1.1.0
 
