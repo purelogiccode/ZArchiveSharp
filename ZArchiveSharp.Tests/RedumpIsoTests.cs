@@ -96,7 +96,17 @@ public sealed class RedumpIsoTests
 
     internal static string CliCommand(string cli, string[] args)
     {
-        return (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : "") + Quote(args);
+        return (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : $"\"{cli}\" ") + Quote(args);
+    }
+
+    /// <summary>
+    /// POSIX exit statuses are bytes, so a managed return of -1 surfaces as
+    /// 255 and -13 as 243. Fold that wrapped range back to the signed codes
+    /// the assertions use; 130 (the Ctrl+C convention) is untouched.
+    /// </summary>
+    internal static int NormalizeExitCode(int exitCode)
+    {
+        return !OperatingSystem.IsWindows() && exitCode >= 240 ? exitCode - 256 : exitCode;
     }
 
     internal static string Quote(string[] values)
@@ -161,7 +171,7 @@ public sealed class RedumpIsoTests
                 Assert.Fail($"CLI timed out: {fileName} {arguments}");
             }
 
-            return (true, proc.ExitCode, stdout, stderr);
+            return (true, NormalizeExitCode(proc.ExitCode), stdout, stderr);
         }
     }
 

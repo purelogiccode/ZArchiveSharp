@@ -35,6 +35,15 @@ jobs:
       - name: Build
         run: dotnet build --no-restore --configuration Release
 
+      # Temporary: pin down the --iso assembly-load failure on Linux.
+      - name: CLI layout diagnostics (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ls -la ZArchiveSharp.Cli/bin/Release/net10.0/
+          printf 'probe' > /tmp/probe.bin
+          ZAR_BUG_REPORT=off ./ZArchiveSharp.Cli/bin/Release/net10.0/ZArchiveSharp --iso /tmp/probe.bin /tmp/probe.zar || true
+          echo "direct --iso run finished"
+
       - name: Test
         run: dotnet test --no-build --configuration Release --verbosity normal
 

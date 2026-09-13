@@ -179,7 +179,17 @@ public static class CliRunner
                 $"Timed out after {TimeoutMilliseconds}ms: {exe} {psi.Arguments}");
         }
 
-        return new CliResult(process.ExitCode, outTask.GetAwaiter().GetResult(), errTask.GetAwaiter().GetResult());
+        return new CliResult(NormalizeExitCode(process.ExitCode), outTask.GetAwaiter().GetResult(), errTask.GetAwaiter().GetResult());
+    }
+
+    /// <summary>
+    /// POSIX exit statuses are bytes, so a managed return of -1 surfaces as
+    /// 255 and -13 as 243. Fold that wrapped range back to the signed codes
+    /// the parity assertions use; 130 (the Ctrl+C convention) is untouched.
+    /// </summary>
+    private static int NormalizeExitCode(int exitCode)
+    {
+        return !OperatingSystem.IsWindows() && exitCode >= 240 ? exitCode - 256 : exitCode;
     }
 
     private static string Escape(string arg)

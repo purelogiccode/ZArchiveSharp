@@ -135,7 +135,7 @@ public sealed class UpdateCheckLatencyTests
             var exited = proc.WaitForExit(60_000);
             clock.Stop();
             Assert.True(exited, "The CLI did not exit.");
-            return (true, proc.ExitCode, clock.ElapsedMilliseconds, stdout, stderr);
+            return (true, RedumpIsoTests.NormalizeExitCode(proc.ExitCode), clock.ElapsedMilliseconds, stdout, stderr);
         }
         finally
         {
