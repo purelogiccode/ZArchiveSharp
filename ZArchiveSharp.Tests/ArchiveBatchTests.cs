@@ -451,8 +451,15 @@ public sealed class ArchiveBatchTests
             Directory.CreateDirectory(stage);
             File.WriteAllBytes(Path.Combine(stage, "payload.bin"), "same stem payload"u8.ToArray());
             Directory.CreateDirectory(inDir);
-            System.Formats.Tar.TarFile.CreateFromDirectory(
-                stage, Path.Combine(inDir, "game.tar"), includeBaseDirectory: false);
+            // Deterministic Ustar (no PAX headers): every 7z build, including
+            // the Homebrew one on macOS runners, can read it.
+            using (var tar = File.Create(Path.Combine(inDir, "game.tar")))
+            using (var writer = new System.Formats.Tar.TarWriter(
+                       tar, System.Formats.Tar.TarEntryFormat.Ustar))
+            {
+                writer.WriteEntry(Path.Combine(stage, "payload.bin"), "payload.bin");
+            }
+
             ZipTree(stage, Path.Combine(inDir, "game.zip"));
             using (var gz = File.Create(Path.Combine(inDir, "game.gz")))
             using (var gzip = new GZipStream(gz, CompressionLevel.Fastest))
