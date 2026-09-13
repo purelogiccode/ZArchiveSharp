@@ -22,8 +22,8 @@ Welcome to the ZArchiveSharp documentation. This guide covers everything you nee
 - **[FAQ](faq.md)** — Frequently asked questions and troubleshooting
 
 ### Releases
-- **[Release Notes](release-notes.md)** — Version history, v1.2.0 highlights, and upgrade notes
-- **[What's New in v1.2.0](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
+- **[Release Notes](release-notes.md)** — Version history, v1.2.2 highlights, and upgrade notes
+- **[What's New in v1.2.2](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
 
 ---
 

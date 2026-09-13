@@ -1,12 +1,54 @@
 # Release Notes
 
 Version history for ZArchiveSharp and the `zar` CLI. Package versions derive
-from `v`-prefixed git tags via MinVer; the library and CLI release together.
-The detailed notes for the current release live in
+from `v`-prefixed git tags via MinVer; since v1.2.2 every project in the
+solution (library, CLI, tests, benchmarks) releases together. The detailed
+notes for the current release live in
 [WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
 
 > **License change (after v1.2.0):** ZArchiveSharp is now distributed under
 > notices: [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
+
+## v1.2.2
+
+**Highlights**
+
+- **CLI help names the executable you launched.** Usage, help, error text and
+  `--version` print `ZArchiveSharp` from the standalone bundles and `zar`
+  from the global tool (falling back to `zar` for
+  `dotnet ZArchiveSharp.Cli.dll`). The substitution is token-aware, so the
+  `.zar` extension and `zstd` are unaffected.
+- **Windows app icon and metadata.** The CLI executable now embeds the
+  ZArchiveSharp icon (`ApplicationIcon`) and `Company =
+  PureLogicCode.com`; Unix bundles are unaffected.
+- **Tag-driven versioning for every project.** MinVer moved to
+  `Directory.Build.props`, so the library, CLI, tests, battle tests and
+  benchmarks all stamp `1.2.2`.
+- **Standalone release bundles** for win/linux/osx × x64/arm64
+  (`release_1.2.2_<rid>.zip`): single-file, framework-dependent (no .NET
+  runtime embedded; .NET 10 runtime required), with the
+  `ZArchiveSharp.Cli.runtimeconfig.json` sidecar, README, LICENSE and
+  THIRD-PARTY-NOTICES, and executable bits set on Unix.
+
+**Upgrade notes**
+
+- No wire-format or API changes since v1.2.0.
+- Standalone bundles are framework-dependent: install the matching .NET
+  runtime and keep the runtimeconfig sidecar next to the executable.
+
+## v1.2.1
+
+**Highlights**
+
+- Added [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md)
+  (ZArchive MIT-0, libzstd BSD-3, zeekstd BSD-2, seekable-zstd MIT,
+  ZstdSharp MIT), and the XGDTool (GPL-3.0, not incorporated) note.
+- NuGet packages now ship `<license type="file">LICENSE</license>` and
+  include the notices file; release notes call out the change.
+
+**Upgrade notes**
+
+  binary or API changes.
 
 ## v1.2.0
 

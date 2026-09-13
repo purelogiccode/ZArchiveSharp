@@ -168,7 +168,7 @@ anything.
 - **[Benchmarks](docs/benchmarks.md)** — Performance characteristics and tuning
 - **[FAQ](docs/faq.md)** — Frequently asked questions
 - **[Release Notes](docs/release-notes.md)** — Version history and upgrade notes
-- **[What's New](WhatsNew.md)** — v1.2.0 release notes (telemetry, extraction hardening, CLI argument rules, upgrade notes)
+- **[What's New](WhatsNew.md)** — v1.2.2 release notes (executable-aware help, Windows icon, versioning, release bundles)
 
 ## Byte-Identity Target
 
