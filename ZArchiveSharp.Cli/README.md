@@ -129,4 +129,6 @@ Full documentation lives in the [repository wiki](https://github.com/purelogicco
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+their notices are listed in
+written consent. The v1.2.0 package was published under MIT; releases after
+v1.2.0 use this license.

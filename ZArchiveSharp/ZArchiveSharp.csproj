@@ -17,7 +17,6 @@
         <PackageTags>zarchive;zar;zstd;compression;archive</PackageTags>
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageIcon>zar.png</PackageIcon>
-        <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <MinClientVersion>5.0</MinClientVersion>
 
         <!-- XML documentation -->
@@ -53,6 +52,7 @@
         <None Include="README.md" Pack="true" PackagePath="\" />
         <None Include="icon\zar.png" Pack="true" PackagePath="\" />
         <None Include="..\LICENSE" Pack="true" PackagePath="\" />
+        <None Include="..\THIRD-PARTY-NOTICES.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <!-- Source Link + versioning -->

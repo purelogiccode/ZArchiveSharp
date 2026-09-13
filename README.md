@@ -1,7 +1,6 @@
 # ZArchiveSharp
 
 [![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library** — directory-tree archives with per-block zstd compression. Zero native dependencies, BCL only; trimmable and AOT-compatible (`net8.0` / `net9.0` / `net10.0`).
 
@@ -187,8 +186,12 @@ Two known boundaries:
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+(ZArchive, libzstd, zeekstd, seekable-zstd, benchmark baselines); their
+notices are listed in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+v1.2.0 packages were published under MIT; releases after v1.2.0 use this
+license.
 
 ## Contributing
 
-Contributions are welcome! Please see the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues) for known issues and feature requests.
+license)! Please see the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues)
+for known issues and feature requests.

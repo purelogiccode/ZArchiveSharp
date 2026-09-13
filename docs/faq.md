@@ -123,10 +123,13 @@ The archive is corrupt or the I/O failed mid-extract. Extraction lines printed b
 
 ### What is the license?
 
+(ZArchive/libzstd/zeekstd/seekable-zstd), whose notices are in
+[THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
+[LICENSE](https://github.com/purelogiccode/ZArchiveSharp/blob/master/LICENSE).
+The v1.2.0 packages were published under MIT; releases after v1.2.0 use the
 
 ### How do I contribute?
 
-Open an issue or PR on the [issue tracker](https://github.com/purelogiccode/ZArchiveSharp/issues). If you touch compression logic, keep byte parity: the parity tests and goldens in `ZArchiveSharp.Tests/Goldens/` must stay green, and CI holds the line with no native toolchain installed.
 
 ### How are versions managed?
 

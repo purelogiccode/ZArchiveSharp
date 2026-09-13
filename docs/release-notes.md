@@ -5,6 +5,9 @@ from `v`-prefixed git tags via MinVer; the library and CLI release together.
 The detailed notes for the current release live in
 [WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
 
+> **License change (after v1.2.0):** ZArchiveSharp is now distributed under
+> notices: [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
+
 ## v1.2.0
 
 **Highlights**

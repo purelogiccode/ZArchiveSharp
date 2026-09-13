@@ -16,7 +16,8 @@
     <LangVersion>14</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+         every package. Replaces the SPDX expression used through v1.2.0. -->
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <Authors>purelogiccode</Authors>
     <Copyright>Copyright (c) purelogiccode</Copyright>
     <PackageProjectUrl>https://github.com/purelogiccode/ZArchiveSharp</PackageProjectUrl>
@@ -26,7 +27,6 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
-    <PackageReleaseNotes>v1.2.0: opt-out CLI telemetry, logging, bug reports and update checks; extraction hardening (zip-slip/device-name rejection, bounded nesting, scratch-and-move writes, no symlink traversal); strict CLI argument rules (-- terminator everywhere, dashed values, unknown-option errors, batch exit -11/-13); decoder total-output cap; seekable range errors are ArgumentOutOfRangeException; CP1252 name identity and other correctness fixes. See WhatsNew.md.</PackageReleaseNotes>
   </PropertyGroup>
 
 </Project>

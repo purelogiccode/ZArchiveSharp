@@ -8,6 +8,10 @@
 `4279/4279` library tests + `43/43` CLI battle tests green
 (Ubuntu/Windows/macOS via `.github/workflows/ci.yml`).
 
+**License (releases after v1.2.0):** the batch pipeline layer is a port of
+written consent). The v1.2.0 packages were published under MIT. See
+[LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ## Highlights
 
 ### CLI telemetry, logging, and update checks (opt-out)

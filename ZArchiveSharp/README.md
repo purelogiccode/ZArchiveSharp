@@ -139,4 +139,6 @@ NuGet. See `.github/workflows/ci.yml`. Per-release highlights live in
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+their notices are listed in
+written consent. The v1.2.0 package was published under MIT; releases after
+v1.2.0 use this license.
