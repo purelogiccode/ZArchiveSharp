@@ -7,6 +7,5 @@ TestResults/
 *.user
 *.DotSettings.user
 References/
-.github/workflows/
 PortPlan.md
 BUGS.md
