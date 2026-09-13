@@ -306,7 +306,7 @@ public sealed class ZArchiveReaderMountApiTests
         });
 
         using var reader = ZArchiveReader.TryOpen(zar)!;
-        using var stream = reader.TryOpenRead("BIG.BIN");
+        var stream = reader.TryOpenRead("BIG.BIN");
         Assert.NotNull(stream);
         Assert.Equal(data.Length, stream.Length);
 
@@ -412,10 +412,10 @@ public sealed class ZArchiveReaderMountApiTests
         async Task RunParallel(ZArchiveReader reader)
         {
             var node = reader.LookUp("p.bin");
-            using var gate = new ManualResetEventSlim(false);
-            var tasks = Enumerable.Range(0, taskCount).Select(index => Task.Run(() =>
+            var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var tasks = Enumerable.Range(0, taskCount).Select(index => Task.Run(async () =>
             {
-                gate.Wait();
+                await gate.Task;
                 var offset = index * slice;
                 var buffer = new byte[slice];
                 var read = 0;
@@ -429,7 +429,7 @@ public sealed class ZArchiveReaderMountApiTests
                 Assert.Equal(data.AsSpan(offset, slice).ToArray(), buffer);
             })).ToArray();
 
-            gate.Set();
+            gate.SetResult();
             await Task.WhenAll(tasks);
         }
     }
