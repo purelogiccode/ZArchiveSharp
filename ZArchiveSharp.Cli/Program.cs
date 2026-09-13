@@ -779,7 +779,7 @@ public static class Program
         // they would corrupt piped data. List output IS the table, so it
         // always goes to stdout (quiet is ignored there, like the oracle).
         var parsed = job;
-        Action<string>? log = parsed switch
+        var log = parsed switch
         {
             { ShowHelp: true } => Named(CliLog.Out),
             { Command: SeekableCli.SeekableCommand.List } => CliLog.Out,
