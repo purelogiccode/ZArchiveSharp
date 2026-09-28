@@ -16,7 +16,7 @@
     <LangVersion>14</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-         every package. Replaces the SPDX expression used through v1.2.0. -->
+    <!-- License file packed into every released package. -->
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <Authors>PureLogicCode.com</Authors>
     <Copyright>Copyright (c) PureLogicCode.com</Copyright>
