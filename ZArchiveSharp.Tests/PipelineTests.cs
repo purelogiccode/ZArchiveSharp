@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using ZArchiveSharp.Pipeline;
 using ZArchiveSharp.Zstd;
 
@@ -919,6 +920,7 @@ public sealed class PipelineTests : IDisposable
     }
 
     [Fact]
+    [SuppressMessage("ReSharper", "UseSymbolAlias")]
     public void Pause_SourceDispose_ReleasesAndRejectsReuse()
     {
         var source = new PauseTokenSource();
