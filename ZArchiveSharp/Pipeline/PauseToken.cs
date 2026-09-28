@@ -10,8 +10,8 @@ public readonly struct PauseToken(ManualResetEventSlim? running)
 
     /// <summary>
     /// Blocks while paused. Throws <see cref="OperationCanceledException"/>
-    /// when <paramref name="cancellationToken"/> fires first (mirroring
-    /// <c>request_cancel</c>, which unblocks paused workers to unwind).
+    /// when <paramref name="cancellationToken"/> fires first, so a paused
+    /// worker still unwinds on cancellation.
     /// </summary>
     public void WaitIfPaused(CancellationToken cancellationToken = default)
     {

@@ -1,7 +1,8 @@
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// the others run a single stage.
+/// Pipeline mode: <c>Auto</c> runs the full chain for each input, the others
+/// run a single stage.
 /// </summary>
 public enum ZarProcessMode
 {

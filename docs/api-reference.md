@@ -820,7 +820,8 @@ stdout.
 ## SevenZip (ZArchiveSharp.Pipeline)
 
 Archive-container stage: finds an external 7z binary and extracts
-7z stays external by design).
+`.zip/.rar/.7z/.tar/.gz` through `ProcessRunner` (7z stays external by
+design).
 
 ```csharp
 public static string? FindTool(string? preferredPath = null,

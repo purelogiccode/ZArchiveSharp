@@ -1,7 +1,7 @@
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// (<c>set</c> = running): workers block in
+/// Cooperative pause gate: workers block in
 /// <see cref="PauseToken.WaitIfPaused"/> while paused and keep honoring
 /// cancellation. <see cref="PauseToken"/> is a snapshot struct; the default
 /// value never pauses. Dispose after the workers stop to release the

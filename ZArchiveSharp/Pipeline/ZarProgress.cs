@@ -3,8 +3,8 @@ namespace ZArchiveSharp.Pipeline;
 /// <summary>
 /// Progress event for pack/extract work. Totals are pre-scanned, so
 /// <see cref="Ratio"/> moves monotonically from 0 to 1 within one
-/// <c>SourcePath</c>; batch runs re-base it per item (completed items plus
-/// <c>completed_tasks + sum(file_progress)) / total</c>).
+/// <c>SourcePath</c>; batch runs re-base it per item into the batch-wide
+/// share (completed items plus the in-flight fraction).
 /// </summary>
 public readonly record struct ZarProgress(
     ZarOperation Operation,

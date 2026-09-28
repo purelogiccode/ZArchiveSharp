@@ -139,6 +139,6 @@ NuGet. See `.github/workflows/ci.yml`. Per-release highlights live in
 
 ## License
 
-their notices are listed in
-written consent. The v1.2.0 package was published under MIT; releases after
-v1.2.0 use this license.
+**MIT** — see [LICENSE](../LICENSE). ZArchiveSharp incorporates permissively
+licensed components; their notices are listed in
+[THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).

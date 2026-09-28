@@ -1,8 +1,10 @@
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// Batch file listing. Ports <c>FileService.find_processable_files</c>
-/// ordinal sort; unreadable entries are skipped.
+/// Batch file listing: a non-recursive scan of a directory, lowercase-suffix
+/// matching per <see cref="ZarProcessMode"/>, ordinal sort; unreadable
+/// entries are skipped and a failed listing is reported through the optional
+/// log sink.
 /// </summary>
 public static class ProcessableFiles
 {
@@ -21,7 +23,6 @@ public static class ProcessableFiles
     /// </summary>
     public static IReadOnlyList<string> Find(string directory, ZarProcessMode mode, Action<string>? log = null)
     {
-        var found = new List<string>();
         string[] entries;
         try
         {
@@ -30,34 +31,18 @@ public static class ProcessableFiles
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             log?.Invoke(ex.Message);
-            return found;
+            return [];
         }
 
+        var found = new List<string>();
         foreach (var entry in entries)
         {
-            bool isFile;
-            bool isDir;
-            try
-            {
-                isFile = File.Exists(entry);
-                isDir = !isFile && Directory.Exists(entry);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            if (!TryClassify(entry, out var isFile, out var isDirectory))
             {
                 continue;
             }
 
-            var suffix = Path.GetExtension(entry).ToLowerInvariant();
-            var accept = mode switch
-            {
-                ZarProcessMode.Auto =>
-                    isDir || (isFile && (IsoExtensions.Contains(suffix) || ArchiveExtensions.Contains(suffix))),
-                ZarProcessMode.ExtractArchive => isFile && ArchiveExtensions.Contains(suffix),
-                ZarProcessMode.ExtractIso => isFile && IsoExtensions.Contains(suffix),
-                ZarProcessMode.Compress => isDir,
-                _ => false,
-            };
-            if (accept)
+            if (Accepts(mode, Path.GetExtension(entry).ToLowerInvariant(), isFile, isDirectory))
             {
                 found.Add(entry);
             }
@@ -65,5 +50,34 @@ public static class ProcessableFiles
 
         found.Sort(StringComparer.Ordinal);
         return found;
+    }
+
+    private static bool TryClassify(string entry, out bool isFile, out bool isDirectory)
+    {
+        try
+        {
+            isFile = File.Exists(entry);
+            isDirectory = !isFile && Directory.Exists(entry);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            isFile = false;
+            isDirectory = false;
+            return false;
+        }
+    }
+
+    private static bool Accepts(ZarProcessMode mode, string suffix, bool isFile, bool isDirectory)
+    {
+        return mode switch
+        {
+            ZarProcessMode.Auto =>
+                isDirectory || (isFile && (IsoExtensions.Contains(suffix) || ArchiveExtensions.Contains(suffix))),
+            ZarProcessMode.ExtractArchive => isFile && ArchiveExtensions.Contains(suffix),
+            ZarProcessMode.ExtractIso => isFile && IsoExtensions.Contains(suffix),
+            ZarProcessMode.Compress => isDirectory,
+            _ => false,
+        };
     }
 }

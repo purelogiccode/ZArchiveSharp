@@ -3,8 +3,7 @@ namespace ZArchiveSharp.Pipeline;
 /// <summary>
 /// CLI-facing name mapping for <see cref="ZarProcessMode"/> (the
 /// <c>--mode</c> flag). Lives in the library so the mapping is unit-tested
-/// without referencing the CLI project (which carries the cross-repo
-/// XISOSharp source dependency).
+/// without referencing the CLI project.
 /// </summary>
 public static class ZarProcessModes
 {
@@ -25,35 +24,22 @@ public static class ZarProcessModes
             return false;
         }
 
-        var name = value.Trim();
-        if (string.Equals(name, "auto", StringComparison.OrdinalIgnoreCase))
+        switch (value.Trim().ToLowerInvariant())
         {
-            mode = ZarProcessMode.Auto;
-            return true;
+            case "auto":
+                mode = ZarProcessMode.Auto;
+                return true;
+            case "extract-archive" or "extract-arc" or "archive":
+                mode = ZarProcessMode.ExtractArchive;
+                return true;
+            case "extract-iso" or "extract" or "iso":
+                mode = ZarProcessMode.ExtractIso;
+                return true;
+            case "compress":
+                mode = ZarProcessMode.Compress;
+                return true;
+            default:
+                return false;
         }
-
-        if (string.Equals(name, "extract-archive", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "extract-arc", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "archive", StringComparison.OrdinalIgnoreCase))
-        {
-            mode = ZarProcessMode.ExtractArchive;
-            return true;
-        }
-
-        if (string.Equals(name, "extract-iso", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "extract", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "iso", StringComparison.OrdinalIgnoreCase))
-        {
-            mode = ZarProcessMode.ExtractIso;
-            return true;
-        }
-
-        if (string.Equals(name, "compress", StringComparison.OrdinalIgnoreCase))
-        {
-            mode = ZarProcessMode.Compress;
-            return true;
-        }
-
-        return false;
     }
 }

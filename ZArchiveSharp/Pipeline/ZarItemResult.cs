@@ -1,8 +1,6 @@
 namespace ZArchiveSharp.Pipeline;
 
-/// <summary>
-/// Result of one batch item. Ports <c>ProcessResult</c>
-/// </summary>
+/// <summary>Result of one batch item, including byte/file counts.</summary>
 public sealed record ZarItemResult(
     string SourcePath,
     string? DestinationPath,

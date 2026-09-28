@@ -4,18 +4,20 @@ using System.Globalization;
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// merged stdout/stderr scanned for <c>(\d+)%</c> progress at most every
-/// 100 ms, exit <c>0</c>/<c>1</c> accepted (the latter is 7z's harmless
-/// warning), anything else raising with the last output line attached,
-/// cancellation killing the process. This is the seam a future GUI uses to
-/// drive 7z / extract-xiso stages; ZAR pack/extract itself runs in-process
-/// via <see cref="ZarPipeline"/>.
+/// Runs an external tool and tracks its progress. The merged output stream is
+/// scanned for <c>(\d+)%</c> progress lines at most every 100 ms, exit codes
+/// <c>0</c> and <c>1</c> count as success (the latter is 7z's harmless
+/// warning), anything else raises with the last output line attached, and
+/// cancellation kills the process tree. This is the seam for external tools
+/// (e.g. 7z); ZAR pack/extract itself runs in-process via
+/// <see cref="ZarPipeline"/>.
 /// </summary>
 public static class ProcessRunner
 {
     private static readonly TimeSpan ProgressInterval = TimeSpan.FromMilliseconds(100);
 
     /// <summary>Runs <paramref name="fileName"/> and returns its exit code plus last output line.</summary>
+    /// <exception cref="FileNotFoundException">When the tool is missing or blocked.</exception>
     /// <exception cref="UnauthorizedAccessException">On Windows elevation error 740.</exception>
     /// <exception cref="InvalidOperationException">On nonzero (non-1) exit.</exception>
     public static ProcessResult Run(
@@ -27,25 +29,66 @@ public static class ProcessRunner
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(fileName);
-        using var process = new Process();
-        process.StartInfo = new ProcessStartInfo
+        using var process = new Process
         {
-            FileName = fileName,
-            Arguments = arguments,
-            WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding = System.Text.Encoding.UTF8,
-            UseShellExecute = false,
-            CreateNoWindow = true,
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory ?? Environment.CurrentDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            },
         };
+        Start(process, fileName);
 
+        string? lastError = null;
+        var stderrDrained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is not null)
+            {
+                lastError = e.Data;
+            }
+            else
+            {
+                stderrDrained.TrySetResult();
+            }
+        };
+        process.BeginErrorReadLine();
+
+        string? lastOutput;
         try
         {
-            if (!process.Start())
+            lastOutput = PumpStdout(process, progress, pause, cancellationToken);
+            WaitForExit(process, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKill(process);
+            process.WaitForExit(5000);
+            throw;
+        }
+
+        // The stderr pump is asynchronous: give it a bounded moment to reach
+        // EOF so a late-only failure line is not reported as "no output".
+        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5), cancellationToken);
+        var lastLine = lastOutput ?? lastError;
+        ThrowIfFailed(process.ExitCode, lastLine, fileName);
+        return new ProcessResult(process.ExitCode, lastLine);
+    }
+
+    private static void Start(Process process, string fileName)
+    {
+        try
+        {
+            if (process.Start())
             {
-                throw new FileNotFoundException($"Required tool did not start: {fileName}");
+                return;
             }
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 740)
@@ -60,133 +103,116 @@ public static class ProcessRunner
                 ex);
         }
 
-        string? lastErr = null;
-        var stderrDrained = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        process.ErrorDataReceived += (_, e) =>
-        {
-            if (e.Data != null)
-            {
-                lastErr = e.Data;
-            }
-            else
-            {
-                stderrDrained.TrySetResult();
-            }
-        };
-        process.BeginErrorReadLine();
-
-        string? lastOut;
-        try
-        {
-            lastOut = Pump(process, progress, pause, cancellationToken);
-            // Poll instead of WaitForExitAsync: the async wait can stay
-            // blocked until the redirected pipes hit EOF, so a child that
-            // closed stdout (Pump returned) but keeps running would never
-            // observe cancellation. Polling kills it here.
-            while (!process.WaitForExit(100))
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            TryKill(process);
-            process.WaitForExit(5000);
-            throw;
-        }
-
-        // BeginErrorReadLine is asynchronous: give the stderr pump a
-        // bounded moment to drain so a late-only failure line is not
-        // reported as "no output".
-        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5), cancellationToken);
-        var lastLine = lastOut ?? lastErr;
-        ThrowIfFailed(process.ExitCode, lastLine, fileName);
-        return new ProcessResult(process.ExitCode, lastLine);
+        throw new FileNotFoundException($"Required tool did not start: {fileName}");
     }
 
-    private static string? Pump(
+    private static void WaitForExit(Process process, CancellationToken cancellationToken)
+    {
+        // Poll instead of WaitForExitAsync: the async wait can stay blocked
+        // until the redirected pipes hit EOF, so a child that closed stdout
+        // (PumpStdout returned) but keeps running would never observe
+        // cancellation. Polling kills it here.
+        while (!process.WaitForExit(100))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    private static string? PumpStdout(
         Process process, IProgress<double>? progress, PauseToken pause, CancellationToken cancellationToken)
     {
-        // progress bars yield one line each. Stderr drains on events (every
-        // known tool reports progress on stdout); its last line is kept for
-        // failure messages, mirroring the merged stream's last_line.
+        // Read one character at a time so carriage-return progress bars turn
+        // into one line each. 7z and friends report progress on stdout; stderr
+        // is drained by the event pump and its last line is kept for failures.
         var line = new System.Text.StringBuilder();
-        string? lastOut = null;
+        string? lastLine = null;
         var clock = Stopwatch.StartNew();
         var stdout = process.StandardOutput;
         while (true)
         {
             pause.WaitIfPaused(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            var ch = stdout.Read();
-            if (ch == -1)
+            var next = stdout.Read();
+            if (next < 0)
             {
                 break;
             }
 
-            if (ch == '\r' || ch == '\n')
+            var ch = (char)next;
+            if (ch is not ('\r' or '\n'))
             {
-                if (line.Length > 0)
-                {
-                    lastOut = line.ToString();
-                    line.Clear();
-                    if (TryParseProgressLine(lastOut) is { } ratio &&
-                        (clock.Elapsed >= ProgressInterval || ratio >= 1.0))
-                    {
-                        progress?.Report(ratio);
-                        clock.Restart();
-                    }
-                }
+                line.Append(ch);
+                continue;
             }
-            else
+
+            if (line.Length == 0)
             {
-                line.Append((char)ch);
+                continue;
+            }
+
+            lastLine = Take(line);
+            if (TryParseProgressLine(lastLine) is { } ratio &&
+                (clock.Elapsed >= ProgressInterval || ratio >= 1.0))
+            {
+                progress?.Report(ratio);
+                clock.Restart();
             }
         }
 
         if (line.Length > 0)
         {
-            lastOut = line.ToString();
-            if (TryParseProgressLine(lastOut) is { } finalRatio)
+            lastLine = Take(line);
+            if (TryParseProgressLine(lastLine) is { } trailingRatio)
             {
-                progress?.Report(finalRatio);
+                progress?.Report(trailingRatio);
             }
         }
 
-        return lastOut;
+        return lastLine;
+
+        static string Take(System.Text.StringBuilder buffer)
+        {
+            var text = buffer.ToString();
+            buffer.Clear();
+            return text;
+        }
     }
 
     /// <summary>
-    /// Parses a <c>(\d+)%</c> progress line to 0..1 (first match wins), else
-    /// <c>PROGRESS_PATTERN</c>; hand-rolled (no regex backtracking surface).
+    /// Parses a <c>(\d+)%</c> progress line to 0..1 (leftmost match wins),
+    /// else null. Hand-rolled (no regex backtracking surface).
     /// </summary>
     internal static double? TryParseProgressLine(string line)
     {
         for (var i = 0; i < line.Length; i++)
         {
-            if (!char.IsAsciiDigit(line[i]))
+            if (line[i] != '%')
             {
                 continue;
             }
 
-            var j = i;
-            while (j < line.Length && char.IsAsciiDigit(line[j]))
+            var start = i;
+            while (start > 0 && char.IsAsciiDigit(line[start - 1]))
             {
-                j++;
+                start--;
             }
 
-            if (j < line.Length && line[j] == '%' &&
-                int.TryParse(line.AsSpan(i, j - i), NumberStyles.None, CultureInfo.InvariantCulture, out var percent))
+            if (start == i)
+            {
+                continue;
+            }
+
+            if (int.TryParse(line.AsSpan(start, i - start), NumberStyles.None, CultureInfo.InvariantCulture,
+                    out var percent))
             {
                 return Math.Clamp(percent / 100.0, 0.0, 1.0);
             }
-
-            i = j;
         }
 
         return null;
     }
 
+    /// <summary>Accepts exit 0/1, else throws with the last line attached.</summary>
     /// <exception cref="InvalidOperationException">On nonzero (non-1) exit.</exception>
     internal static void ThrowIfFailed(int exitCode, string? lastLine, string fileName)
     {

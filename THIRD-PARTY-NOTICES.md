@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-License](LICENSE), which requires the notices below to be retained. The
-from the permissively licensed projects listed here; their notices are
+ZArchiveSharp is distributed under the [MIT License](LICENSE). It incorporates
+material from the permissively licensed projects listed here; their notices are
 reproduced as required by their licenses.
 
 | Component | Reference | License | How it is used |
@@ -20,29 +20,6 @@ derived code must be distributed under GPL-3.0-compatible terms:
 | Reference | License | Status |
 |-----------|---------|--------|
 | [XGDTool 1.0.0](https://github.com/wiredopposite/XGDTool) | GNU GPL-3.0 | Not used in ZArchiveSharp; XISOSharp (`--iso` runtime dependency) is a separate project and needs its own review |
-
----
-
-
-ZArchiveSharp's pipeline layer (`ZArchiveSharp.Pipeline`) and the `zar
-
-```text
-
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to use,
-
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
-terms, the project can return to a permissive license (MIT); until then the
 
 ---
 

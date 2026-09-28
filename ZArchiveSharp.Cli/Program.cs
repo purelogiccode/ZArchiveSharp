@@ -354,8 +354,9 @@ public static class Program
             }
         }
 
-        // value for every path, then let each non-batch consumer below reject
-        // an explicit non-fail policy rather than silently ignoring it.
+        // --policy is a batch-pipeline knob: validate the value for every
+        // path, then let each non-batch consumer below reject an explicit
+        // non-fail policy rather than silently ignoring it.
         ZarCollisionPolicy? collisionPolicy = policy.ToLowerInvariant() switch
         {
             "fail" => ZarCollisionPolicy.Fail,
@@ -439,9 +440,10 @@ public static class Program
         var deleteSource = keepOriginalsOverride == false;
 
         // --mode/--delete-source/--seven-zip/--policy select batch pipeline
-        // auto-detects by input type, never deletes sources, and keeps the
-        // zarchive.exe refuse-overwrite contract, so reject them there rather
-        // than silently ignoring a destructive-looking request.
+        // stages; the single pack/extract path below auto-detects by input
+        // type, never deletes sources, and keeps the zarchive.exe
+        // refuse-overwrite contract, so reject them there rather than
+        // silently ignoring a destructive-looking request.
         if (!batch)
         {
             if (modeRaw != null)
@@ -1018,16 +1020,16 @@ public static class Program
         int level, bool quiet, IZarBlockCompressor? compressor, ZstdDictionary? dictionary, bool checksum,
         ZarProcessMode mode, bool deleteSource, string? sevenZipPath)
     {
-        if (inputPath == null || !Directory.Exists(inputPath))
+        if (inputPath is null || !Directory.Exists(inputPath))
         {
             CliLog.Err("Error: --batch requires an input directory.");
-            return -1;
+            return ZarchiveCli.BadUsage;
         }
 
         var destDir = outputPath ?? inputPath;
 
-        // A directory listing fault (e.g. access denied) must fail the run,
-        // not look like an empty directory with exit 0.
+        // A listing fault (e.g. access denied) must fail the run, not look
+        // like an empty directory with exit 0.
         var listingFailed = false;
         var files = ProcessableFiles.Find(inputPath, mode, message =>
         {
@@ -1041,11 +1043,18 @@ public static class Program
 
         if (files.Count == 0)
         {
-            if (!quiet) CliLog.Out("No processable files found.");
+            if (!quiet)
+            {
+                CliLog.Out("No processable files found.");
+            }
+
             return 0;
         }
 
-        if (!quiet) CliLog.Out($"Found {files.Count} file(s). Processing with {jobs} workers...");
+        if (!quiet)
+        {
+            CliLog.Out($"Found {files.Count} file(s). Processing with {jobs} workers...");
+        }
 
         var options = new ZarPipelineOptions
         {
@@ -1057,45 +1066,17 @@ public static class Program
             MaxDegreeOfParallelism = jobs,
             DeleteSourceOnSuccess = deleteSource,
         };
-
-        var progress = quiet
-            ? null
-            : new Progress<ZarProgress>(p =>
-            {
-                if (p.Operation == ZarOperation.Pack)
-                {
-                    var pct = p.Ratio * 100;
-                    CliLog.Progress(
-                        $"\r  [{p.FilesCompleted}/{p.FilesTotal}] {pct:F1}% {Path.GetFileName(p.SourcePath)}");
-                }
-            });
+        var progress = quiet ? null : BatchProgressReporter();
 
         try
         {
             Directory.CreateDirectory(destDir);
 
-            // Partition by kind: directories pack as-is, ISOs convert
-            // straight to .zar, archives run the 7z container stage first
-            var dirs = new List<string>();
-            var isos = new List<string>();
-            var archives = new List<string>();
-            foreach (var file in files)
-            {
-                if (Directory.Exists(file))
-                {
-                    dirs.Add(file);
-                }
-                else if (ProcessableFiles.IsoExtensions.Contains(Path.GetExtension(file).ToLowerInvariant()))
-                {
-                    isos.Add(file);
-                }
-                else
-                {
-                    archives.Add(file);
-                }
-            }
+            // Directories pack as-is, ISOs convert straight to .zar, archives
+            // run the 7z container stage first (7z -> ISO-or-dir -> zar).
+            var (directories, isos, archives) = PartitionBatchInputs(files);
 
-            if (sevenZipPath != null && archives.Count > 0 && !File.Exists(sevenZipPath))
+            if (sevenZipPath is not null && archives.Count > 0 && !File.Exists(sevenZipPath))
             {
                 // A missing tool is an environment/runtime failure, not bad
                 // usage (-1 is documented as usage / invalid input only).
@@ -1104,9 +1085,9 @@ public static class Program
             }
 
             var results = new List<ZarItemResult>();
-            if (dirs.Count > 0)
+            if (directories.Count > 0)
             {
-                results.AddRange(ZarPipeline.PackBatch(dirs, destDir, options, progress));
+                results.AddRange(ZarPipeline.PackBatch(directories, destDir, options, progress));
             }
 
             if (isos.Count > 0)
@@ -1120,71 +1101,119 @@ public static class Program
                     quiet, compressor, dictionary, sevenZipPath, jobs, progress));
             }
 
-            if (!quiet) CliLog.Out();
-
-            int ok = 0, fail = 0, skip = 0, collisionRefusals = 0;
-            foreach (var r in results)
+            if (!quiet)
             {
-                if (r.Status == ZarItemStatus.Completed)
-                {
-                    ok++;
-                }
-                else if (r.Status == ZarItemStatus.Skipped)
-                {
-                    skip++;
-                    if (!quiet) CliLog.Out($"  Skipped: {r.SourcePath} - {r.ErrorMessage}");
-                }
-                else
-                {
-                    fail++;
-                    if (r.ErrorMessage?.StartsWith(ZarPackEngine.OutputExistsMessage, StringComparison.Ordinal) == true)
-                    {
-                        collisionRefusals++;
-                    }
-
-                    CliLog.Err($"  Failed: {r.SourcePath} - {r.ErrorMessage}");
-                }
+                CliLog.Out();
             }
+
+            var (succeeded, failed, skipped) = ReportBatchResults(results, quiet);
+            var refusals = results.Count(result =>
+                result.Status is not (ZarItemStatus.Completed or ZarItemStatus.Skipped) &&
+                result.ErrorMessage?.StartsWith(ZarPackEngine.OutputExistsMessage, StringComparison.Ordinal) == true);
 
             if (!quiet)
             {
-                CliLog.Out(skip == 0
-                    ? $"Batch complete: {ok} succeeded, {fail} failed."
-                    : $"Batch complete: {ok} succeeded, {fail} failed, {skip} skipped.");
+                CliLog.Out(skipped == 0
+                    ? $"Batch complete: {succeeded} succeeded, {failed} failed."
+                    : $"Batch complete: {succeeded} succeeded, {failed} failed, {skipped} skipped.");
             }
 
             // A batch whose only failures are collision refusals reports the
             // documented -11 (Refused); any other failure stays the aggregate
             // pack failure, -13.
-            return fail > 0 ? (collisionRefusals == fail ? ZarchiveCli.Refused : -13) : 0;
+            if (failed == 0)
+            {
+                return 0;
+            }
+
+            return refusals == failed ? ZarchiveCli.Refused : ZarchiveCli.PackFailed;
         }
         catch (Exception ex)
         {
             CliLog.Err($"Error: {ex.Message}", ex);
-            return -13;
+            return ZarchiveCli.PackFailed;
         }
+    }
+
+    private static (List<string> Directories, List<string> Isos, List<string> Archives) PartitionBatchInputs(
+        IReadOnlyList<string> entries)
+    {
+        var directories = new List<string>();
+        var isos = new List<string>();
+        var archives = new List<string>();
+        foreach (var entry in entries)
+        {
+            if (Directory.Exists(entry))
+            {
+                directories.Add(entry);
+            }
+            else if (ProcessableFiles.IsoExtensions.Contains(Path.GetExtension(entry).ToLowerInvariant()))
+            {
+                isos.Add(entry);
+            }
+            else
+            {
+                archives.Add(entry);
+            }
+        }
+
+        return (directories, isos, archives);
+    }
+
+    private static IProgress<ZarProgress> BatchProgressReporter()
+    {
+        return new Progress<ZarProgress>(p =>
+        {
+            if (p.Operation == ZarOperation.Pack)
+            {
+                CliLog.Progress(
+                    $"\r  [{p.FilesCompleted}/{p.FilesTotal}] {p.Ratio * 100:F1}% {Path.GetFileName(p.SourcePath)}");
+            }
+        });
+    }
+
+    private static (int Succeeded, int Failed, int Skipped) ReportBatchResults(
+        IReadOnlyList<ZarItemResult> results, bool quiet)
+    {
+        var succeeded = 0;
+        var failed = 0;
+        var skipped = 0;
+        foreach (var result in results)
+        {
+            switch (result.Status)
+            {
+                case ZarItemStatus.Completed:
+                    succeeded++;
+                    break;
+                case ZarItemStatus.Skipped:
+                    skipped++;
+                    if (!quiet)
+                    {
+                        CliLog.Out($"  Skipped: {result.SourcePath} - {result.ErrorMessage}");
+                    }
+
+                    break;
+                default:
+                    failed++;
+                    CliLog.Err($"  Failed: {result.SourcePath} - {result.ErrorMessage}");
+                    break;
+            }
+        }
+
+        return (succeeded, failed, skipped);
     }
 
     /// <summary>
     /// Converts each ISO in <paramref name="isos"/> to a <c>.zar</c> next to
-    /// <c>extract</c> + <c>compress</c> stages fused, since this CLI packs an
-    /// ISO straight to <c>.zar</c> without an intermediate directory).
+    /// it in <paramref name="destDir"/>. A single item's failure never stops
+    /// the leg.
     /// </summary>
     private static IReadOnlyList<ZarItemResult> PackIsoBatch(IReadOnlyList<string> isos, string destDir,
         ZarPipelineOptions options, int level, IZarBlockCompressor? compressor, ZstdDictionary? dictionary,
         IProgress<ZarProgress>? progress)
     {
-        var list = isos.ToList();
-        var results = new ZarItemResult?[list.Count];
-        Parallel.For(0, list.Count,
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Min(Math.Max(1, options.MaxDegreeOfParallelism), Math.Max(1, list.Count)),
-            },
-            i => results[i] = PackIsoOne(list[i], destDir, options, level, compressor, dictionary, progress));
-        return results.Select((r, i) => r ??
-                                        new ZarItemResult(list[i], null, ZarItemStatus.Cancelled,
-                                            "Cancelled before start.")).ToList();
+        return RunCliItems(isos.ToList(), options.MaxDegreeOfParallelism,
+            iso => PackIsoOne(iso, destDir, options, level, compressor, dictionary, progress));
     }
 
     private static ZarItemResult PackIsoOne(string iso, string destDir, ZarPipelineOptions options,
@@ -1195,23 +1224,23 @@ public static class Program
         try
         {
             var resolved = ZarPackEngine.ResolveOutputPath(dest, options.CollisionPolicy);
-            if (resolved == null)
+            if (resolved is null)
             {
                 return new ZarItemResult(iso, dest, ZarItemStatus.Skipped, "Output already exists.");
             }
 
-            if (TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, options.Checksum, progress,
+            if (!TryPackIso(iso, resolved, level, quiet: true, compressor, dictionary, options.Checksum, progress,
                     out var error, out _))
             {
-                if (options.DeleteSourceOnSuccess)
-                {
-                    File.Delete(iso);
-                }
-
-                return new ZarItemResult(iso, resolved, ZarItemStatus.Completed);
+                return new ZarItemResult(iso, dest, ZarItemStatus.Failed, error);
             }
 
-            return new ZarItemResult(iso, dest, ZarItemStatus.Failed, error);
+            if (options.DeleteSourceOnSuccess)
+            {
+                File.Delete(iso);
+            }
+
+            return new ZarItemResult(iso, resolved, ZarItemStatus.Completed);
         }
         catch (OperationCanceledException ex)
         {
@@ -1220,13 +1249,37 @@ public static class Program
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException
                                        or ArgumentException)
         {
-            // Batch isolation like ZarPipeline.PackOne: log the item, run the rest.
+            // Per-item isolation: log the item, run the rest.
             return new ZarItemResult(iso, dest, ZarItemStatus.Failed, ex.Message);
         }
     }
 
+    // Runs one worker per item (never more than the item count) and turns
+    // items with no worker slot into Cancelled results.
+    private static IReadOnlyList<ZarItemResult> RunCliItems(
+        IReadOnlyList<string> items, int maxWorkers, Func<string, ZarItemResult> run)
+    {
+        var outcomes = new ZarItemResult?[items.Count];
+        Parallel.For(0, items.Count,
+            new ParallelOptions
+            {
+                MaxDegreeOfParallelism = Math.Min(Math.Max(1, maxWorkers), Math.Max(1, items.Count)),
+            },
+            index => outcomes[index] = run(items[index]));
+
+        var results = new List<ZarItemResult>(items.Count);
+        for (var i = 0; i < items.Count; i++)
+        {
+            results.Add(outcomes[i] ??
+                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled, "Cancelled before start."));
+        }
+
+        return results;
+    }
+
     /// <summary>
-    /// Runs the archive-container stage over <paramref name="archives"/>
+    /// Runs the archive-container stage over <paramref name="archives"/>:
+    /// each archive is extracted with 7z into a unique
     /// <c>destDir/temp_&lt;stem&gt;_&lt;id&gt;</c> (same-stem archives run
     /// concurrently, so a shared scratch path would let one worker delete the
     /// other's extraction); the first <c>.iso</c> found keeps
@@ -1234,25 +1287,16 @@ public static class Program
     /// whole tree becomes <c>&lt;stem&gt;/</c>. Under
     /// <see cref="ZarProcessMode.ExtractArchive"/> the item stops there;
     /// under <see cref="ZarProcessMode.Auto"/> it continues to the ISO or
-    /// directory leg, ending at <c>.zar</c> like the oracle.
+    /// directory leg, ending at <c>.zar</c>.
     /// </summary>
     private static IReadOnlyList<ZarItemResult> ProcessArchiveBatch(IReadOnlyList<string> archives, string destDir,
         ZarPipelineOptions options, ZarProcessMode mode, int level, bool quiet,
         IZarBlockCompressor? compressor, ZstdDictionary? dictionary, string? sevenZipPath,
         int jobs, IProgress<ZarProgress>? progress)
     {
-        var list = archives.ToList();
-        var results = new ZarItemResult?[list.Count];
-        Parallel.For(0, list.Count,
-            new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Math.Min(Math.Max(1, jobs), Math.Max(1, list.Count)),
-            },
-            i => results[i] = ProcessArchiveOne(list[i], destDir, options, mode, level,
+        return RunCliItems(archives.ToList(), jobs,
+            archive => ProcessArchiveOne(archive, destDir, options, mode, level,
                 quiet, compressor, dictionary, sevenZipPath, progress));
-        return results.Select((r, i) => r ??
-                                        new ZarItemResult(list[i], null, ZarItemStatus.Cancelled,
-                                            "Cancelled before start.")).ToList();
     }
 
     private static ZarItemResult ProcessArchiveOne(string archive, string destDir, ZarPipelineOptions options,
@@ -1260,46 +1304,49 @@ public static class Program
         ZstdDictionary? dictionary, string? sevenZipPath, IProgress<ZarProgress>? progress)
     {
         var stem = Path.GetFileNameWithoutExtension(archive);
-        var temp = Path.Combine(destDir, $"temp_{stem}_{Guid.NewGuid():N}");
+        var scratch = Path.Combine(destDir, $"temp_{stem}_{Guid.NewGuid():N}");
+        var scratchMoved = false;
         try
         {
-            if (Directory.Exists(temp))
-            {
-                Directory.Delete(temp, recursive: true);
-            }
+            PrepareScratch(scratch);
 
-            Directory.CreateDirectory(temp);
-
-            var tool = !string.IsNullOrWhiteSpace(sevenZipPath) ? sevenZipPath : SevenZip.FindTool();
-            if (tool == null)
+            var tool = string.IsNullOrWhiteSpace(sevenZipPath) ? SevenZip.FindTool() : sevenZipPath;
+            if (tool is null)
             {
                 return new ZarItemResult(archive, null, ZarItemStatus.Failed,
                     "No 7z binary found. Install 7-Zip and ensure 7z is on PATH, or pass --seven-zip <path>.");
             }
 
-            if (!quiet) CliLog.Out($"Extracting archive: {archive}");
+            if (!quiet)
+            {
+                CliLog.Out($"Extracting archive: {archive}");
+            }
+
             IProgress<double>? sevenProgress = quiet
                 ? null
-                : new Progress<double>(ratio =>
-                    CliLog.Progress($"\r  {ratio * 100:F1}% {stem}"));
-            SevenZip.Extract(archive, temp, tool, sevenProgress, options.Pause);
-            if (!quiet) CliLog.Out();
+                : new Progress<double>(ratio => CliLog.Progress($"\r  {ratio * 100:F1}% {stem}"));
+            SevenZip.Extract(archive, scratch, tool, sevenProgress, options.Pause);
+            if (!quiet)
+            {
+                CliLog.Out();
+            }
 
-            var extracted = Directory.EnumerateFileSystemEntries(temp, "*", SearchOption.AllDirectories).ToList();
-            string? current;
-            bool isIso;
+            var extracted = Directory.EnumerateFileSystemEntries(scratch, "*", SearchOption.AllDirectories).ToList();
             var iso = SevenZip.PickIsoCandidate(extracted.Where(File.Exists));
-            if (iso != null)
+
+            string stagedPath;
+            bool stagedIsIso;
+            if (iso is not null)
             {
                 var moved = ZarPackEngine.MoveIntoPlace(iso, Path.Combine(destDir, stem + ".iso"),
                     options.CollisionPolicy, isDirectory: false);
-                if (moved == null)
+                if (moved is null)
                 {
                     return new ZarItemResult(archive, null, ZarItemStatus.Skipped, "Output already exists.");
                 }
 
-                current = moved;
-                isIso = true;
+                stagedPath = moved;
+                stagedIsIso = true;
             }
             else
             {
@@ -1308,16 +1355,16 @@ public static class Program
                     return new ZarItemResult(archive, null, ZarItemStatus.Failed, "Archive yielded no files.");
                 }
 
-                var moved = ZarPackEngine.MoveIntoPlace(temp, Path.Combine(destDir, stem),
+                var moved = ZarPackEngine.MoveIntoPlace(scratch, Path.Combine(destDir, stem),
                     options.CollisionPolicy, isDirectory: true);
-                if (moved == null)
+                if (moved is null)
                 {
                     return new ZarItemResult(archive, null, ZarItemStatus.Skipped, "Output already exists.");
                 }
 
-                temp = null;
-                current = moved;
-                isIso = false;
+                scratchMoved = true;
+                stagedPath = moved;
+                stagedIsIso = false;
             }
 
             if (mode == ZarProcessMode.ExtractArchive)
@@ -1327,28 +1374,15 @@ public static class Program
                     File.Delete(archive);
                 }
 
-                return new ZarItemResult(archive, current, ZarItemStatus.Completed);
+                return new ZarItemResult(archive, stagedPath, ZarItemStatus.Completed);
             }
 
-            // Continue down the pipeline; re-stamp the source so the batch
-            // summary names the archive the user asked about, not the
-            // intermediate the stage produced.
-            var result = isIso
-                ? PackIsoOne(current, destDir, options, level, compressor, dictionary, progress)
-                    with
-                    {
-                        SourcePath = archive
-                    }
-                : ZarPipeline.PackBatch([current], destDir, options, progress)[0]
-                    with
-                    {
-                        SourcePath = archive
-                    };
+            var result = ContinueArchivePipeline(archive, stagedPath, stagedIsIso, destDir, options, level,
+                compressor, dictionary, progress);
 
             // Delete the source only after the terminal stage actually
             // produced its .zar: a failed or skipped downstream stage must
-            // not destroy the original archive (the docs promise removal
-            // "after its .zar succeeds").
+            // not destroy the original archive.
             if (options.DeleteSourceOnSuccess && result.Status == ZarItemStatus.Completed)
             {
                 File.Delete(archive);
@@ -1367,18 +1401,54 @@ public static class Program
         }
         finally
         {
-            // Best effort like shutil.rmtree(ignore_errors=True): a moved
-            // tree nulls temp; leftovers must never fail the item.
-            try
+            if (!scratchMoved)
             {
-                if (temp != null && Directory.Exists(temp))
+                CleanupScratch(scratch);
+            }
+        }
+    }
+
+    private static void PrepareScratch(string scratch)
+    {
+        if (Directory.Exists(scratch))
+        {
+            Directory.Delete(scratch, recursive: true);
+        }
+
+        Directory.CreateDirectory(scratch);
+    }
+
+    private static ZarItemResult ContinueArchivePipeline(string archive, string stagedPath, bool stagedIsIso,
+        string destDir, ZarPipelineOptions options, int level, IZarBlockCompressor? compressor,
+        ZstdDictionary? dictionary, IProgress<ZarProgress>? progress)
+    {
+        // Re-stamp the source so the batch summary names the archive the user
+        // asked about, not the intermediate the stage produced.
+        return stagedIsIso
+            ? PackIsoOne(stagedPath, destDir, options, level, compressor, dictionary, progress)
+                with
                 {
-                    Directory.Delete(temp, recursive: true);
+                    SourcePath = archive
                 }
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            : ZarPipeline.PackBatch([stagedPath], destDir, options, progress)[0]
+                with
+                {
+                    SourcePath = archive
+                };
+    }
+
+    private static void CleanupScratch(string scratch)
+    {
+        try
+        {
+            if (Directory.Exists(scratch))
             {
+                Directory.Delete(scratch, recursive: true);
             }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Best effort: leftovers must never fail the item.
         }
     }
 

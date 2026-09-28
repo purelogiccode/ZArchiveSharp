@@ -208,6 +208,7 @@ zar --batch <input_dir> [output_dir]
 ```
 
 Processes all eligible files in the input directory in parallel.
+`--mode` selects the pipeline stages per entry:
 
 - `auto` (default): archives run the 7z container stage (extract to a
   unique `temp_<stem>_<id>`, first `.iso` keeps going as `<stem>.iso`,
@@ -222,6 +223,7 @@ Processes all eligible files in the input directory in parallel.
 Windows install location); `--seven-zip <exe>` overrides the path, and
 archive items fail with rebuild-free instructions when no binary is found.
 `--delete-source` removes each source (archive *and* intermediate) after
+its `.zar` succeeds;
 sources are kept by default (`--keep-originals`, last wins against
 `--delete-source`). A source is deleted only after the terminal `.zar` stage
 actually completed — a failed or skipped downstream stage keeps the original.

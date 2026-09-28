@@ -1,10 +1,10 @@
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// What to do when a pipeline output path already exists. Ports
-/// <c>SKIP</c> / <c>OVERWRITE</c> / <c>AUTO-RENAME</c> (<c>{stem}_{n}{suffix}</c>).
-/// <see cref="Fail"/> additionally preserves the <c>zarchive.exe</c> contract,
-/// which refuses to overwrite an existing output file (exit <c>-11</c>).
+/// What to do when a pipeline output path already exists.
+/// <see cref="Fail"/> keeps the <c>zarchive.exe</c> contract (refuse to
+/// overwrite an existing output, exit <c>-11</c>); the other policies support
+/// batch runs: skip, overwrite, or auto-rename to <c>{stem}_{n}{suffix}</c>.
 /// </summary>
 public enum ZarCollisionPolicy
 {

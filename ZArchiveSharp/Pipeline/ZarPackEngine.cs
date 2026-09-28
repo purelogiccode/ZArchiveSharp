@@ -29,44 +29,53 @@ public static class ZarPackEngine
     /// <exception cref="IOException">When <see cref="ZarCollisionPolicy.Fail"/> refuses.</exception>
     public static string? ResolveOutputPath(string wantedPath, ZarCollisionPolicy policy)
     {
-        if (!File.Exists(wantedPath) && !Directory.Exists(wantedPath))
+        if (!PathExists(wantedPath))
         {
             return wantedPath;
         }
 
-        return policy switch
+        switch (policy)
         {
-            ZarCollisionPolicy.Fail => throw new IOException($"{OutputExistsMessage} {wantedPath}"),
-            ZarCollisionPolicy.Skip => null,
-            ZarCollisionPolicy.Overwrite => DeleteForOverwrite(wantedPath),
-            ZarCollisionPolicy.AutoRename => NextFreeSibling(wantedPath),
-            _ => throw new ArgumentOutOfRangeException(nameof(policy)),
-        };
+            case ZarCollisionPolicy.Fail:
+                throw new IOException($"{OutputExistsMessage} {wantedPath}");
+            case ZarCollisionPolicy.Skip:
+                return null;
+            case ZarCollisionPolicy.Overwrite:
+                Erase(wantedPath);
+                return wantedPath;
+            case ZarCollisionPolicy.AutoRename:
+                return FirstFreeSibling(wantedPath);
+            default:
+                throw new ArgumentOutOfRangeException(nameof(policy));
+        }
     }
 
-    private static string DeleteForOverwrite(string path)
+    private static bool PathExists(string path)
     {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-        else if (Directory.Exists(path))
+        return File.Exists(path) || Directory.Exists(path);
+    }
+
+    private static void Erase(string path)
+    {
+        if (Directory.Exists(path))
         {
             Directory.Delete(path, recursive: true);
         }
-
-        return path;
+        else
+        {
+            File.Delete(path);
+        }
     }
 
-    private static string NextFreeSibling(string path)
+    private static string FirstFreeSibling(string path)
     {
-        var dir = Path.GetDirectoryName(path) ?? "";
+        var directory = Path.GetDirectoryName(path) ?? "";
         var stem = Path.GetFileNameWithoutExtension(path);
-        var suffix = Path.GetExtension(path);
-        for (var n = 1;; n++)
+        var extension = Path.GetExtension(path);
+        for (var counter = 1;; counter++)
         {
-            var candidate = Path.Combine(dir, $"{stem}_{n}{suffix}");
-            if (!File.Exists(candidate) && !Directory.Exists(candidate))
+            var candidate = Path.Combine(directory, $"{stem}_{counter}{extension}");
+            if (!PathExists(candidate))
             {
                 return candidate;
             }
@@ -84,6 +93,7 @@ public static class ZarPackEngine
         // Re-resolve from the requested path (not a failed candidate) so
         // repeated races stay canonical (out.zar, out_1.zar, ...) instead of
         // compounding suffixes (out_1_1.zar).
+        const int attemptsAllowed = 256;
         var requested = path;
         for (var attempt = 0;; attempt++)
         {
@@ -91,12 +101,17 @@ public static class ZarPackEngine
             {
                 return (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536), path);
             }
-            catch (IOException) when (attempt < 256 &&
-                                      policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite)
+            catch (IOException ex) when (attempt < attemptsAllowed && CanReResolve(policy))
             {
-                path = ResolveOutputPath(requested, policy) ?? throw new IOException($"{OutputExistsMessage} {path}");
+                path = ResolveOutputPath(requested, policy)
+                       ?? throw new IOException($"{OutputExistsMessage} {path}", ex);
             }
         }
+    }
+
+    private static bool CanReResolve(ZarCollisionPolicy policy)
+    {
+        return policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite;
     }
 
     /// <summary>
@@ -112,11 +127,12 @@ public static class ZarPackEngine
         // Re-resolve from the requested path (not a failed candidate) so
         // repeated races stay canonical (.../game, game_1, game_2) instead of
         // compounding suffixes (game_1_1).
+        const int attemptsAllowed = 256;
         var requested = wantedPath;
         for (var attempt = 0;; attempt++)
         {
             var target = ResolveOutputPath(wantedPath, policy);
-            if (target == null)
+            if (target is null)
             {
                 return null;
             }
@@ -134,8 +150,7 @@ public static class ZarPackEngine
 
                 return target;
             }
-            catch (IOException) when (attempt < 256 &&
-                                      policy is ZarCollisionPolicy.AutoRename or ZarCollisionPolicy.Overwrite)
+            catch (IOException) when (attempt < attemptsAllowed && CanReResolve(policy))
             {
                 // The free name was claimed by another worker between the
                 // resolve and the move: resolve again from the request.

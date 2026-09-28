@@ -1,8 +1,10 @@
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// stage (<c>(0, 1)</c>); <c>Auto</c> splits an item's 0..1 across the
-/// 7z / XISO-extract / ZAR stages by input kind so a batch bar stays linear.
+/// Per-stage progress weights. Single-stage modes map the whole item to one
+/// segment <c>(0, 1)</c>; <see cref="ZarProcessMode.Auto"/> splits an item's
+/// 0..1 range across the 7z / XISO-extract / ZAR stages by input kind so a
+/// batch bar stays linear.
 /// </summary>
 public static class ZarStageWeights
 {
@@ -60,8 +62,14 @@ public static class ZarStageWeights
     /// <summary>Maps a stage-local 0..1 fraction to the item-global 0..1.</summary>
     public static double Rebase(IReadOnlyList<Segment> segments, string stage, double local)
     {
-        return segments.FirstOrDefault(s => string.Equals(s.Stage, stage, StringComparison.Ordinal)) is { } seg
-            ? seg.Base + (seg.Length * local)
-            : local;
+        foreach (var segment in segments)
+        {
+            if (string.Equals(segment.Stage, stage, StringComparison.Ordinal))
+            {
+                return segment.Base + (segment.Length * local);
+            }
+        }
+
+        return local;
     }
 }

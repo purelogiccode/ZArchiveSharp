@@ -1,7 +1,6 @@
 namespace ZArchiveSharp.Pipeline;
 
-/// <summary>
-/// </summary>
+/// <summary>Overall batch state.</summary>
 public enum ZarProcessState
 {
     /// <summary>No work started.</summary>

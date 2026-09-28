@@ -5,7 +5,7 @@ namespace ZArchiveSharp.Tests;
 /// <summary>
 /// Tests for <see cref="ZarchiveCli"/> (the callable
 /// <c>zarchive.exe input [output]</c> contract) and <see cref="ProcessRunner"/>
-/// tool launching).
+/// (<c>(\d+)%</c> parsing, exit mapping, tool launching).
 /// </summary>
 public sealed class PipelineCliTests : IDisposable
 {

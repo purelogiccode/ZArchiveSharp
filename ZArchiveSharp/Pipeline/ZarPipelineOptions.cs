@@ -3,9 +3,9 @@ using ZArchiveSharp.Zstd;
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// Options for <see cref="ZarPipeline"/> pack/extract work. Defaults mirror
-/// the two upstreams: zstd level 6 with no checksum (like
-/// <c>zarchive.exe</c> / <c>ZArchiveTool</c>, keeping byte-identical output)
+/// Options for <see cref="ZarPipeline"/> pack/extract work. Defaults keep
+/// <c>zarchive.exe</c> parity for the codec (zstd level 6, no block checksums)
+/// and use 4 workers for batch/block parallelism.
 /// </summary>
 public sealed class ZarPipelineOptions
 {
@@ -17,15 +17,11 @@ public sealed class ZarPipelineOptions
 
     /// <summary>
     /// Dictionary for pack block compression and archive extraction (default
-    /// null = plain frames, current behavior). When set, pack writes
-    /// dictionary frames (blocks where the dictionary pays; the rest stay
-    /// raw) and extract requires the same dictionary for those blocks — like
-    /// <c>zstd -D</c>, the dictionary file itself is never stored in the
-    /// archive, so keep it alongside. A supplied dictionary is inert for
-    /// plain frames, so extracting a plain archive with a dictionary set
-    /// yields identical bytes. Ignored when <see cref="Compressor"/> is
-    /// explicitly set (explicit compressor wins, as with
-    /// <see cref="Level"/>).
+    /// null = plain frames). When set, pack writes dictionary frames for the
+    /// blocks where the dictionary pays, and extract needs the same dictionary
+    /// for those blocks — like <c>zstd -D</c>, the dictionary file itself is
+    /// never stored in the archive, so keep it alongside. A dictionary is
+    /// inert for plain frames. Ignored when <see cref="Compressor"/> is set.
     /// </summary>
     public ZstdDictionary? Dictionary { get; set; }
 
@@ -47,16 +43,16 @@ public sealed class ZarPipelineOptions
     public ZarCollisionPolicy CollisionPolicy { get; set; } = ZarCollisionPolicy.Fail;
 
     /// <summary>
-    /// the actual worker count is <c>min(workers, items)</c> like
-    /// 64 KiB block compression/decompression inside a single pack/extract
-    /// (capped by processor count); blocks are independent, so parallel
-    /// output is byte-identical to sequential.
+    /// Batch/block parallelism (default 4). Values below 1 are treated as 1.
+    /// Batch runs never create more workers than items; a single pack/extract
+    /// additionally fans out the independent 64 KiB blocks, capped by the
+    /// processor count, and parallel output stays byte-identical.
     /// </summary>
     public int MaxDegreeOfParallelism { get; set; } = 4;
 
     /// <summary>
-    /// Delete a pack source directory after a successful pack (default false).
-    /// because a library must not destroy inputs unless asked.
+    /// Delete a pack source after a successful pack (default false). Off by
+    /// default: a library should not destroy inputs unless explicitly asked.
     /// </summary>
     public bool DeleteSourceOnSuccess { get; set; }
 

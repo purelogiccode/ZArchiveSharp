@@ -6,8 +6,10 @@ solution (library, CLI, tests, benchmarks) releases together. The detailed
 notes for the current release live in
 [WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
 
-> **License change (after v1.2.0):** ZArchiveSharp is now distributed under
-> notices: [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
+> **License:** ZArchiveSharp is distributed under the
+> [MIT License](https://github.com/purelogiccode/ZArchiveSharp/blob/master/LICENSE).
+> Third-party notices:
+> [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
 
 ## v1.3.0
 
@@ -73,15 +75,18 @@ notes for the current release live in
 
 **Highlights**
 
+- **License.** ZArchiveSharp is distributed under the
+  [MIT License](https://github.com/purelogiccode/ZArchiveSharp/blob/master/LICENSE).
 - Added [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md)
-  (ZArchive MIT-0, libzstd BSD-3, zeekstd BSD-2, seekable-zstd MIT,
-  ZstdSharp MIT), and the XGDTool (GPL-3.0, not incorporated) note.
+  with the permissive notices (ZArchive MIT-0, libzstd BSD-3, zeekstd BSD-2,
+  seekable-zstd MIT, ZstdSharp MIT), and the XGDTool (GPL-3.0, not
+  incorporated) note.
 - NuGet packages now ship `<license type="file">LICENSE</license>` and
-  include the notices file; release notes call out the change.
+  include the notices file.
 
 **Upgrade notes**
 
-  binary or API changes.
+- No binary or API changes.
 
 ## v1.2.0
 

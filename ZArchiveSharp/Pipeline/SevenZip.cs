@@ -2,17 +2,15 @@ namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
 /// Archive-container stage: extracts <c>.zip/.rar/.7z/.tar/.gz</c> files with
-/// an external 7z binary driven through <see cref="ProcessRunner"/> (the seam
-/// binary and runs the extraction; the caller decides what the extracted
-/// tree means (ISO keeps going down the pipeline, anything else packs as a
-/// directory).
+/// an external 7z binary driven through <see cref="ProcessRunner"/>. 7z stays
+/// external by design — this type only locates the binary and runs the
+/// extraction; the caller decides what the extracted tree means (an ISO keeps
+/// going down the pipeline, anything else packs as a directory).
 /// </summary>
 /// <remarks>
-/// Two deliberate deviations from the oracle: the extract switch is
-/// <c>x</c> (full paths) rather than <c>e</c> (flat) so directory trees
-/// survive the stage, and the ISO search covers the whole extracted tree
-/// (ordinal, case-insensitive) rather than only the top level. <c>-bsp1</c>
-/// is passed exactly like the oracle so progress parses the same way.
+/// The extract switch is <c>x</c> (full paths) rather than <c>e</c> (flat) so
+/// directory trees survive the stage, and the ISO search covers the whole
+/// extracted tree in ordinal, case-insensitive path order.
 /// </remarks>
 public static class SevenZip
 {
@@ -44,56 +42,64 @@ public static class SevenZip
             return preferredPath;
         }
 
-        if (probeWellKnownLocations && OperatingSystem.IsWindows())
+        if (probeWellKnownLocations && OperatingSystem.IsWindows() &&
+            FirstExisting(WellKnownWindowsPaths) is { } installed)
         {
-            foreach (var candidate in WellKnownWindowsPaths)
-            {
-                if (File.Exists(candidate))
-                {
-                    return candidate;
-                }
-            }
+            return installed;
         }
 
-        var dirs = searchDirectories ??
-                   (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator);
-        foreach (var dir in dirs)
+        var directories = searchDirectories ??
+                          (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator);
+        foreach (var directory in directories)
         {
-            string trimmed;
-            try
-            {
-                trimmed = dir.Trim().Trim('"');
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            var probe = CleanDirectory(directory);
+            if (probe is null || !Directory.Exists(probe))
             {
                 continue;
             }
 
-            if (trimmed.Length == 0 || !Directory.Exists(trimmed))
+            foreach (var toolName in ToolNames)
             {
-                continue;
-            }
-
-            foreach (var name in ToolNames)
-            {
-                var plain = Path.Combine(trimmed, name);
+                var plain = Path.Combine(probe, toolName);
                 if (File.Exists(plain))
                 {
                     return plain;
                 }
 
-                if (OperatingSystem.IsWindows())
+                if (OperatingSystem.IsWindows() && File.Exists(plain + ".exe"))
                 {
-                    var exe = plain + ".exe";
-                    if (File.Exists(exe))
-                    {
-                        return exe;
-                    }
+                    return plain + ".exe";
                 }
             }
         }
 
         return null;
+
+        static string? FirstExisting(IReadOnlyList<string> candidates)
+        {
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    return candidates[i];
+                }
+            }
+
+            return null;
+        }
+
+        static string? CleanDirectory(string directory)
+        {
+            try
+            {
+                var trimmed = directory.Trim().Trim('"');
+                return trimmed.Length == 0 ? null : trimmed;
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                return null;
+            }
+        }
     }
 
     /// <summary>
@@ -119,35 +125,38 @@ public static class SevenZip
             throw new FileNotFoundException($"Archive not found: {archivePath}");
         }
 
-        var tool = toolPath;
-        if (!string.IsNullOrWhiteSpace(tool))
-        {
-            if (!File.Exists(tool))
-            {
-                throw new FileNotFoundException($"7z binary not found: {tool}");
-            }
-        }
-        else
-        {
-            tool = FindTool() ?? throw new FileNotFoundException(
-                "No 7z binary found. Install 7-Zip and ensure 7z is on PATH, or pass an explicit path.");
-        }
-
+        var tool = ResolveTool(toolPath);
         Directory.CreateDirectory(destDir);
         ProcessRunner.Run(tool, BuildArguments(archivePath, destDir),
             workingDirectory: destDir, progress: progress, pause: pause,
             cancellationToken: cancellationToken);
     }
 
+    private static string ResolveTool(string? toolPath)
+    {
+        if (string.IsNullOrWhiteSpace(toolPath))
+        {
+            return FindTool() ?? throw new FileNotFoundException(
+                "No 7z binary found. Install 7-Zip and ensure 7z is on PATH, or pass an explicit path.");
+        }
+
+        if (!File.Exists(toolPath))
+        {
+            throw new FileNotFoundException($"7z binary not found: {toolPath}");
+        }
+
+        return toolPath;
+    }
+
     /// <summary>
     /// Picks the pipeline input out of an extracted tree: the first
     /// <c>.iso</c> file (ordinal full-path order, extension matched
-    /// case-insensitively), or null when the tree holds no ISO. When several
-    /// ISOs are present the rest are ignored, like the oracle (which moves
-    /// only <c>iso_files[0]</c>).
+    /// case-insensitively), or null when the tree holds no ISO. Additional
+    /// ISOs are ignored.
     /// </summary>
     public static string? PickIsoCandidate(IEnumerable<string> extractedFiles)
     {
+        ArgumentNullException.ThrowIfNull(extractedFiles);
         string? best = null;
         foreach (var path in extractedFiles)
         {
@@ -156,7 +165,7 @@ public static class SevenZip
                 continue;
             }
 
-            if (best == null || string.CompareOrdinal(path, best) < 0)
+            if (best is null || string.CompareOrdinal(path, best) < 0)
             {
                 best = path;
             }

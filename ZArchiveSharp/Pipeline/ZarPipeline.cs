@@ -7,10 +7,10 @@ using ProgressGate = object;
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// Archive pipeline: directory pack, archive extract, and parallel batches
-/// with progress, pause, cancellation and collision handling. This is the
-/// shared backend behind <see cref="ZArchiveTool"/>, the XISO <c>.zar</c>
-/// bridges and the CLI <c>--zar</c> path — one engine, one set of semantics.
+/// High-level archive operations: single-directory pack, archive extract,
+/// and parallel multi-item batches with shared progress, pause, cancellation
+/// and collision handling. <see cref="ZArchiveTool"/>, the XISO <c>.zar</c>
+/// bridges and the CLI all funnel through here so semantics stay uniform.
 /// </summary>
 public static class ZarPipeline
 {
@@ -36,13 +36,12 @@ public static class ZarPipeline
     {
         options ??= new ZarPipelineOptions();
         zarPath ??= DefaultZarPath(sourceDirectory);
-        // Validate and collect the source before resolving the output: an
-        // Overwrite policy must not delete the previous archive when the pack
-        // cannot even start (missing/unreadable source).
+        // Collect first, resolve the output second: an Overwrite policy must
+        // not remove a previous archive when the source cannot even be read.
         var source = new DirectoryPackSource(sourceDirectory, options.DeterministicOrder);
         var entries = source.Collect(cancellationToken);
         var resolved = ZarPackEngine.ResolveOutputPath(zarPath, options.CollisionPolicy);
-        if (resolved == null)
+        if (resolved is null)
         {
             return null;
         }
@@ -75,10 +74,8 @@ public static class ZarPipeline
             Directory.CreateDirectory(directory);
         }
 
-        // Honor the collision policy exactly like Pack: Skip writes nothing,
-        // AutoRename picks the next free sibling, Overwrite replaces.
         var resolved = ZarPackEngine.ResolveOutputPath(zarPath, options.CollisionPolicy);
-        if (resolved == null)
+        if (resolved is null)
         {
             return;
         }
@@ -110,10 +107,10 @@ public static class ZarPipeline
     }
 
     /// <summary>
-    /// Packs several directories in parallel (worker count
-    /// One item's failure does not stop the others; per-item outcomes come
-    /// back as <see cref="ZarItemResult"/> and batch progress re-bases each
-    /// item's ratio into its <c>1/n</c> share.
+    /// Packs several directories in parallel. Worker count is
+    /// <c>min(MaxDegreeOfParallelism, items)</c>; a failing item never stops
+    /// the others, and batch progress re-bases each item's ratio into its
+    /// <c>1/n</c> share.
     /// </summary>
     /// <param name="sourceDirectories">Directories to pack.</param>
     /// <param name="destDir">
@@ -130,50 +127,34 @@ public static class ZarPipeline
         IProgress<ZarProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(sourceDirectories);
         options ??= new ZarPipelineOptions();
         var items = sourceDirectories.ToList();
-        if (destDir != null)
+        if (destDir is not null)
         {
             Directory.CreateDirectory(destDir);
         }
 
-        if (items.Count == 0)
-        {
-            return [];
-        }
-
-        var snapshot = options;
-        var completed = 0;
-        var progressLock = new ProgressGate();
-        var results = new ZarItemResult?[items.Count];
-        try
-        {
-            Parallel.For(0, items.Count,
-                new ParallelOptions
-                {
-                    MaxDegreeOfParallelism = snapshot.ClampedWorkers(items.Count),
-                    CancellationToken = cancellationToken,
-                },
-                i => results[i] = PackOne(items[i], snapshot, destDir, items.Count,
-                    progress, progressLock, () => Volatile.Read(ref completed),
-                    () => Interlocked.Increment(ref completed),
-                    cancellationToken));
-        }
-        catch (OperationCanceledException)
-        {
-            // Items that never started stay null; marked Cancelled below.
-        }
-
-        return results.Select((r, i) => r ??
-                                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled,
-                                            "Cancelled before start.")).ToList();
+        return RunBatch(
+            items,
+            (_, item) => destDir is null ? DefaultZarPath(item) : Path.Combine(destDir, DefaultZarName(item)),
+            options,
+            progress,
+            cancellationToken,
+            (item, dest, itemProgress) =>
+            {
+                var written = Pack(item, dest, options, itemProgress, cancellationToken);
+                return written is null
+                    ? new ZarItemResult(item, dest, ZarItemStatus.Skipped, "Output already exists.")
+                    : new ZarItemResult(item, written, ZarItemStatus.Completed);
+            });
     }
 
     /// <summary>
-    /// Extracts several archives in parallel. See <see cref="PackBatch"/> for
-    /// the worker/progress/result model. Each archive extracts into
+    /// Extracts several archives in parallel. Each archive extracts into
     /// <c>destDir/&lt;stem&gt;_extracted</c> (the <c>zarchive.exe</c> default),
     /// or into <paramref name="destDir"/> itself for a single archive.
+    /// Same-stem archives in one batch get unique destinations.
     /// </summary>
     public static IReadOnlyList<ZarItemResult> ExtractBatch(
         IEnumerable<string> zarPaths,
@@ -182,161 +163,149 @@ public static class ZarPipeline
         IProgress<ZarProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(zarPaths);
+        ArgumentNullException.ThrowIfNull(destDir);
         options ??= new ZarPipelineOptions();
         var items = zarPaths.ToList();
+
+        // a\game.zar and b\game.zar would both want destDir/game_extracted and
+        // race file-by-file; hand each item its own slot within this batch.
+        var destinations = new string[items.Count];
+        var claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < items.Count; i++)
+        {
+            var basis = items.Count == 1 ? destDir : Path.Combine(destDir, DefaultExtractName(items[i]));
+            var choice = basis;
+            for (var n = 1; !claimed.Add(choice); n++)
+            {
+                choice = $"{basis}_{n}";
+            }
+
+            destinations[i] = choice;
+        }
+
+        return RunBatch(
+            items,
+            (index, _) => destinations[index],
+            options,
+            progress,
+            cancellationToken,
+            (item, dest, itemProgress) =>
+            {
+                var files = Extract(item, dest, options, itemProgress, cancellationToken);
+                return new ZarItemResult(item, dest, ZarItemStatus.Completed, FilesProcessed: files.Count);
+            });
+    }
+
+    /// <summary>
+    /// Rolls item outcomes up to one <see cref="ZarProcessState"/>: cancelled
+    /// beats failed, failed beats partial, and everything-completed (or
+    /// nothing at all) is completed.
+    /// </summary>
+    public static ZarProcessState RollUp(IEnumerable<ZarItemResult> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        var outcomes = items.ToList();
+        if (outcomes.Count == 0 || outcomes.TrueForAll(r => r.Status == ZarItemStatus.Completed))
+        {
+            return ZarProcessState.Completed;
+        }
+
+        if (outcomes.Exists(r => r.Status == ZarItemStatus.Cancelled))
+        {
+            return ZarProcessState.Cancelled;
+        }
+
+        return outcomes.Exists(r => r.Status == ZarItemStatus.Failed)
+            ? ZarProcessState.Failed
+            : ZarProcessState.Partial;
+    }
+
+    // Shared batch engine: maps each item to a destination, runs one worker
+    // per item (never more than the item count), isolates per-item faults and
+    // fills items that never started with Cancelled.
+    private static IReadOnlyList<ZarItemResult> RunBatch(
+        IReadOnlyList<string> items,
+        Func<int, string, string> destinationAt,
+        ZarPipelineOptions options,
+        IProgress<ZarProgress>? progress,
+        CancellationToken cancellationToken,
+        Func<string, string, IProgress<ZarProgress>?, ZarItemResult> execute)
+    {
         if (items.Count == 0)
         {
             return [];
         }
 
-        var snapshot = options;
-        var completed = 0;
-        var progressLock = new ProgressGate();
-        var results = new ZarItemResult?[items.Count];
-
-        // Same-stem archives (a\game.zar, b\game.zar) would otherwise extract
-        // into the same destDir/<stem>_extracted and race on every file. Give
-        // each item its own destination within this batch.
-        var destinations = new string[items.Count];
-        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < items.Count; i++)
-        {
-            var wanted = items.Count == 1
-                ? destDir
-                : Path.Combine(destDir, DefaultExtractName(items[i]));
-            var candidate = wanted;
-            for (var n = 1; !used.Add(candidate); n++)
-            {
-                candidate = $"{wanted}_{n}";
-            }
-
-            destinations[i] = candidate;
-        }
-
+        var progressGate = new ProgressGate();
+        var settled = 0;
+        var outcomes = new ZarItemResult?[items.Count];
         try
         {
             Parallel.For(0, items.Count,
                 new ParallelOptions
                 {
-                    MaxDegreeOfParallelism = snapshot.ClampedWorkers(items.Count),
+                    MaxDegreeOfParallelism = options.ClampedWorkers(items.Count),
                     CancellationToken = cancellationToken,
                 },
-                i => results[i] = ExtractOne(items[i], destinations[i], snapshot, items.Count, progress, progressLock,
-                    () => Volatile.Read(ref completed),
-                    () => Interlocked.Increment(ref completed),
-                    cancellationToken));
+                index =>
+                {
+                    var destination = destinationAt(index, items[index]);
+                    var itemProgress = progress is null
+                        ? null
+                        : new BatchProgress(progress, progressGate, items.Count, () => Volatile.Read(ref settled));
+                    outcomes[index] = RunItem(items[index], destination, itemProgress, execute);
+                    Interlocked.Increment(ref settled);
+                });
         }
         catch (OperationCanceledException)
         {
-            // Items that never started stay null; marked Cancelled below.
+            // Items with no worker slot stay null and turn Cancelled below.
         }
 
-        return results.Select((r, i) => r ??
-                                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled,
-                                            "Cancelled before start.")).ToList();
+        var results = new List<ZarItemResult>(items.Count);
+        for (var i = 0; i < items.Count; i++)
+        {
+            results.Add(outcomes[i] ??
+                        new ZarItemResult(items[i], null, ZarItemStatus.Cancelled, "Cancelled before start."));
+        }
+
+        return results;
     }
 
-    /// <summary>
-    /// Rolls item outcomes up to one <see cref="ZarProcessState"/>, mirroring
-    /// &gt; completed).
-    /// </summary>
-    public static ZarProcessState RollUp(IEnumerable<ZarItemResult> items)
-    {
-        var list = items.ToList();
-        if (list.Count == 0 || list.All(r => r.Status == ZarItemStatus.Completed))
-        {
-            return ZarProcessState.Completed;
-        }
-
-        if (list.Any(r => r.Status == ZarItemStatus.Cancelled))
-        {
-            return ZarProcessState.Cancelled;
-        }
-
-        if (list.Any(r => r.Status == ZarItemStatus.Failed))
-        {
-            return ZarProcessState.Failed;
-        }
-
-        return ZarProcessState.Partial;
-    }
-
-    private static ZarItemResult PackOne(
-        string source, ZarPipelineOptions options, string? destDir, int total,
-        IProgress<ZarProgress>? progress, ProgressGate progressLock, Func<int> completed,
-        Action afterItem, CancellationToken cancellationToken)
-    {
-        var dest = destDir != null ? Path.Combine(destDir, DefaultZarName(source)) : DefaultZarPath(source);
-        try
-        {
-            var itemProgress = Rebasing(progress, total, progressLock, completed);
-            var written = Pack(source, dest, options, itemProgress, cancellationToken);
-            afterItem();
-            if (written == null)
-            {
-                return new ZarItemResult(source, dest, ZarItemStatus.Skipped, "Output already exists.");
-            }
-
-            return new ZarItemResult(source, written, ZarItemStatus.Completed);
-        }
-        catch (OperationCanceledException ex)
-        {
-            afterItem();
-            return new ZarItemResult(source, dest, ZarItemStatus.Cancelled, ex.Message);
-        }
-        catch (Exception ex)
-        {
-            // result (not an AggregateException) so the rest keep running.
-            afterItem();
-            return new ZarItemResult(source, dest, ZarItemStatus.Failed, ex.Message);
-        }
-    }
-
-    private static ZarItemResult ExtractOne(
-        string zar, string dest, ZarPipelineOptions options, int total,
-        IProgress<ZarProgress>? progress, ProgressGate progressLock, Func<int> completed,
-        Action afterItem, CancellationToken cancellationToken)
+    private static ZarItemResult RunItem(
+        string item, string destination, IProgress<ZarProgress>? itemProgress,
+        Func<string, string, IProgress<ZarProgress>?, ZarItemResult> execute)
     {
         try
         {
-            var itemProgress = Rebasing(progress, total, progressLock, completed);
-            var files = Extract(zar, dest, options, itemProgress, cancellationToken);
-            afterItem();
-            return new ZarItemResult(zar, dest, ZarItemStatus.Completed,
-                FilesProcessed: files.Count);
+            return execute(item, destination, itemProgress);
         }
         catch (OperationCanceledException ex)
         {
-            afterItem();
-            return new ZarItemResult(zar, dest, ZarItemStatus.Cancelled, ex.Message);
+            return new ZarItemResult(item, destination, ZarItemStatus.Cancelled, ex.Message);
         }
         catch (Exception ex)
         {
-            // Same isolation contract as PackOne: every fault is per-item.
-            afterItem();
-            return new ZarItemResult(zar, dest, ZarItemStatus.Failed, ex.Message);
+            // Per-item isolation: the fault becomes this item's result and the
+            // rest of the batch keeps running.
+            return new ZarItemResult(item, destination, ZarItemStatus.Failed, ex.Message);
         }
-    }
-
-    private static IProgress<ZarProgress>? Rebasing(
-        IProgress<ZarProgress>? progress, int total, ProgressGate gate, Func<int> completed)
-    {
-        return progress == null ? null : new RebasingProgress(progress, gate, total, completed);
     }
 
     internal static string DefaultZarName(string sourceDirectory)
     {
-        var full = Path.GetFullPath(sourceDirectory);
-        var stem = Path.GetFileName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
-        return Path.GetFileNameWithoutExtension(stem) + ".zar";
+        var trimmed = Path.GetFullPath(sourceDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return Path.GetFileNameWithoutExtension(Path.GetFileName(trimmed)) + ".zar";
     }
 
     internal static string DefaultZarPath(string sourceDirectory)
     {
-        var full = Path.GetFullPath(sourceDirectory);
-        var dir = Path.GetDirectoryName(full.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ??
-                  "";
-        return Path.Combine(dir, DefaultZarName(sourceDirectory));
+        var trimmed = Path.GetFullPath(sourceDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parent = Path.GetDirectoryName(trimmed) ?? "";
+        return Path.Combine(parent, DefaultZarName(sourceDirectory));
     }
 
     internal static string DefaultExtractName(string zarPath)
@@ -344,40 +313,30 @@ public static class ZarPipeline
         return Path.GetFileNameWithoutExtension(zarPath) + "_extracted";
     }
 
-    private sealed class RebasingProgress(
-        IProgress<ZarProgress> inner,
-        ProgressGate gate,
-        int total,
-        Func<int> completed) : IProgress<ZarProgress>
+    // Re-bases a single item's counters into the batch-wide 1/n share. The
+    // settled snapshot is read under the same gate as the report so two
+    // in-flight items cannot publish a stale (lower) completion count.
+    private sealed class BatchProgress(
+        IProgress<ZarProgress> inner, ProgressGate gate, int itemCount, Func<int> settledCount)
+        : IProgress<ZarProgress>
     {
-        private readonly Func<int> _completed = completed;
-        private readonly int _total = total;
-        private readonly ProgressGate _gate = gate;
-        private readonly IProgress<ZarProgress> _inner = inner;
-
         public void Report(ZarProgress value)
         {
-            // Re-base both counters into the batch's 1/total share, with the
-            // completion snapshot taken under the same gate as the report so
-            // concurrent items cannot publish a stale (lower) completion.
-            // Scaling by the item's own totals keeps Ratio equal to
-            // (completed items + this item's fraction) / total even when
-            // items differ in size.
-            lock (_gate)
+            lock (gate)
             {
-                var completedNow = _completed();
-                var filesTotal = Math.Max(1, value.FilesTotal);
-                var bytesTotal = Math.Max(1, value.BytesTotal);
-                var rebasedFilesTotal = filesTotal * _total;
-                var rebasedBytesTotal = bytesTotal * _total;
-                _inner.Report(value with
+                var settled = settledCount();
+                var itemFiles = Math.Max(1, value.FilesTotal);
+                var itemBytes = Math.Max(1, value.BytesTotal);
+                var filesTotal = itemFiles * itemCount;
+                var bytesTotal = itemBytes * itemCount;
+                inner.Report(value with
                 {
                     FilesCompleted = Math.Min(
-                        (completedNow * filesTotal) + Math.Max(0, value.FilesCompleted), rebasedFilesTotal),
-                    FilesTotal = rebasedFilesTotal,
+                        (settled * itemFiles) + Math.Max(0, value.FilesCompleted), filesTotal),
+                    FilesTotal = filesTotal,
                     BytesCompleted = Math.Min(
-                        (completedNow * bytesTotal) + Math.Max(0, value.BytesCompleted), rebasedBytesTotal),
-                    BytesTotal = rebasedBytesTotal,
+                        (settled * itemBytes) + Math.Max(0, value.BytesCompleted), bytesTotal),
+                    BytesTotal = bytesTotal,
                 });
             }
         }

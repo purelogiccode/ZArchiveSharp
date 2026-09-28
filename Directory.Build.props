@@ -16,8 +16,9 @@
     <LangVersion>14</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-         every package. Replaces the SPDX expression used through v1.2.0. -->
-    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <!-- MIT (see LICENSE); nuget.org can display the SPDX expression directly,
+         and the LICENSE file is still packed into every package. -->
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Authors>PureLogicCode.com</Authors>
     <Copyright>Copyright (c) PureLogicCode.com</Copyright>
     <PackageProjectUrl>https://github.com/purelogiccode/ZArchiveSharp</PackageProjectUrl>
@@ -27,6 +28,7 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
+    <PackageReleaseNotes>v1.3.0: mount-friendly reader API (node-handle directory walks, canonical names, seekable per-entry streams, archive stats); ZArchiveOpenFailure with specific reasons and TryOpen overloads; ZArchiveReaderOptions (CacheBlockCount, DecodeExtendedNames, FileShare); parallel block decode. Fixes: extraction rejects crafted directory child ranges, InvalidPath for null/empty/invalid paths, saturating TotalUncompressedSize. License: MIT. See WhatsNew.md.</PackageReleaseNotes>
   </PropertyGroup>
 
   <!-- Tag-driven versioning for every project in the solution: MinVer reads

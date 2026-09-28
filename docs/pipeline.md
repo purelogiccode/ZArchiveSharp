@@ -50,6 +50,7 @@ ZarPipeline.PackSource(mySource, @"C:\out.zar", options);
 
 ## Options
 
+`ZarPipelineOptions` controls all pack/extract work. Defaults keep `zarchive.exe` codec parity (zstd level 6, no checksums) and use 4 workers for batch/block parallelism.
 
 | Property | Type | Default | Meaning |
 |----------|------|---------|---------|
@@ -96,6 +97,7 @@ var progress = new Progress<ZarProgress>(p =>
 | `BytesCompleted` / `BytesTotal` | Byte progress when known |
 | `Ratio` | 0–1 fraction (bytes when known, else files) |
 
+Totals are pre-scanned, so `Ratio` moves monotonically 0→1 within one `SourcePath`. **Batch runs re-base** each item's ratio into its `1/n` share (completed items plus the in-flight fraction).
 
 ## Cancellation and Pause
 
@@ -132,6 +134,7 @@ What happens when an output path already exists:
 | `Overwrite` | Delete the existing output, then write |
 | `AutoRename` | Write to `{stem}_{n}{suffix}`, first free `n` from 1 |
 
+`Skip`, `Overwrite` and `AutoRename` serve batch runs; `Fail` preserves the native CLI refuse-overwrite contract.
 
 Resolution is race-safe: parallel batch items (or other processes) can claim
 the chosen name between resolve and write/move, so the pack and move paths
@@ -159,6 +162,7 @@ foreach (var r in results)
 }
 ```
 
+Semantics:
 
 - Worker count is `min(MaxDegreeOfParallelism, items)` — never spins up more tasks than items
 - **One item's failure does not stop the others**; per-item outcomes come back as `ZarItemResult`
@@ -220,6 +224,7 @@ For UIs, a `ZarBatchRequest` models the full input set with modes and collision 
 
 ### Archive-Container Stage (7z)
 
+`SevenZip` (`ZArchiveSharp.Pipeline`) is the library half of the archive-container stage:
 `FindTool` locates the external binary (explicit path, then the standard
 Windows install location, then `7z`/`7zz` on `PATH`) and `Extract` runs it
 via `ProcessRunner` (`x` for full paths, `-bsp1` for progress, exit 0/1
@@ -287,6 +292,9 @@ Where native behavior is a bug, ZArchiveSharp deviates (all tested):
 
 ## Config and File Discovery
 
+- `ZarSettings` — AOT-safe JSON settings: defaults, merge-forward load, per-user save location
+- `ProcessableFiles.Find(dir, ZarProcessMode.Auto)` — ARCHIVE/ISO file sets, non-recursive scan, ordinal sort
 
 ## ProcessRunner
 
+`ProcessRunner` is the seam for external tools (e.g., 7z): `(\d+)%` progress parsing with a 10 FPS throttle, exit 0/1 treated as ok, anything else throws with the last output line, `WinError 740` mapped to an elevation message, missing binaries get an AV-hint. Since v1.2.0 stderr is drained after exit (a late-only failure line is still reported) and the child is polled, so one that closed stdout but keeps running is killed on cancellation.

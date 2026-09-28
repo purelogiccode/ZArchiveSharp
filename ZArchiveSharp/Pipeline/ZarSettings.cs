@@ -3,8 +3,11 @@ using System.Text.Json;
 namespace ZArchiveSharp.Pipeline;
 
 /// <summary>
-/// same save location rule (per-user config dir for deployed apps, local
-/// directory otherwise). JSON uses a source-generated context so the
+/// Persistent settings for a pipeline front-end. Defaults are applied when a
+/// file is missing or unreadable, unknown/missing JSON members fall back to
+/// defaults per property, and the default location is a per-user config
+/// directory (with <see cref="AppContext.BaseDirectory"/> as the last
+/// resort). Serialization uses a source-generated context so the
 /// trimmable/AOT posture of the library is preserved.
 /// </summary>
 public sealed record ZarSettings
@@ -38,8 +41,8 @@ public sealed record ZarSettings
 
     /// <summary>
     /// Loads <c>settings.json</c> from <paramref name="directory"/> (or the
-    /// default location): missing files and broken JSON fall back to
-    /// defaults, and old files gain new keys — like <c>load_config</c>.
+    /// default location): a missing file, unreadable file or broken JSON
+    /// yields defaults.
     /// </summary>
     public static ZarSettings Load(string? directory = null, string fileName = "settings.json")
     {
@@ -57,7 +60,7 @@ public sealed record ZarSettings
         }
     }
 
-    /// <summary>Saves this config as <c>settings.json</c> (best effort, like <c>save_config</c>).</summary>
+    /// <summary>Saves this config as <c>settings.json</c> (best effort).</summary>
     public void Save(string? directory = null, string fileName = "settings.json", Action<string>? log = null)
     {
         try
@@ -85,7 +88,7 @@ public sealed record ZarSettings
 
     internal static string DefaultDirectory(string? overrideDirectory)
     {
-        if (overrideDirectory != null)
+        if (overrideDirectory is not null)
         {
             return overrideDirectory;
         }

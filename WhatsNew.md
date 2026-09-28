@@ -9,8 +9,7 @@ projects and the benchmarks together.
 `4291/4291` library tests + `43/43` CLI battle tests green (net10.0). The CI
 matrix repeats the same suites on Ubuntu/Windows/macOS when the tag is pushed.
 
-**License (since v1.2.1):** the batch pipeline layer is a port of
-v1.2.0 packages were published under MIT. See [LICENSE](LICENSE) and
+**License:** **MIT.** See [LICENSE](LICENSE) and
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Highlights
@@ -89,7 +88,7 @@ Following review of the new surface:
   now report `InvalidPath`; directory enumeration clamps out-of-range child
   counts; extraction rejects crafted child ranges; the archive total
   saturates on overflow. Valid archives are unaffected.
-  unchanged in that regard.
+- **License:** MIT.
 
 ## Full change list since v1.2.2
 
