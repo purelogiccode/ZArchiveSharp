@@ -1,6 +1,14 @@
 # ZArchiveSharp
 
-Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive)
+[![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
+[![.NET 8.0 | 9.0 | 10.0](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4.svg)](https://dotnet.microsoft.com/download)
+[![AOT compatible](https://img.shields.io/badge/AOT-compatible-brightgreen.svg)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://www.nuget.org/packages/ZArchiveSharp#dependencies-body-tab)
+
+Pure-C# port of the [ZArchive 0.1.2](https://github.com/Exzap/ZArchive)
 library: directory-tree archives with per-block zstd compression. No native
 dependencies, BCL only; trimmable and AOT-compatible (`net8.0`/`net9.0`/`net10.0`).
 

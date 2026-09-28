@@ -1,5 +1,11 @@
 # ZArchiveSharp Documentation
 
+[![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
+[![.NET 8.0 | 9.0 | 10.0](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4.svg)](https://dotnet.microsoft.com/download)
+
 Welcome to the ZArchiveSharp documentation. This guide covers everything you need to know about using ZArchiveSharp for archive creation, zstd compression, and batch processing.
 
 ## Table of Contents
@@ -22,14 +28,14 @@ Welcome to the ZArchiveSharp documentation. This guide covers everything you nee
 - **[FAQ](faq.md)** — Frequently asked questions and troubleshooting
 
 ### Releases
-- **[Release Notes](release-notes.md)** — Version history, v1.3.0 highlights, and upgrade notes
-- **[What's New in v1.3.0](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
+- **[Release Notes](release-notes.md)** — Version history, v1.4.0 highlights, and upgrade notes
+- **[What's New in v1.4.0](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md)** — Full notes for the current release
 
 ---
 
 ## Overview
 
-ZArchiveSharp is a pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library. It provides:
+ZArchiveSharp is a pure-C# port of the [ZArchive 0.1.2](https://github.com/Exzap/ZArchive) library. It provides:
 
 1. **Archive format** — Directory-tree archives with per-block zstd compression (64 KiB blocks)
 2. **zstd codec** — Complete RFC 8878 encoder and decoder (levels 1–22, all 9 strategies)
@@ -55,7 +61,7 @@ ZArchiveSharp produces **byte-identical output** to:
 - libzstd 1.5.7 (frozen reference)
 - zeekstd (seekable format)
 
-This is verified by 4291 library tests plus 43 CLI battle tests, including parity validation against native tools.
+This is verified by 4292 library tests plus 43 CLI battle tests, including parity validation against native tools.
 
 ---
 

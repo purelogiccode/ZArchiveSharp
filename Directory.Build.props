@@ -28,7 +28,7 @@
     <RepositoryUrl>https://github.com/purelogiccode/ZArchiveSharp</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>master</RepositoryBranch>
-    <PackageReleaseNotes>v1.3.0: mount-friendly reader API (node-handle directory walks, canonical names, seekable per-entry streams, archive stats); ZArchiveOpenFailure with specific reasons and TryOpen overloads; ZArchiveReaderOptions (CacheBlockCount, DecodeExtendedNames, FileShare); parallel block decode. Fixes: extraction rejects crafted directory child ranges, InvalidPath for null/empty/invalid paths, saturating TotalUncompressedSize. License: MIT. See WhatsNew.md.</PackageReleaseNotes>
+    <PackageReleaseNotes>v1.4.0: original MIT-licensed pipeline layer (public API unchanged); stricter per-item batch isolation for unmappable source paths; ProcessRunner stderr-drain fix; CI matrix (Ubuntu/Windows/macOS), NuGet pack and tag publishing; analyzer/test SDK/coverlet/XISOSharp bumps. License: MIT. See WhatsNew.md.</PackageReleaseNotes>
   </PropertyGroup>
 
   <!-- Tag-driven versioning for every project in the solution: MinVer reads

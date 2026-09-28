@@ -1,9 +1,16 @@
 # ZArchiveSharp
 
 [![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ZArchiveSharp.svg)](https://www.nuget.org/packages/ZArchiveSharp)
+[![CLI NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.Cli.svg?label=CLI)](https://www.nuget.org/packages/ZArchiveSharp.Cli)
+[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![.NET 8.0 | 9.0 | 10.0](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4.svg)](https://dotnet.microsoft.com/download)
+[![AOT compatible](https://img.shields.io/badge/AOT-compatible-brightgreen.svg)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](https://www.nuget.org/packages/ZArchiveSharp#dependencies-body-tab)
+[![Byte-identical to libzstd 1.5.7](https://img.shields.io/badge/byte--identical-libzstd%201.5.7-blue.svg)](docs/benchmarks.md)
 
-**Pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library** — directory-tree archives with per-block zstd compression. Zero native dependencies, BCL only; trimmable and AOT-compatible (`net8.0` / `net9.0` / `net10.0`).
+**Pure-C# port of the [ZArchive 0.1.2](https://github.com/Exzap/ZArchive) library** — directory-tree archives with per-block zstd compression. Zero native dependencies, BCL only; trimmable and AOT-compatible (`net8.0` / `net9.0` / `net10.0`).
 
 ## Features
 
@@ -188,7 +195,7 @@ anything.
 | **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZArchiveSharp.Tests** | Comprehensive test suite (4291 tests + 43 CLI battle tests, parity validation) |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4292 tests + 43 CLI battle tests, parity validation) |
 
 ## Documentation
 
@@ -202,7 +209,7 @@ anything.
 - **[Benchmarks](docs/benchmarks.md)** — Performance characteristics and tuning
 - **[FAQ](docs/faq.md)** — Frequently asked questions
 - **[Release Notes](docs/release-notes.md)** — Version history and upgrade notes
-- **[What's New](WhatsNew.md)** — v1.3.0 release notes (mount-friendly reader API, parallel block decode, hardened open failures)
+- **[What's New](WhatsNew.md)** — v1.4.0 release notes (MIT-licensed original pipeline, stricter batch isolation, CI matrix)
 
 ## Byte-Identity Target
 

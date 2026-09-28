@@ -11,6 +11,40 @@ notes for the current release live in
 > Third-party notices:
 > [THIRD-PARTY-NOTICES.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/THIRD-PARTY-NOTICES.md).
 
+## v1.4.0
+
+**Highlights**
+
+- **Original, MIT-licensed pipeline layer.** `ZarPipeline` and the engine
+  behind it (`ZarPackEngine`, `ProcessRunner`, `SevenZip`,
+  `ProcessableFiles`, `ZarSettings`, the stage/progress model and the CLI
+  batch orchestration) are now an independent implementation. The public
+  surface is unchanged — same types, members, progress semantics, collision
+  policies and exit codes — but the repository no longer contains code
+  derived from non-MIT sources. All of ZArchiveSharp is MIT.
+- **Stricter per-item batch isolation.** A source path that cannot be mapped
+  to an output (invalid path characters, for example) now fails only its own
+  item as a `Failed` `ZarItemResult` instead of throwing
+  `AggregateException` out of `PackBatch`/`ExtractBatch`.
+- **Robust process runner.** A tool whose stderr pipe is inherited and held
+  open by a grandchild no longer stalls the bounded drain wait; the pump is
+  stopped and the already-read lines are kept.
+- **CI as the gate.** GitHub Actions builds and tests on Ubuntu, Windows and
+  macOS, packs both NuGet packages, and publishes on `v*` tags. MinVer now
+  sees full history, and the CLI harnesses fold POSIX exit statuses and run
+  cross-platform.
+
+**Upgrade notes**
+
+- No API, wire-format or CLI changes since v1.3.0; no data migration.
+- NuGet packages use the SPDX expression `PackageLicenseExpression=MIT`;
+  `LICENSE` and `THIRD-PARTY-NOTICES.md` stay in the packages.
+- Behavior changes apply only to malformed input (unmappable batch paths,
+  held stderr pipes).
+
+Full notes:
+[WhatsNew.md](https://github.com/purelogiccode/ZArchiveSharp/blob/master/WhatsNew.md).
+
 ## v1.3.0
 
 **Highlights**

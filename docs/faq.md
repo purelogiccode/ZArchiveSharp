@@ -6,7 +6,7 @@ Frequently asked questions and troubleshooting.
 
 ### What is ZArchiveSharp?
 
-A pure-C# port of the [ZArchive 0.1.2](https://github.com/unknownbrackets/ZArchive) library: directory-tree archives with per-block zstd compression. It also bundles a complete dependency-free RFC 8878 zstd codec, a zeekstd-compatible seekable zstd implementation, and a batch pipeline engine.
+A pure-C# port of the [ZArchive 0.1.2](https://github.com/Exzap/ZArchive) library: directory-tree archives with per-block zstd compression. It also bundles a complete dependency-free RFC 8878 zstd codec, a zeekstd-compatible seekable zstd implementation, and a batch pipeline engine.
 
 ### Why "byte-identical" output? Why does it matter?
 
@@ -24,7 +24,7 @@ The test suite enforces this with thousands of parity vectors and committed gold
 
 ### Is it production ready?
 
-The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4291 library tests plus 43 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
+The port is complete (container, zstd levels 1–22, seekable format, pipeline, CLI), with 4292 library tests plus 43 CLI battle tests green, including native-tool parity matrices and committed goldens. Performance is at native parity on the hot path (L6 64 KiB ≈1.0× libzstd 1.5.7; see [Benchmarks](benchmarks.md)).
 
 ## Compatibility
 

@@ -1,110 +1,87 @@
-# What's New in v1.3.0
+# What's New in v1.4.0
 
 **Versioning:** package versions derive from git tags via MinVer
-(`v`-prefixed annotated tags). Tagging `v1.3.0` stamps 1.3.0 on the
+(`v`-prefixed annotated tags). Tagging `v1.4.0` stamps 1.4.0 on the
 `ZArchiveSharp` library, the `ZArchiveSharp.Cli` (`zar`) tool, the test
 projects and the benchmarks together.
 
 **Provenance:** Release build, `0` warnings / `0` errors;
-`4291/4291` library tests + `43/43` CLI battle tests green (net10.0). The CI
-matrix repeats the same suites on Ubuntu/Windows/macOS when the tag is pushed.
+`4292/4292` library tests + `43/43` CLI battle tests green (net10.0). CI
+(`.github/workflows/ci.yml`) repeats both suites on Ubuntu/Windows/macOS —
+with no native toolchain installed — and packs both NuGet packages on every
+push.
 
-**License:** **MIT.** See [LICENSE](LICENSE) and
+**License:** **MIT**, for the complete codebase. See [LICENSE](LICENSE) and
 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ## Highlights
 
-### Mount-friendly random-access reader API
-The reader now exposes the surface a virtual file system or mount host needs,
-without rebuilding paths or re-parsing the tree:
+### Original, MIT-licensed pipeline layer
+The batch pipeline was rewritten as an independent implementation:
+`ZarPipeline`, `ZarPackEngine`, `ProcessRunner`, `SevenZip`,
+`ProcessableFiles`, `ZarSettings`, the stage-weight/progress model and the
+CLI batch orchestration. The public surface is unchanged — same types,
+members, progress semantics, collision policies and exit codes — but the
+repository no longer contains code derived from non-MIT sources. The frozen
+reference sources (ZArchive, libzstd, zeekstd, ZstdSharp) remain
+acknowledged in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) as
+specification/oracle references only.
 
-- **Node handles everywhere.** `ZArchiveReader.RootNode` (`0`) names the
-  root, `LookUp` resolves paths, and the new
-  `TryGetDirEntry(node, index, out childNode, out entry)` enumerates a
-  directory *and* returns the child handle. `GetDirEntryCount` is clamped to
-  the file-tree bounds, so a crafted directory entry can never make callers
-  iterate past the table.
-- **Canonical names.** `TryGetNodeName(node, out name)` returns the stored
-  (original-casing) name; the root's name is `""`.
-- **Seekable per-entry streams.** `OpenRead(node)` and
-  `TryOpenRead(path)` return a seekable, read-only `Stream` over a file's
-  uncompressed contents, reading through the block cache. Disposing the
-  stream does not dispose the archive.
-- **Archive stats at open.** `EntryCount` (file-tree entries) and
-  `TotalUncompressedSize` (natural "volume size") are computed from the
-  in-memory tree, with no archive I/O. The total saturates at
-  `ulong.MaxValue` for crafted sizes that would otherwise overflow.
+### Stricter per-item batch isolation
+- **Malformed source paths fail their own batch item.** Destination
+  resolution now runs inside the per-item fault guard, so a source that
+  cannot be mapped to an output (invalid path characters, for example) comes
+  back as a `Failed` `ZarItemResult` for that item instead of an
+  `AggregateException` that aborts `ZarPipeline.PackBatch`/`ExtractBatch`.
+- **`ProcessRunner` cannot stall on a held stderr pipe.** When a grandchild
+  process inherits the tool's stderr and keeps it open past the tool's exit,
+  the bounded drain wait now stops the asynchronous pump — keeping the lines
+  already read for the failure message — instead of leaving it hanging.
 
-### Specific open-failure reasons
-`ZArchiveOpenFailure` plus new `out` overloads for the path, stream and
-byte-array opens report exactly which check failed instead of a bare `null`:
-`FileNotFound`, `AccessDenied`, `InvalidStream`, `ReadError`, `TooSmall`,
-`BadMagic`, `UnsupportedVersion`, `LengthMismatch`, `SectionOutOfRange`,
-`BadOffsetRecords`, `BadNameTable`, `BadFileTree`, and `InvalidPath` (null,
-empty, or invalid path characters). The plain `TryOpen` overloads are
-unchanged and still return `null` on any failure.
+### Continuous integration
+`.github/workflows/ci.yml` builds and tests on Ubuntu, Windows and macOS,
+packs both NuGet packages, and publishes on `v*` tags:
 
-### Options for mount hosts
-`ZArchiveReaderOptions` tunes an open: `CacheBlockCount` (default 64 blocks =
-4 MiB; raise it for many concurrent streams), `DecodeExtendedNames` (see
-below), and `FileShare` for path opens (use `FileShare.ReadWrite` so
-scanners and indexers can keep the archive open while it is mounted).
+- full history is fetched so MinVer sees the release tags (a shallow
+  checkout stamped `0.0.0-alpha` and broke the `--iso` tests);
+- CLI test harnesses fold POSIX exit statuses back to the signed codes the
+  assertions use and quote the resolved executable path;
+- the same-stem batch tar test writes Ustar (the Homebrew 7z on macOS
+  runners cannot read .NET's default PAX tar).
 
-### Parallel block decode
-`ReadFromFile` now decompresses blocks **outside** the global lock: cache
-bookkeeping and copies stay locked, distinct 64 KiB blocks decode in
-parallel, and the preallocated LRU buffers are preserved. Concurrent reads
-of separate files no longer serialize on decompression.
-
-### Corrected extended-name decoding (opt-in)
-The 0.1.2 name-table quirk that makes names of ≥ 0x80 characters decode to
-`""` is still the default (byte parity). Opening with
-`DecodeExtendedNames = true` — or calling the new
-`GetName`/`GetNameRaw(..., decodeExtendedLengths: true)` overloads — decodes
-those names correctly, so long-named entries become listable, resolvable and
-readable.
-
-### Crafted-archive hardening and fixes
-Following review of the new surface:
-
-- **Extraction still fails loudly on crafted directory ranges.**
-  `GetDirEntryCount` clamps for enumeration, but extraction uses the raw
-  stored count and rejects a child range that runs past the file tree
-  (`Directory contains invalid node.`) instead of silently extracting a
-  partial directory.
-- **`InvalidPath`** is reported for null/empty/invalid paths instead of the
-  misleading `FileNotFound`.
-- **`TotalUncompressedSize` saturates** instead of wrapping on crafted trees.
-- Long-name entries are documented as counted by `GetDirEntryCount` but
-  rejected by `GetDirEntry`/`TryGetDirEntry` until `DecodeExtendedNames` is
-  enabled.
+### Maintenance
+- Package bumps: Meziantou.Analyzer 3.0.290, Microsoft.NET.Test.Sdk
+  18.10.1, coverlet.collector 10.1.0, XISOSharp 1.4.0.
+- IDE/analyzer cleanups; the batch settled-counter is now a small reference
+  type instead of a captured mutable local.
 
 ## Upgrade notes
 
-- **Additive API; no wire-format changes.** Archive bytes, zstd frame bytes
-  and CLI exit codes are unchanged, and the existing reader overloads keep
-  their behavior. Recompiling is enough; no data migration is needed.
-- **Behavior changes only for invalid or crafted input:** empty/invalid paths
-  now report `InvalidPath`; directory enumeration clamps out-of-range child
-  counts; extraction rejects crafted child ranges; the archive total
-  saturates on overflow. Valid archives are unaffected.
-- **License:** MIT.
+- **No API, wire-format or CLI changes since v1.3.0.** Archive bytes, zstd
+  frames, exit codes and the reader surface are unchanged; recompiling is
+  enough, and no data migration is needed.
+- **NuGet metadata:** packages now declare the SPDX expression
+  `<license type="expression">MIT</license>` instead of embedding the
+  license as `PackageLicenseFile`. `LICENSE` and `THIRD-PARTY-NOTICES.md`
+  are still packed into every package.
+- **Behavior changes only for malformed input:** a batch item whose output
+  path cannot be resolved now reports `Failed` for that item instead of
+  throwing, and a tool whose stderr stays open past exit no longer delays
+  the result.
 
-## Full change list since v1.2.2
+## Full change list since v1.3.0
 
-- `feat:` mount-host reader APIs — `RootNode`, `TryGetDirEntry`,
-  `TryGetNodeName`, clamped `GetDirEntryCount`, `EntryCount`,
-  `TotalUncompressedSize`, `OpenRead`/`TryOpenRead`
-- `feat:` `ZArchiveOpenFailure` enum and failure-reporting `TryOpen` overloads
-  for path, stream and byte-array opens
-- `feat:` `ZArchiveReaderOptions` (`CacheBlockCount`, `DecodeExtendedNames`,
-  `FileShare`) and corrected extended-name decode overloads
-- `feat:` `ReadFromFile` decompresses outside the global lock so distinct
-  blocks decode in parallel (lock-free decode, locked publish)
-- `fix:` extraction fails loudly on crafted directory child ranges
-- `fix:` null/empty/invalid paths report `InvalidPath`, not `FileNotFound`
-- `fix:` `TotalUncompressedSize` saturates instead of wrapping
-- `test:` mount-host reader API tests and a crafted-count extraction
-  corruption test
-- `style:` analyzer cleanups in the mount API tests
-- `docs:` API reference, format, FAQ and README updates for the new surface
+- `license:` relicense under MIT and rewrite the pipeline layer as an
+  original implementation; scrub third-party derivations from code, docs,
+  packaging and git history
+- `fix:` batch destination-resolution faults are isolated per item
+- `fix:` stop the stderr drain pump when a grandchild holds the pipe open
+- `ci:` GitHub Actions matrix (Ubuntu/Windows/macOS), NuGet packing and
+  tag-driven publishing; full-history checkout for MinVer; portable CLI test
+  harnesses
+- `test:` Ustar same-stem batch tar; malformed-path batch isolation test
+- `chore:` analyzer, test SDK, coverlet and XISOSharp package bumps
+- `refactor:` captured batch settled-counter replaced by a counter object;
+  IDE style cleanups
+- `docs:` README, FAQ, pipeline and release-notes updates for the MIT
+  relicense

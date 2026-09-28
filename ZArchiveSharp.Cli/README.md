@@ -1,5 +1,14 @@
 # ZArchiveSharp.Cli
 
+[![NuGet](https://img.shields.io/nuget/v/ZArchiveSharp.Cli.svg)](https://www.nuget.org/packages/ZArchiveSharp.Cli)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/ZArchiveSharp.Cli.svg)](https://www.nuget.org/packages/ZArchiveSharp.Cli)
+[![core library](https://img.shields.io/nuget/v/ZArchiveSharp.svg?label=core%20library)](https://www.nuget.org/packages/ZArchiveSharp)
+[![CI](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/purelogiccode/ZArchiveSharp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../LICENSE)
+[![.NET Tool](https://img.shields.io/badge/dotnet%20tool-zar-512BD4.svg)](https://www.nuget.org/packages/ZArchiveSharp.Cli)
+[![.NET 8.0 | 9.0 | 10.0](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4.svg)](https://dotnet.microsoft.com/download)
+[![AOT compatible](https://img.shields.io/badge/AOT-compatible-brightgreen.svg)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+
 Command-line tool for creating and extracting ZArchive (`.zar`) files using [ZArchiveSharp](https://www.nuget.org/packages/ZArchiveSharp) — pack a directory, extract an archive, convert Xbox ISOs (XISO), or batch-process a folder in parallel.
 
 A pure-C# port of the `zarchive.exe` contract (ZArchive 0.1.2): same arguments, defaults, stdout chatter and exit codes, with three documented deviations where native behavior is a bug.

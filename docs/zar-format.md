@@ -1,6 +1,6 @@
 # ZAR Format Specification
 
-The `.zar` format is ZArchive 0.1.2 by Exzap ([unknownbrackets/ZArchive](https://github.com/unknownbrackets/ZArchive)). This page documents the on-disk layout as implemented by ZArchiveSharp, which is byte-identical to the reference implementation.
+The `.zar` format is ZArchive 0.1.2 by Exzap ([Exzap/ZArchive](https://github.com/Exzap/ZArchive)). This page documents the on-disk layout as implemented by ZArchiveSharp, which is byte-identical to the reference implementation.
 
 ## Overview
 
