@@ -1,5 +1,10 @@
 using ZArchiveSharp.Pipeline;
 
+#if !NET9_0_OR_GREATER
+// System.Threading.Lock is net9+; on net8 a plain object is the lock target.
+using Lock = object;
+#endif
+
 namespace ZArchiveSharp.Tests;
 
 /// <summary>
@@ -92,7 +97,7 @@ public sealed class PipelineCliTests : IDisposable
         var root = NewTempDir("cli_refuse");
         var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
         File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
-        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8);
+        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8.ToArray());
 
         var sink = new LogSink();
         Assert.Equal(ZarchiveCli.Refused, ZarchiveCli.Run([src], log: sink.Log));
@@ -256,7 +261,7 @@ public sealed class PipelineCliTests : IDisposable
         var root = NewTempDir("cli_policy");
         var src = Directory.CreateDirectory(Path.Combine(root, "game")).FullName;
         File.WriteAllText(Path.Combine(src, "a.txt"), "hello");
-        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8);
+        File.WriteAllBytes(Path.Combine(root, "game.zar"), "\t\t\t"u8.ToArray());
 
         var sink = new LogSink();
         var options = new ZarPipelineOptions { CollisionPolicy = ZarCollisionPolicy.Overwrite };

@@ -2,6 +2,11 @@ using System.Diagnostics;
 using ZArchiveSharp.Pipeline;
 using ZArchiveSharp.Zstd;
 
+#if !NET9_0_OR_GREATER
+// System.Threading.Lock is net9+; on net8 a plain object is the lock target.
+using Lock = object;
+#endif
+
 namespace ZArchiveSharp.Tests;
 
 /// <summary>

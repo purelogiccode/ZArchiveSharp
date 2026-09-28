@@ -32,21 +32,36 @@ public sealed class CliLogTests
 
     private static Type? LoadCliType(string name)
     {
-        var cli = RedumpIsoTests.FindCli();
-        if (cli is null)
-        {
-            return null;
-        }
-
-        var assemblyPath = cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
-            ? cli
-            : Path.Combine(Path.GetDirectoryName(cli)!, "ZArchiveSharp.Cli.dll");
-        if (!File.Exists(assemblyPath))
+        var assemblyPath = FindCliAssembly();
+        if (assemblyPath is null)
         {
             return null;
         }
 
         return Assembly.LoadFrom(assemblyPath).GetType(name, throwOnError: true);
+    }
+
+    // Unlike a process launch (any CLI build works), reflection needs the CLI
+    // assembly for the runtime THIS test host runs on.
+    private static string? FindCliAssembly()
+    {
+        var config = AppContext.BaseDirectory.Contains("Release", StringComparison.OrdinalIgnoreCase)
+            ? "Release"
+            : "Debug";
+        var tfm = $"net{Environment.Version.Major}.0";
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
+        {
+            if (!File.Exists(Path.Combine(dir.FullName, "CSharp_ZArchiveSharp.sln")))
+            {
+                continue;
+            }
+
+            var dll = Path.Combine(dir.FullName, "ZArchiveSharp.Cli", "bin", config, tfm, "ZArchiveSharp.Cli.dll");
+            return File.Exists(dll) ? dll : null;
+        }
+
+        return null;
     }
 
     [Fact]

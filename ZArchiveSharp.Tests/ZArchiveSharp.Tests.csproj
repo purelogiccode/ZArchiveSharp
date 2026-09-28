@@ -1,7 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <!-- The whole suite runs on every runtime the package targets, so a
+             net9/net10-only API or behavior cannot slip in unnoticed. -->
+        <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
         <IsPackable>false</IsPackable>
         <Company>PureLogicCode.com</Company>
     </PropertyGroup>
