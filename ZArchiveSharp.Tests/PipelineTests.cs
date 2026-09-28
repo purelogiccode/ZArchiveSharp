@@ -587,6 +587,25 @@ public sealed class PipelineTests : IDisposable
         Assert.All(results, r => Assert.NotNull(r.ErrorMessage));
     }
 
+    [Fact]
+    public void PackBatch_MalformedSourcePath_FailsItemInsteadOfThrowing()
+    {
+        var root = NewTempDir("pipe_badpath");
+        var good = Directory.CreateDirectory(Path.Combine(root, "good")).FullName;
+        File.WriteAllText(Path.Combine(good, "a.txt"), "ok");
+
+        // Resolving this item's destination throws; it must be this item's
+        // Failed result, not an AggregateException out of Parallel.For.
+        var results = ZarPipeline.PackBatch([good, "bad\0name"], Path.Combine(root, "zars"));
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal(ZarItemStatus.Completed, results[0].Status);
+        Assert.Equal(ZarItemStatus.Failed, results[1].Status);
+        Assert.NotNull(results[1].ErrorMessage);
+        Assert.Null(results[1].DestinationPath);
+        Assert.Equal(ZarProcessState.Failed, ZarPipeline.RollUp(results));
+    }
+
     private sealed class ThrowingCompressor : IZarBlockCompressor
     {
         public int Compress(ReadOnlySpan<byte> source, Span<byte> destination)

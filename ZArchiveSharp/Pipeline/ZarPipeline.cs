@@ -250,11 +250,11 @@ public static class ZarPipeline
                 },
                 index =>
                 {
-                    var destination = destinationAt(index, items[index]);
                     var itemProgress = progress is null
                         ? null
                         : new BatchProgress(progress, progressGate, items.Count, settled);
-                    outcomes[index] = RunItem(items[index], destination, itemProgress, execute);
+                    outcomes[index] = RunItem(
+                        items[index], () => destinationAt(index, items[index]), itemProgress, execute);
                     settled.MarkOne();
                 });
         }
@@ -274,22 +274,26 @@ public static class ZarPipeline
     }
 
     private static ZarItemResult RunItem(
-        string item, string destination, IProgress<ZarProgress>? itemProgress,
+        string item, Func<string> destination, IProgress<ZarProgress>? itemProgress,
         Func<string, string, IProgress<ZarProgress>?, ZarItemResult> execute)
     {
+        // Destination mapping is inside the guard too: a malformed source path
+        // fails this item instead of escaping Parallel.For as an aggregate.
+        string? resolvedDestination = null;
         try
         {
-            return execute(item, destination, itemProgress);
+            resolvedDestination = destination();
+            return execute(item, resolvedDestination, itemProgress);
         }
         catch (OperationCanceledException ex)
         {
-            return new ZarItemResult(item, destination, ZarItemStatus.Cancelled, ex.Message);
+            return new ZarItemResult(item, resolvedDestination, ZarItemStatus.Cancelled, ex.Message);
         }
         catch (Exception ex)
         {
             // Per-item isolation: the fault becomes this item's result and the
             // rest of the batch keeps running.
-            return new ZarItemResult(item, destination, ZarItemStatus.Failed, ex.Message);
+            return new ZarItemResult(item, resolvedDestination, ZarItemStatus.Failed, ex.Message);
         }
     }
 

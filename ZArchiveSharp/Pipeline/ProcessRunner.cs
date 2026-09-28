@@ -73,8 +73,15 @@ public static class ProcessRunner
         }
 
         // The stderr pump is asynchronous: give it a bounded moment to reach
-        // EOF so a late-only failure line is not reported as "no output".
-        stderrDrained.Task.Wait(TimeSpan.FromSeconds(5), cancellationToken);
+        // EOF so a late-only failure line is not reported as "no output". A
+        // grandchild can inherit the pipe and keep it open past the tool's
+        // exit: stop the pump instead of stalling on EOF (lines already read
+        // stay in lastError).
+        if (!stderrDrained.Task.Wait(TimeSpan.FromSeconds(5), cancellationToken))
+        {
+            TryCancelErrorRead(process);
+        }
+
         var lastLine = lastOutput ?? lastError;
         ThrowIfFailed(process.ExitCode, lastLine, fileName);
         return new ProcessResult(process.ExitCode, lastLine);
@@ -234,6 +241,18 @@ public static class ProcessRunner
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception
                                        or NotSupportedException)
+        {
+            /* best effort */
+        }
+    }
+
+    private static void TryCancelErrorRead(Process process)
+    {
+        try
+        {
+            process.CancelErrorRead();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             /* best effort */
         }
