@@ -187,6 +187,7 @@ public static class ProcessRunner
         return null;
     }
 
+    /// <summary>Accepts exit 0/1, else throws with the last line attached.</summary>
     /// <exception cref="InvalidOperationException">On nonzero (non-1) exit.</exception>
     internal static void ThrowIfFailed(int exitCode, string? lastLine, string fileName)
     {
