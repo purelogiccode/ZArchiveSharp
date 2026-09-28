@@ -2,8 +2,12 @@
 
     <PropertyGroup>
         <!-- The whole suite runs on every runtime the package targets, so a
-             net9/net10-only API or behavior cannot slip in unnoticed. -->
+             net9/net10-only API or behavior cannot slip in unnoticed. The TFM
+             runs stay sequential: several timing-sensitive tests (CLI exit
+             latency, process cancellation) flake when three test hosts load
+             the machine at once. -->
         <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+        <TestTfmsInParallel>false</TestTfmsInParallel>
         <IsPackable>false</IsPackable>
         <Company>PureLogicCode.com</Company>
     </PropertyGroup>
