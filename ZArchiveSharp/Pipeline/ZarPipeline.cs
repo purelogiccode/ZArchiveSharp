@@ -317,9 +317,11 @@ public static class ZarPipeline
         return Path.GetFileNameWithoutExtension(zarPath) + "_extracted";
     }
 
-    // Counts batch items that finished (completed, skipped, failed or
-    // cancelled). A reference type keeps the worker lambda free of a
-    // captured mutable local.
+    /// <summary>
+    /// Counts batch items that finished (completed, skipped, failed or
+    /// cancelled). A reference type keeps the worker lambda free of a
+    /// captured mutable local.
+    /// </summary>
     private sealed class SettledCounter
     {
         private int _value;
@@ -332,9 +334,11 @@ public static class ZarPipeline
         }
     }
 
-    // Re-bases a single item's counters into the batch-wide 1/n share. The
-    // settled snapshot is read under the same gate as the report so two
-    // in-flight items cannot publish a stale (lower) completion count.
+    /// <summary>
+    /// Re-bases a single item's counters into the batch-wide 1/n share. The
+    /// settled snapshot is read under the same gate as the report so two
+    /// in-flight items cannot publish a stale (lower) completion count.
+    /// </summary>
     private sealed class BatchProgress(
         IProgress<ZarProgress> inner,
         ProgressGate gate,

@@ -6,8 +6,9 @@
 projects and the benchmarks together.
 
 **Provenance:** Release build, `0` warnings / `0` errors;
-`4292/4292` library tests + `43/43` CLI battle tests green (net10.0). CI
-(`.github/workflows/ci.yml`) repeats both suites on Ubuntu/Windows/macOS —
+`4292/4292` library tests green on **each** target runtime (`net8.0`,
+`net9.0`, `net10.0`) plus `43/43` CLI battle tests. CI
+(`.github/workflows/ci.yml`) repeats the suites on Ubuntu/Windows/macOS —
 with no native toolchain installed — and packs both NuGet packages on every
 push.
 
@@ -44,6 +45,8 @@ packs both NuGet packages, and publishes on `v*` tags:
 
 - full history is fetched so MinVer sees the release tags (a shallow
   checkout stamped `0.0.0-alpha` and broke the `--iso` tests);
+- the library test project multi-targets `net8.0`/`net9.0`/`net10.0`, so the
+  full suite runs against every runtime the packages target;
 - CLI test harnesses fold POSIX exit statuses back to the signed codes the
   assertions use and quote the resolved executable path;
 - the same-stem batch tar test writes Ustar (the Homebrew 7z on macOS

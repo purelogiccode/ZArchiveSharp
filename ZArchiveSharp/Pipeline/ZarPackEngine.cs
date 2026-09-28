@@ -288,6 +288,7 @@ public static class ZarPackEngine
         }
     }
 
+    /// <summary>One planned extraction step: source path, destination-relative path, kind, size and native log line.</summary>
     private sealed record ExtractPlanEntry(
         string SrcPath,
         string RelativePath,

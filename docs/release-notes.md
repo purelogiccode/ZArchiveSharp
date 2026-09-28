@@ -31,8 +31,9 @@ notes for the current release live in
   stopped and the already-read lines are kept.
 - **CI as the gate.** GitHub Actions builds and tests on Ubuntu, Windows and
   macOS, packs both NuGet packages, and publishes on `v*` tags. MinVer now
-  sees full history, and the CLI harnesses fold POSIX exit statuses and run
-  cross-platform.
+  sees full history, the library suite runs on each target runtime
+  (`net8.0`/`net9.0`/`net10.0`), and the CLI harnesses fold POSIX exit
+  statuses and run cross-platform.
 
 **Upgrade notes**
 

@@ -47,6 +47,7 @@ public sealed class ZstdDecompressionStream : Stream
     private bool _finished;
     private bool _disposed;
 
+    /// <summary>Frame-scoped decode state (context, checksum/FCS flags, bounds).</summary>
     private sealed class FrameState
     {
         public ZstdDecompressor.FrameContext Ctx = new();

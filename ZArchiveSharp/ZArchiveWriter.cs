@@ -98,6 +98,7 @@ public sealed class ZArchiveWriter : IDisposable
     private static readonly int CompressBound =
         ZstdCompressor.GetCompressBound(ZArchiveCommon.CompressedBlockSize);
 
+    /// <summary>Per-worker block compressor slot for the parallel fan-out.</summary>
     private sealed class BlockWorker
     {
         public required IZarBlockCompressor Compressor;

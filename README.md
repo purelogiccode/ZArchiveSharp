@@ -195,7 +195,7 @@ anything.
 | **ZArchiveSharp** | Core library — archive reader/writer, zstd codec, seekable format, pipeline |
 | **ZArchiveSharp.Cli** | Command-line tool (`zar`) — pack, extract, convert, batch operations |
 | **ZArchiveSharp.Benchmarks** | BenchmarkDotNet performance suite |
-| **ZArchiveSharp.Tests** | Comprehensive test suite (4292 tests + 43 CLI battle tests, parity validation) |
+| **ZArchiveSharp.Tests** | Comprehensive test suite (4292 tests on .NET 8/9/10 + 43 CLI battle tests, parity validation) |
 
 ## Documentation
 

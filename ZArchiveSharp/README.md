@@ -97,27 +97,20 @@ a bug: an unopenable extract output throws (native writes into the dead
 stream), a mid-file input read error fails the pack with `-16` (native packs
 a silent truncation), and error-string paths use `/` on every OS.
 
-## What's new in v1.2.0
+## What's new in v1.4.0
 
-- **Hardened extraction** — entry names must be single plain components
-  (traversal, absolute, drive-qualified and reserved device names are
-  rejected), the resolved path is re-validated against the destination root,
-  nesting is capped at `ZarPackEngine.MaxExtractDepth` (1024), and files are
-  written through scratch files moved into place after the size check.
-- **Safer pack walking** — `DirectoryPackSource` never descends directory
-  symlinks/junctions; the link stays as an empty directory entry.
-- **New decoder cap** — `ZstdDecoderOptions.MaxTotalOutputSize` (1 GiB
-  default) bounds concatenated frames cumulatively; `ZstdCompressor.DecompressFrame`
-  enforces its cap during decode.
-- **New engine helpers** — `ZarPackEngine.MoveIntoPlace`,
-  `OutputExistsMessage` and `MaxExtractDepth`; `PackEntries` returns the path
-  actually written and takes an optional collision policy.
-- **Contract changes** — `SeekableReader` range errors are now
-  `ArgumentOutOfRangeException`; `ZArchiveReader.TryOpen(Stream)` disposes a
-  failed non-`leaveOpen` stream; `PauseTokenSource` is `IDisposable`.
-- **Native-parity fixes** — Windows-1252 byte identity/order for name tables,
-  splitter repeat-offset history, stream header rebasing and wrap-safe
-  bounds checks.
+- **Original, MIT-licensed pipeline layer** — `ZarPipeline`, `ZarPackEngine`,
+  `ProcessRunner`, `SevenZip` and the settings/stage/progress model are an
+  independent implementation. The public API, archive bytes and CLI exit
+  codes are unchanged from v1.3.0.
+- **Stricter batch isolation** — a source path that cannot be mapped to an
+  output fails only its own item (a `Failed` `ZarItemResult`) instead of
+  throwing `AggregateException` out of `PackBatch`/`ExtractBatch`.
+- **Robust process runner** — a tool whose stderr pipe is inherited and held
+  open by a grandchild no longer stalls the bounded drain; the lines already
+  read are kept.
+- **Tested on every runtime** — the full suite runs on `net8.0`, `net9.0`
+  and `net10.0` (4292 tests each), plus the CI matrix on Ubuntu/Windows/macOS.
 
 Full notes: [WhatsNew.md](../WhatsNew.md) · [docs](../docs/README.md).
 
