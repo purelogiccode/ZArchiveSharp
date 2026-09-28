@@ -157,8 +157,8 @@ public sealed class PipelineCliTests : IDisposable
         // asserting only the parent's return time would let a leaked child
         // pass.
         var marker = Path.Combine(Path.GetTempPath(), "zar_hung_" + Guid.NewGuid().ToString("N") + ".txt");
-        var script = "import os,time,sys; os.close(1); f=open(sys.argv[1],'a'); " +
-                     "[(f.write('x'), f.flush(), time.sleep(0.2)) for _ in range(150)]";
+        const string script = "import os,time,sys; os.close(1); f=open(sys.argv[1],'a'); " +
+                              "[(f.write('x'), f.flush(), time.sleep(0.2)) for _ in range(150)]";
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {

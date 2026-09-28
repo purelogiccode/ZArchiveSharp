@@ -247,7 +247,7 @@ public static class Program
                     // forwarded to that subcommand's own parser (which owns
                     // its option set).
                     if (args[i].StartsWith('-') && args[i].Length > 1
-                        && !InSubcommandArguments(positional, firstPositionalEligible))
+                                                && !InSubcommandArguments(positional, firstPositionalEligible))
                     {
                         CliLog.Err($"Error: unknown option '{args[i]}'.");
                         return ZarchiveCli.BadUsage;
@@ -396,7 +396,8 @@ public static class Program
                 return RejectNonBatchPolicy(policy);
             }
 
-            var sub = BuildSubcommandArgs(positional, sawTerminator, terminatorAt, insertCompress: false, helpRequested);
+            var sub = BuildSubcommandArgs(positional, sawTerminator, terminatorAt, insertCompress: false,
+                helpRequested);
             return RunSeekable(sub, level, levelExplicit, levelOption, dictPath, checksumOverride,
                 checksumOption, quiet, stdoutFlag);
         }

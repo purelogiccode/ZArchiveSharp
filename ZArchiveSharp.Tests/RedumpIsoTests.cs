@@ -96,7 +96,8 @@ public sealed class RedumpIsoTests
 
     internal static string CliCommand(string cli, string[] args)
     {
-        return (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : $"\"{cli}\" ") + Quote(args);
+        return (cli.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ? $"dotnet \"{cli}\" " : $"\"{cli}\" ") +
+               Quote(args);
     }
 
     /// <summary>

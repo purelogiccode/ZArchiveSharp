@@ -238,7 +238,7 @@ public static class ZarPipeline
         }
 
         var progressGate = new ProgressGate();
-        var settled = 0;
+        var settled = new SettledCounter();
         var outcomes = new ZarItemResult?[items.Count];
         try
         {
@@ -253,9 +253,9 @@ public static class ZarPipeline
                     var destination = destinationAt(index, items[index]);
                     var itemProgress = progress is null
                         ? null
-                        : new BatchProgress(progress, progressGate, items.Count, () => Volatile.Read(ref settled));
+                        : new BatchProgress(progress, progressGate, items.Count, settled);
                     outcomes[index] = RunItem(items[index], destination, itemProgress, execute);
-                    Interlocked.Increment(ref settled);
+                    settled.MarkOne();
                 });
         }
         catch (OperationCanceledException)
@@ -313,29 +313,52 @@ public static class ZarPipeline
         return Path.GetFileNameWithoutExtension(zarPath) + "_extracted";
     }
 
+    // Counts batch items that finished (completed, skipped, failed or
+    // cancelled). A reference type keeps the worker lambda free of a
+    // captured mutable local.
+    private sealed class SettledCounter
+    {
+        private int _value;
+
+        public int Value => Volatile.Read(ref _value);
+
+        public void MarkOne()
+        {
+            Interlocked.Increment(ref _value);
+        }
+    }
+
     // Re-bases a single item's counters into the batch-wide 1/n share. The
     // settled snapshot is read under the same gate as the report so two
     // in-flight items cannot publish a stale (lower) completion count.
     private sealed class BatchProgress(
-        IProgress<ZarProgress> inner, ProgressGate gate, int itemCount, Func<int> settledCount)
+        IProgress<ZarProgress> inner,
+        ProgressGate gate,
+        int itemCount,
+        SettledCounter settled)
         : IProgress<ZarProgress>
     {
+        private readonly ProgressGate _gate = gate;
+        private readonly SettledCounter _settled = settled;
+        private readonly int _itemCount = itemCount;
+        private readonly IProgress<ZarProgress> _inner = inner;
+
         public void Report(ZarProgress value)
         {
-            lock (gate)
+            lock (_gate)
             {
-                var settled = settledCount();
+                var done = _settled.Value;
                 var itemFiles = Math.Max(1, value.FilesTotal);
                 var itemBytes = Math.Max(1, value.BytesTotal);
-                var filesTotal = itemFiles * itemCount;
-                var bytesTotal = itemBytes * itemCount;
-                inner.Report(value with
+                var filesTotal = itemFiles * _itemCount;
+                var bytesTotal = itemBytes * _itemCount;
+                _inner.Report(value with
                 {
                     FilesCompleted = Math.Min(
-                        (settled * itemFiles) + Math.Max(0, value.FilesCompleted), filesTotal),
+                        (done * itemFiles) + Math.Max(0, value.FilesCompleted), filesTotal),
                     FilesTotal = filesTotal,
                     BytesCompleted = Math.Min(
-                        (settled * itemBytes) + Math.Max(0, value.BytesCompleted), bytesTotal),
+                        (done * itemBytes) + Math.Max(0, value.BytesCompleted), bytesTotal),
                     BytesTotal = bytesTotal,
                 });
             }

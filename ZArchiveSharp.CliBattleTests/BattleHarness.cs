@@ -179,7 +179,8 @@ public static class CliRunner
                 $"Timed out after {TimeoutMilliseconds}ms: {exe} {psi.Arguments}");
         }
 
-        return new CliResult(NormalizeExitCode(process.ExitCode), outTask.GetAwaiter().GetResult(), errTask.GetAwaiter().GetResult());
+        return new CliResult(NormalizeExitCode(process.ExitCode), outTask.GetAwaiter().GetResult(),
+            errTask.GetAwaiter().GetResult());
     }
 
     /// <summary>
